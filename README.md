@@ -34,8 +34,10 @@ this fork does it the same way. This is version 1.1.0 (1.0.0 was the first relea
 - **Games (Home).** Your last played games and apps plus the ones you pinned, in one row. The selected card is big, with its
   artwork behind it. ↓ selects the **Start** and **⋯** (options) buttons. A UMD in the drive shows up first.
 - **Options** (START, or ✕ on ⋯). Manage Saved Data, Information, Delete, Remove from / Add to Home, Pin to / Unpin from Home.
-- **Library.** The last card of Games. It opens a grid with everything you have, games and apps together, and a **Sort**
-  button (by name or by what you added last). You can pin the Library card like any other card.
+- **Library.** The last card of Games. It opens a grid with everything you have, games and apps together, a **Sort** button (by
+  name or by what you added last) and a **view** button: everything in one list, only what is in folders (as cards; ✕ opens a
+  folder, ○ goes back), only what is outside folders, or both. Folders are the ones the Categories Lite plugin makes. The Library
+  remembers your sorting and view. You can pin the Library card like any other card.
 - **Manage Saved Data.** Lists the saves of all your games. Mark some, delete them and see how much room you get back.
   ARK's own save folder is locked and can't be deleted.
 - **Music.** Plays the MP3 files in `MUSIC` with title, artist and album art (from the file, or a `cover.jpg` / `folder.jpg`

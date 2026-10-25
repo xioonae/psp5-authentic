@@ -5,6 +5,7 @@
 #include "gfx.h"
 #include "scan.h"
 #include "loader.h"
+#include "folders.h"
 
 enum { UI_NONE, UI_LAUNCH, UI_SETTINGS, UI_INFO, UI_DELETE, UI_SAVES,
        UI_SLEEP, UI_SHUTDOWN, UI_RESTART, UI_RECOVERY /* the power popup of the SELECT button */ };
@@ -22,9 +23,25 @@ enum { MI_SAVES, MI_INFO, MI_DELETE, MI_DELETE_YES, MI_CANCEL,
        MI_ADD,        /* Add to Home (Library) */
        MI_PIN, MI_UNPIN,
        MI_SORT_NAME, MI_SORT_RECENT, /* the sort popup of the Library */
+       MI_VIEW_ALL, MI_VIEW_FOLDERS, MI_VIEW_LOOSE, MI_VIEW_BOTH, /* the view popup of the Library (LIB_VIEW_*, in this order) */
        MI_SLEEP, MI_SHUTDOWN, MI_RESTART, MI_RECOVERY /* the power popup: the same four as Settings > Power and USB */ };
 /* what the popup is for (menu_kind) */
-enum { MENU_CARD, MENU_SORT, MENU_POWER };
+enum { MENU_CARD, MENU_SORT, MENU_POWER, MENU_VIEW };
+
+/* What the Library shows (Ui.lib_view; the view button at the top left of the Library, kept in psp5.cfg):
+ *   ALL      every game and app, one after the other, as if there were no folders
+ *   FOLDERS  only what is in folders: a card for every folder (the games and apps are inside it)
+ *   LOOSE    only what is in no folder
+ *   BOTH     a card for every folder and, after them, the games and apps that are in no folder
+ * A folder is a Categories Lite / arkMenu category: the last folder before the game's own folder in PSP/GAME, or before the image in
+ * ISO (folders.h). */
+enum { LIB_VIEW_ALL, LIB_VIEW_FOLDERS, LIB_VIEW_LOOSE, LIB_VIEW_BOTH, LIB_VIEW_COUNT };
+
+/* A card of the Library that is a folder is -10 - n in the Library's LoaderView (n is the number of the folder in Ui.folders). The loader
+ * leaves every negative number alone, as it does the Library card of Games. */
+#define LIB_FOLDER_ID(n) (-10 - (n))
+#define LIB_IS_FOLDER(i) ((i) <= -10)
+#define LIB_FOLDER_NO(i) (-10 - (i))
 
 typedef struct {
     u32 pressed; /* nedtryckta denna bildruta */
@@ -67,9 +84,15 @@ typedef struct {
 
     /* biblioteket: rutnät med allt */
     int lib_sort;        /* 0 = namn, 1 = senast tillagda */
-    int lib_focus;       /* 1 = the Sort button at the top right is selected, not a card */
+    int lib_view;        /* LIB_VIEW_*: what the Library shows (the view button) */
+    int lib_open;        /* the folder that is open (its number in `folders`), or -1: the Library itself. Open, it shows that folder's games and apps. */
+    char lib_open_name[FOLDER_NAME_MAX]; /* ... and its name, which is how it is found again when the list changes */
+    FolderSet folders;   /* the folders of the game list */
+    int lib_focus;       /* 0 = a card, 1 = the Sort button at the top right, 2 = the view button at the top left */
     float sort_anim;     /* 0..1: how selected the Sort button looks */
     float sort_frame;    /* 0..1: how visible its frame is (it is gone while the top bar is selected, ↓ brings it back) */
+    float view_anim;     /* the same two for the view button */
+    float view_frame;
     float card_ring;     /* 0..1: how visible the ring around the selected card is: gone while the Sort button, Start / Options or the top bar is selected (the card itself keeps its size) */
     int btn_focus;       /* Games: 0 = the card, 1 = the Start button under it, 2 = the Options button next to it */
     float btn_anim[2];   /* 0..1: how selected Start / Options look */
@@ -131,7 +154,7 @@ void ui_draw(Ui *ui);
 void ui_toast(Ui *ui, const char *msg);
 /* Låter korten glida in igen som vid start (efter startskärmen). */
 void ui_replay_intro(Ui *ui);
-/* Index i spellistan för markerad post, eller -1. */
+/* Index i spellistan för markerad post, eller -1 (also when a folder of the Library is selected). */
 int ui_selected(const Ui *ui);
 
 /* Enkel skärm under första skanningen. */

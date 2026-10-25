@@ -190,24 +190,24 @@ static void sfo_rows(const u8 *sfo, u32 size)
     }
 }
 
-/* ISO / CSO / ZSO / DAX */
+/* ISO / CSO / ZSO / DAX / JSO */
 static void iso_rows(const Entry *e)
 {
     u8 head[24];
     memset(head, 0, sizeof(head));
     read_at(e->path, 0, head, sizeof(head));
     u32 magic = le32(head);
-    int packed = magic == CSO_MAGIC || magic == ZSO_MAGIC || magic == DAX_MAGIC;
+    int packed = magic == CSO_MAGIC || magic == ZSO_MAGIC || magic == DAX_MAGIC || magic == JSO_MAGIC;
     char buf[96], num[24];
     snprintf(buf, sizeof(buf), L(S_I_IMAGE),
-             magic == CSO_MAGIC ? "CSO" : magic == ZSO_MAGIC ? "ZSO" : magic == DAX_MAGIC ? "DAX" : "ISO");
+             magic == CSO_MAGIC ? "CSO" : magic == ZSO_MAGIC ? "ZSO" : magic == DAX_MAGIC ? "DAX" : magic == JSO_MAGIC ? "JSO" : "ISO");
     add_row(L(S_I_TYPE), buf);
     location_rows(e);
 
     gameops_fmt_size(num, sizeof(num), e->file_size);
     add_row(L(S_I_SIZE), num);
-    if (packed) { /* the header has the size the image has when unpacked: 64 bits at 8 in a CSO/ZSO, 32 bits at 4 in a DAX */
-        u64 total = magic == DAX_MAGIC ? le32(head + 4) : (u64)le32(head + 8) | ((u64)le32(head + 12) << 32);
+    if (packed) { /* the header has the size the image has when unpacked: 64 bits at 8 in a CSO/ZSO, 32 bits at 4 in a DAX, 32 bits at 12 in a JSO */
+        u64 total = magic == DAX_MAGIC ? le32(head + 4) : magic == JSO_MAGIC ? le32(head + 12) : (u64)le32(head + 8) | ((u64)le32(head + 12) << 32);
         if (total) {
             gameops_fmt_size(num, sizeof(num), total);
             add_row(L(S_I_UNCOMPRESSED), num);

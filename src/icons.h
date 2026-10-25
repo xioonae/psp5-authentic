@@ -26,7 +26,8 @@ enum {
     ICON_SPEAKER,  /* the loudspeaker: box and cone in one piece, 2 r wide and 4 r high (r = 4.5 for the usual size) */
     ICON_RFRAME,   /* rounded rectangle w * h, a ring of the fixed thickness ICON_FRAME_T just inside the edge */
     ICON_RFRAME_S, /* the same with the thinner ICON_FRAME_T_S - the ring around the selected card of the library grid */
-    ICON_LIBRARY   /* the picture of the Library card: 3 x 2 squares with a game controller in front, w * h whole pixels (see icon_library_width) */
+    ICON_LIBRARY,  /* the picture of the Library card: 3 x 2 squares with a game controller in front, w * h whole pixels (see icon_library_width) */
+    ICON_FOLDER    /* the picture of a folder card: a tab and a body in one piece, w * h whole pixels (see icon_folder_pic), every edge on a pixel line */
 };
 
 #define ICON_FRAME_T   2.5f /* thickness of ICON_RFRAME in pixels (about what the big card's ring always had) */
@@ -54,6 +55,17 @@ int icon_library_width(int h);
 void icon_library_image(int h, unsigned char *out);
 /* 1 if the picture of height `h` is stored ready-made (for the host tests: the card's heights must all be) */
 int icon_library_baked(int h);
+
+/* The picture of a folder card: a folder (a tab at the top left on a body) that is made for one whole-pixel size, like the Library
+ * picture. For the card whose pixels are l, t, w, h (whole numbers) this says where the picture goes and how it is built, and
+ * icon_render(ICON_FOLDER, p->w, p->h, 0, ...) gives its image. The folder is about two thirds of the card's height. */
+typedef struct {
+    int x, y, w, h;   /* the picture, in screen pixels */
+    int tab_w;        /* the tab: as wide as this, from the left edge */
+    int tab_h;        /* the body's top edge is this far below the picture's top edge (the tab is this high) */
+    int r;            /* corner radius */
+} FolderPic;
+void icon_folder_pic(int l, int t, int w, int h, FolderPic *p);
 
 /* The box for a shape centred on (cx, cy) on the screen. `w`, `h` are only used by ICON_RRECT and
  * the triangles (where they are the size of the triangle). */

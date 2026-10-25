@@ -9,6 +9,8 @@
 
 unsigned char g_boot_anim = 1;
 unsigned char g_battery_pct = 0; /* off until the player turns it on */
+unsigned char g_lib_sort = 0;    /* the Library's Sort button: 0 = name, 1 = recently added */
+unsigned char g_lib_view = 0;    /* the Library's view button: 0 = all, 1 = only folders, 2 = only what is outside folders, 3 = both (ui.c, LIB_VIEW_*) */
 
 void config_load(const char *data_dir)
 {
@@ -32,17 +34,21 @@ void config_load(const char *data_dir)
             g_theme_art = p[9] != '0';
         if ((p = strstr(buf, "batterypct=")))
             g_battery_pct = p[11] != '0';
+        if ((p = strstr(buf, "libsort=")))
+            g_lib_sort = p[8] == '1';
+        if ((p = strstr(buf, "libview=")) && p[8] >= '0' && p[8] <= '3')
+            g_lib_view = p[8] - '0';
     }
     lang_apply();
 }
 
 void config_save(const char *data_dir)
 {
-    char path[200], buf[128];
+    char path[200], buf[192];
     snprintf(path, sizeof(path), "%s/psp5.cfg", data_dir);
-    int n = snprintf(buf, sizeof(buf), "sound=%d\nbootanim=%d\nlang=%s\ntheme=%s\nthemeart=%d\nbatterypct=%d\n",
+    int n = snprintf(buf, sizeof(buf), "sound=%d\nbootanim=%d\nlang=%s\ntheme=%s\nthemeart=%d\nbatterypct=%d\nlibsort=%d\nlibview=%d\n",
                      g_sound_on ? 1 : 0, g_boot_anim ? 1 : 0, lang_code(g_lang_setting), theme_cur()->code,
-                     g_theme_art ? 1 : 0, g_battery_pct ? 1 : 0);
+                     g_theme_art ? 1 : 0, g_battery_pct ? 1 : 0, g_lib_sort ? 1 : 0, g_lib_view <= 3 ? g_lib_view : 0);
     SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (fd >= 0) {
         sceIoWrite(fd, buf, n);

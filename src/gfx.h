@@ -4,6 +4,7 @@
 
 #include <psptypes.h>
 #include <pspgu.h>
+#include "icons.h"
 
 #define SCREEN_W 480
 #define SCREEN_H 272
@@ -72,6 +73,10 @@ void gfx_speaker(float x, float y, u32 color);
  * box l, t, w, h, about two thirds of its height. Everything in it is on whole pixels and it is one image, so it looks the same
  * wherever the card is and the controller is exactly the same on its left and right. */
 void gfx_library_icon(int l, int t, int w, int h, u32 color);
+/* The picture of a folder card (a folder with a tab), centred in the card box l, t, w, h like the Library picture, and made the same
+ * way: one image for exactly this size, on whole pixels. `pic` (can be NULL) gets where it went and how it is built, so that the
+ * letter of the folder can be put in the middle of its body. */
+void gfx_folder_icon(int l, int t, int w, int h, u32 color, FolderPic *pic);
 
 /* Additiv blandning (ljus som lyser upp det som redan ritats) på/av */
 void gfx_blend_add(int on);

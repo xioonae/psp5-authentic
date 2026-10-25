@@ -89,6 +89,29 @@ void icon_box(int kind, float cx, float cy, float w, float h, float r, IconBox *
     b->cy = b->th / 2.0f + qy * 0.5f;
 }
 
+/* The folder: the picture is `h` pixels high and about 1.3 times as wide; the tab is a fifth of the height, the corners 1/8. */
+static void folder_dims(int w, int h, int *tab_w, int *tab_h, int *r)
+{
+    *tab_w = (int)floorf(w * 0.42f + 0.5f);
+    *tab_h = (int)floorf(h * 0.22f + 0.5f);
+    *r = (int)floorf(h * 0.13f + 0.5f);
+    if (*tab_h < 3)
+        *tab_h = 3;
+    if (*r < 2)
+        *r = 2;
+    if (*r > *tab_h)
+        *r = *tab_h;
+}
+
+void icon_folder_pic(int l, int t, int w, int h, FolderPic *p)
+{
+    p->h = (int)floorf(h * 0.66f + 0.5f);
+    p->w = (int)floorf(p->h * 1.3f + 0.5f);
+    p->x = l + (w - p->w + 1) / 2; /* centred, on whole pixels (the odd pixel goes to the left, as with the Library picture) */
+    p->y = t + (h - p->h + 1) / 2;
+    folder_dims(p->w, p->h, &p->tab_w, &p->tab_h, &p->r);
+}
+
 /* The Library picture, in whole pixels from its top left corner. The design is 83 x 77 units: six squares (19 on a pitch of 25) and the
  * controller (56 x 41) with its top left corner at (27, 36); `u` pixels per unit, every edge rounded to a whole pixel. The right half of
  * the controller is the mirror image of its left half, so it is exactly the same on both sides whatever the size. */
@@ -176,6 +199,7 @@ typedef struct {
     float note[8], beam[8]; /* ICON_NOTE: lx, ly, rx, ry, top_l, top_r, head radius, stem width; the beam polygon */
     float cone[8];          /* ICON_SPEAKER: the cone polygon */
     float u;                /* ICON_SPEAKER: pixels per design unit */
+    float fold[3];          /* ICON_FOLDER: the tab's width, the tab's height, the corner radius (the picture is w * h) */
 } Shape;
 
 /* The music note, as it was always drawn from separate pieces, but as one shape: two heads, two stems
@@ -235,6 +259,16 @@ static float sd_library(const LibGeo *g, float px, float py)
     return fminf(fmaxf(squares, g->rim - ctrl), ctrl);
 }
 
+/* The folder: the body (the whole picture below the tab's height) and the tab (a rounded box from the top that reaches down into the
+ * body), as one shape, so that where they meet nothing is blended twice. (px, py) is measured from the middle of the picture. */
+static float sd_folder(const Shape *p, float px, float py)
+{
+    float tw = p->fold[0], th = p->fold[1], r = p->fold[2], w = p->w, h = p->h;
+    float body = sd_rbox(px, py - th / 2, w / 2, (h - th) / 2, r);
+    float tab = sd_rbox(px + (w - tw) / 2, py + h / 2 - (th + 2 * r) / 2, tw / 2, (th + 2 * r) / 2, r);
+    return fminf(body, tab);
+}
+
 /* The bolt: a zigzag 2 r high, drawn with the corners in this order (the units are 1/5.2 r). */
 static void bolt_polygon(float r, float *v)
 {
@@ -280,6 +314,8 @@ static float shape_distance(const Shape *p, float px, float py)
         return sd_speaker(p, px, py);
     case ICON_LIBRARY:
         return sd_library(&p->lib, px, py);
+    case ICON_FOLDER:
+        return sd_folder(p, px, py);
     default: /* ICON_GEAR */
         return fmaxf(sd_poly(p->gear, GEAR_PTS, px, py), -(len2(px, py) - 0.34f * p->r));
     }
@@ -310,6 +346,13 @@ void icon_render(int kind, float w, float h, float r, float cx, float cy, int tw
         speaker_shape(r / 4.5f, &sh);
     if (kind == ICON_LIBRARY)
         library_geo((int)(h + 0.5f), &sh.lib);
+    if (kind == ICON_FOLDER) {
+        int tab_w, tab_h, rad;
+        folder_dims((int)(w + 0.5f), (int)(h + 0.5f), &tab_w, &tab_h, &rad);
+        sh.fold[0] = (float)tab_w;
+        sh.fold[1] = (float)tab_h;
+        sh.fold[2] = (float)rad;
+    }
     if (kind == ICON_TRI_R || kind == ICON_TRI_L) { /* the tip is in the middle of the far side */
         float d = kind == ICON_TRI_R ? 1.0f : -1.0f;
         const float t[6] = { -d * w / 2, -h / 2, d * w / 2, 0, -d * w / 2, h / 2 };
@@ -326,6 +369,8 @@ void icon_render(int kind, float w, float h, float r, float cx, float cy, int tw
     int fine = kind == ICON_BOLT || kind == ICON_TRI_R || kind == ICON_TRI_L || kind == ICON_NOTE || kind == ICON_SPEAKER;
     if (kind == ICON_LIBRARY && h < 32)
         fine = 1; /* its corners are a pixel or two across at the small size */
+    if (kind == ICON_FOLDER && h < 24)
+        fine = 1; /* the same for the folder */
     int ss = feature < 2.5f || fine ? 4 : 1;
     for (int y = 0; y < th; y++) {
         for (int x = 0; x < tw; x++) {

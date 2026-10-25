@@ -719,6 +719,24 @@ void gfx_library_icon(int l, int t, int w, int h, u32 color)
     gfx_round_rect(x + 27 * u, y + 41 * u, 56 * u, 27 * u, 12 * u, color);
 }
 
+/* A folder card's picture: from the cache above (a folder is a few hundred pixels and two rounded boxes, cheap to make), and if there is
+ * no room, two plain rounded rectangles. */
+void gfx_folder_icon(int l, int t, int w, int h, u32 color, FolderPic *pic)
+{
+    FolderPic p;
+    icon_folder_pic(l, t, w, h, &p);
+    if (pic)
+        *pic = p;
+    IconBox b = { p.w, p.h, p.x, p.y, p.w / 2.0f, p.h / 2.0f, 0, 0 };
+    const Texture *tex = cache_get(ICON_FOLDER, p.w * 4, p.h * 4, 0, 0, 0, p.w, p.h, p.w / 2.0f, p.h / 2.0f);
+    if (tex) {
+        icon_blit(tex, &b, color);
+        return;
+    }
+    gfx_round_rect(p.x, p.y, p.tab_w, p.tab_h + 2 * p.r, p.r, color);
+    gfx_round_rect(p.x, p.y + p.tab_h, p.w, p.h - p.tab_h, p.r, color);
+}
+
 void gfx_button(float cx, float cy, float r, int kind, u32 plate, u32 mark)
 {
     static const int symbol[] = { ICON_CROSS, ICON_CIRCLE, ICON_TRIANGLE, ICON_SQUARE }; /* BTN_* */
