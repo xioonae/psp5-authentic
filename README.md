@@ -32,7 +32,7 @@ this fork does it the same way. This is version 1.1.0 (1.0.0 was the first relea
 ## What you get
 
 - **Games (Home).** Your last played games and apps plus the ones you pinned, in one row. The selected card is big, with its
-  artwork behind it. ↓ selects the **Start** and **⋯** (options) buttons. A UMD in the drive shows up first.
+  artwork behind it. ↓ selects the **Play** and **⋯** (options) buttons. A UMD in the drive shows up first.
 - **Time played.** A small clock with the time (*54h* or *45min*) on the right of the bottom row, in Games and in the Library. It
   counts only when psp5 is ARK's launcher (see *Optional: replace ARK's Custom Launcher with psp5* in `INSTALL.md`; *Settings → psp5* says
   *psp5 is ARK's launcher: Yes*): ARK then starts psp5 again when a game ends. Started as a normal app, the PSP goes back to the XMB after a game and nothing is counted.
@@ -71,7 +71,7 @@ Games and apps use their own icon and background automatically. If you want your
 | Button | What it does |
 |---|---|
 | ← → or the analog stick | Move between cards (hold to go faster) |
-| ↑ ↓ | Move between rows in the Library · in Games, ↓ selects Start / ⋯ and ↑ goes back |
+| ↑ ↓ | Move between rows in the Library · in Games, ↓ selects Play / ⋯ and ↑ goes back |
 | ↑ from the first thing on a tab | Select the top bar (tabs, cog wheel): ← → move, ✕ opens, ↓ goes back down |
 | ✕ | Start a game · open the Library from its card · open a tab or Settings from the top bar |
 | ○ | Back · closes the Library |

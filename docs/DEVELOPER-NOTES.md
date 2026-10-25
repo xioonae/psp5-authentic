@@ -88,7 +88,7 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
   - *Strings* (`lang.c`): `S_LIB_ALL` says "All" (it was "All games and apps"), `S_LIB_IN` "In folders", `S_LIB_OUT` "Outside of folders",
     `S_LIB_BOTH` "Both in and out of folders" (no colon in the string: `lib_header` adds it), new `S_LIB_NO_IN`, `S_LIB_NO_OUT`; `S_SORT` says
     "Sort by" ("Sorteren op", "Trier par" ... in Czech and Japanese unchanged: "Seřadit", 並べ替え); it is also the word of the Sort button in
-    Saved Data (`saves.c`). New `S_UNIT_H` / `S_UNIT_MIN` for the time played. The translations (11 languages) are mine and have not
+    Saved Data (`saves.c`). New `S_UNIT_H` / `S_UNIT_MIN` for the time played. `S_LAUNCH` (the button under the selected card in Games, the only place that uses it) says "Play" (was "Start"; the id keeps its name); the Library card's button is still `S_F_OPEN`. The translations (11 languages) are mine and have not
     been checked by native speakers. 169 strings now. `LibHeader.sort` is 96 bytes: Russian "Сортировать по: Недавно добавленные" is 66
     bytes, and with 64 it was cut in the middle of a letter (found by `library_test`: the Sort frame has to be as wide as the whole text).
   - *Kept between starts* (`config.c`): `libsort=0|1` and `libview=0..3` in `psp5.cfg` (`g_lib_sort`, `g_lib_view`); `ui_init` reads
@@ -126,10 +126,11 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
   - *The pill* (`ui.c`, `draw_play_pill`; `PILL_H` 26, `PILL_PAD` 12, `CLOCK_D` 12, `CLOCK_GAP` 6, text size 0.66, baseline `by + 17.5` like
     *Start*): drawn with `button_bg` (the dark pill of the bottom-row buttons, never selected), a white face (`gfx_circle`, 12 px) with two
     dark hands (1 x 5 up from the middle and 4 x 1 to the left, `gfx_rect`, whole pixels) and the text, its right edge at `SCREEN_W - MARGIN`
-    (456); in the Games tab (`draw_details`) opposite *Start* / Options (the pill is clear of the Options circle by at least 10 px in all
+    (456); in the Games tab (`draw_details`) opposite *Play* / Options (the pill is clear of the Options circle by at least 10 px in all
     11 languages), in the Library (bottom row) opposite the tag and the title, whose room `max_w` is 12 px less than the pill (the cache of
     the shortened title, `lib_label`, also remembers its room: `lib_label_room`). Nothing is drawn for a text that is empty (never played,
-    under a minute), a folder card, or the Library card. `play_text()` looks the seconds up once per selected game (`pt_for`, `pt_secs`; reset
+    under a minute), a folder card, or the Library card (`play_text()` returns "" for every negative card number, so no lookup is made for
+    the launcher's own cards, pinned or not; `library_test` puts lines for "Library", "?library", "PSP5" in playtime.txt to prove it). `play_text()` looks the seconds up once per selected game (`pt_for`, `pt_secs`; reset
     next to every `lib_label_for = -2`) and makes the text at every draw, so a language changed in Settings is followed.
   - *Limits*: only the time between the start of the game and the next start of psp5 is known, so whatever happens in between is in it
     (a PSP that sleeps while the game runs is counted only if the system clock keeps running during sleep - the smaller of the two clocks is

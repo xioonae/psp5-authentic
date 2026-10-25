@@ -13,8 +13,8 @@ static int s_lang = LANG_EN;
 
 static const char *const T[S_COUNT][NL] = {
     [S_TAB_GAMES] = { "Games", "Spel", "Spiele", "Jeux", "Juegos", "Giochi", "Games", "Jogos", "Игры", "ゲーム", "Hry" },
-    [S_LAUNCH] = { "Start", "Starta", "Starten", "Lancer", "Iniciar", "Avvia", "Starten", "Iniciar", "Запуск", "スタート",
-                   "Spustit" },
+    [S_LAUNCH] = { "Play", "Spela", "Spielen", "Jouer", "Jugar", "Gioca", "Spelen", "Jogar", "Играть", "プレイ",
+                   "Hrát" },
     [S_SETTINGS] = { "Settings", "Inställningar", "Einstellungen", "Paramètres", "Ajustes", "Impostazioni",
                      "Instellingen", "Definições", "Настройки", "設定", "Nastavení" },
     [S_NO_GAMES] = { "No games found", "Inga spel hittades", "Keine Spiele gefunden", "Aucun jeu trouvé",
