@@ -16,7 +16,8 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   - **Only games/apps out of folders** – only what is not in any folder.
   - **Both games/apps in and out of folders** – the folders first, then the games and apps that are in no folder (the UMD disc stays
     first of all).
-  A folder card is in your theme's colour with a folder drawn by the launcher and the folder's first letter in it, as a capital (two
+  A folder card is in your theme's colour with a folder drawn by the launcher (a wide folder with a soft, rounded tab, shaped after a
+  folder picture the maintainer chose) and the folder's first letter in the middle of it, as a capital (two
   letters for a pair like *Ch*). Its name is in the bottom row, where a game's name is, with the tag *Folder*. The folders are sorted
   by the Sort button like games (by name, or the folder with the newest game first). Folder names are shown the way the
   Categories Lite plugin shows them: without `CAT_` and without the two sort digits (`01Racing` is *Racing*). Folders with the
