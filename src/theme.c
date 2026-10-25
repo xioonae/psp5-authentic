@@ -331,10 +331,10 @@ void theme_backdrop(const Theme *t, float time, float a)
         s_scene.valid = 1;
     }
     gfx_snapshot_draw();
-    /* the old consoles' shapes move, so they are drawn on top every frame; the PS1 symbols sit at the top right, where no list is
-     * (the same on every screen) */
+    /* the old consoles' shapes move, so they are drawn on top every frame; the PS1 symbols sit at the right, below the row of cards
+     * of Home and clear of the clock and the battery (the same on every screen) */
     switch (t->deco) {
-    case DECO_PS1: deco_ps1(time, a, 418, 30, 0.6f); break;
+    case DECO_PS1: deco_ps1(time, a, 418, 130, 0.6f); break;
     case DECO_PS2: deco_ps2(time, a); break;
     case DECO_PS3: deco_ps3(time, a); break;
     case DECO_PS4: deco_ps4(time, a); break;

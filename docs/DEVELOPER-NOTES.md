@@ -24,7 +24,19 @@ into psp5 instead of the XMB.
 
 All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`) until the next version is released.
 
-(Nothing yet.)
+- **PS1 theme: the symbols moved down** (`theme.c`, `theme_backdrop`): `deco_ps1(time, a, 418, 30, 0.6f)` became
+  `deco_ps1(time, a, 418, 130, 0.6f)`; only the centre's y changed (x 418 and the size 0.6 are as before). At y = 30 the group
+  (a diamond of four symbols, `d` = 14.4 px from the centre, `r` = 6.3 px, a glow of 8 px, a bob of +-2 px) covered about y 8..52
+  and sat right behind the clock (`text_draw` at y 25, x 416..456) and the battery (`bx` about 384, y 15..), so the symbols were
+  half hidden. At y = 130 it covers about y 101..160 and x 395..441: below Home's row of cards (`ROW_Y` 38 + `BIG_H` 62 = 100,
+  titles end at about 99) and above the bottom row (`BOTTOM_Y` 243, Start and Options are at the left). Still one place on every
+  screen, because `theme_backdrop` draws it for all of them. Looked at in PC test frames of Home and of the Library (a copy of
+  `ui/menu_test.c` with `g_theme` = 12; not on a PSP): on Home it is clear of everything; in the Library it is fainter than on
+  Home because of the Library's own darkening (`DIM_COLOR`, as before the move), and the grid cards of the second row (from the 10th
+  game on, worked out from `GRID_Y` / `ROW_STEP` / `CELL_W`, not drawn) sit over most of it. The Settings, file manager,
+  Information and Manage Saved Data lists were not looked at one by one: their rows are drawn over the symbols.
+  `host-tests/gfx/theme_test.c` (not under git) now checks that the symbols change pixels at x >= 380, y 100..165 (more than 300),
+  none at x < 300, none in the top 100 rows and none in the bottom 42.
 
 ## Version 1.1.0 (psp5-authentic)
 
