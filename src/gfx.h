@@ -77,6 +77,10 @@ void gfx_library_icon(int l, int t, int w, int h, u32 color);
  * way: one image for exactly this size, on whole pixels. `pic` (can be NULL) gets where it went and how it is built, so that the
  * letter of the folder can be put in the middle of its body. */
 void gfx_folder_icon(int l, int t, int w, int h, u32 color, FolderPic *pic);
+/* Where the capital letter of a folder (one letter or a pair like "Ch") goes on the folder that gfx_folder_icon has just drawn (`pic` is what it
+ * gave back), in the middle of its body (the part under the tab): the point to give text_draw with ALIGN_CENTER (the middle of the letter sideways, and
+ * its baseline: half the height of a capital below the middle of the body) and the size of the text. Whole pixels. */
+void gfx_folder_letter_at(const FolderPic *pic, float *x, float *y, float *size);
 
 /* Additiv blandning (ljus som lyser upp det som redan ritats) på/av */
 void gfx_blend_add(int on);

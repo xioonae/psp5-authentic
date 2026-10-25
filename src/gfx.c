@@ -733,8 +733,25 @@ void gfx_folder_icon(int l, int t, int w, int h, u32 color, FolderPic *pic)
         icon_blit(tex, &b, color);
         return;
     }
-    gfx_round_rect(p.x, p.y, p.tab_w, p.tab_h + 2 * p.r, p.r, color);
+    gfx_round_rect(p.x, p.y, p.tab_w, p.tab_h + 2 * p.tab_rl, p.tab_rl, color);
     gfx_round_rect(p.x, p.y + p.tab_h, p.w, p.h - p.tab_h, p.r, color);
+}
+
+/* The height of a capital letter of the system font is 13.7 px at size 1.0 (measured on the README screenshots, which PPSSPP made with the
+ * real font: the A of the Library title at size 0.66 is 9 px high, the clock's digits at 0.8 are 11 px). */
+#define CAP_HEIGHT 13.7f
+
+void gfx_folder_letter_at(const FolderPic *pic, float *x, float *y, float *size)
+{
+    float body = (float)(pic->h - pic->tab_h);
+    float s = 0.037f * body; /* a capital is then about half as high as the body */
+    float cx = pic->x + pic->w / 2.0f;
+    float cy = pic->y + pic->tab_h + body / 2.0f; /* (the middle of the body, the part under the tab: that is what the eye centres on) */
+    /* text_draw with ALIGN_CENTER puts the middle of the letter (its advance) at x and its foot on the baseline y: the middle of a capital
+     * is half a capital above that. Both on whole pixels, as the letters of the rest of the Library are. */
+    *x = floorf(cx + 0.5f);
+    *y = floorf(cy + CAP_HEIGHT * s / 2 + 0.5f);
+    *size = s;
 }
 
 void gfx_button(float cx, float cy, float r, int kind, u32 plate, u32 mark)

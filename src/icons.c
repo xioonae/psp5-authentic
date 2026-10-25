@@ -89,27 +89,39 @@ void icon_box(int kind, float cx, float cy, float w, float h, float r, IconBox *
     b->cy = b->th / 2.0f + qy * 0.5f;
 }
 
-/* The folder: the picture is `h` pixels high and about 1.3 times as wide; the tab is a fifth of the height, the corners 1/8. */
-static void folder_dims(int w, int h, int *tab_w, int *tab_h, int *r)
+/* The folder, drawn like the folder picture it was made after (a folder icon with a wide tab and big soft corners): the picture is `h` pixels
+ * high and 1.38 times as wide. The tab sticks up 16 % of the height above the body and is 45 % of the width wide; the body's corners are 17 %
+ * of the height, the tab's top left corner (the folder's own top left corner) 31 % and its top right corner 23 %: a big soft shoulder
+ * that runs down into the top edge of the body. The numbers were found by fitting this shape to the picture (to within a quarter of a
+ * pixel at 23 pixels high). */
+static void folder_dims(int w, int h, int *tab_w, int *tab_h, int *r, int *rl, int *rr)
 {
-    *tab_w = (int)floorf(w * 0.42f + 0.5f);
-    *tab_h = (int)floorf(h * 0.22f + 0.5f);
-    *r = (int)floorf(h * 0.13f + 0.5f);
+    *tab_w = (int)floorf(w * 0.45f + 0.5f);
+    *tab_h = (int)floorf(h * 0.16f + 0.5f);
+    *r = (int)floorf(h * 0.17f + 0.5f);
+    *rl = (int)floorf(h * 0.31f + 0.5f);
+    *rr = (int)floorf(h * 0.23f + 0.5f);
     if (*tab_h < 3)
         *tab_h = 3;
     if (*r < 2)
         *r = 2;
-    if (*r > *tab_h)
-        *r = *tab_h;
+    if (*rl > *tab_w / 2) /* (each of the two corners of the tab is at most half of it: the flat top between them is never negative) */
+        *rl = *tab_w / 2;
+    if (*rr > *tab_w / 2)
+        *rr = *tab_w / 2;
+    if (*rl < *r)
+        *rl = *r;
+    if (*rr < *r)
+        *rr = *r;
 }
 
 void icon_folder_pic(int l, int t, int w, int h, FolderPic *p)
 {
     p->h = (int)floorf(h * 0.66f + 0.5f);
-    p->w = (int)floorf(p->h * 1.3f + 0.5f);
+    p->w = (int)floorf(p->h * 1.38f + 0.5f);
     p->x = l + (w - p->w + 1) / 2; /* centred, on whole pixels (the odd pixel goes to the left, as with the Library picture) */
     p->y = t + (h - p->h + 1) / 2;
-    folder_dims(p->w, p->h, &p->tab_w, &p->tab_h, &p->r);
+    folder_dims(p->w, p->h, &p->tab_w, &p->tab_h, &p->r, &p->tab_rl, &p->tab_rr);
 }
 
 /* The Library picture, in whole pixels from its top left corner. The design is 83 x 77 units: six squares (19 on a pitch of 25) and the
@@ -199,7 +211,7 @@ typedef struct {
     float note[8], beam[8]; /* ICON_NOTE: lx, ly, rx, ry, top_l, top_r, head radius, stem width; the beam polygon */
     float cone[8];          /* ICON_SPEAKER: the cone polygon */
     float u;                /* ICON_SPEAKER: pixels per design unit */
-    float fold[3];          /* ICON_FOLDER: the tab's width, the tab's height, the corner radius (the picture is w * h) */
+    float fold[5];          /* ICON_FOLDER: the tab's width, the tab's height, the body's corner radius, the tab's two top corner radii (the picture is w * h) */
 } Shape;
 
 /* The music note, as it was always drawn from separate pieces, but as one shape: two heads, two stems
@@ -259,13 +271,25 @@ static float sd_library(const LibGeo *g, float px, float py)
     return fminf(fmaxf(squares, g->rim - ctrl), ctrl);
 }
 
-/* The folder: the body (the whole picture below the tab's height) and the tab (a rounded box from the top that reaches down into the
- * body), as one shape, so that where they meet nothing is blended twice. (px, py) is measured from the middle of the picture. */
+/* A box whose top left and top right corners have the radii rl and rr and whose bottom corners are square (centred on the origin, half
+ * sizes hx, hy). Exact as long as rl and rr are at most hx (and at most hy). */
+static float sd_rbox_top(float px, float py, float hx, float hy, float rl, float rr)
+{
+    float r = px > 0 ? (py < 0 ? rr : 0) : (py < 0 ? rl : 0);
+    float qx = fabsf(px) - hx + r, qy = fabsf(py) - hy + r;
+    return len2(fmaxf(qx, 0), fmaxf(qy, 0)) + fminf(fmaxf(qx, qy), 0) - r;
+}
+
+/* The folder: the body (the whole picture below the tab's height) and the tab (a box from the top, with its two top corners rounded,
+ * that reaches down into the body far enough to cover the body's top left corner), as one shape, so that where they meet nothing is
+ * blended twice. (px, py) is measured from the middle of the picture. */
 static float sd_folder(const Shape *p, float px, float py)
 {
-    float tw = p->fold[0], th = p->fold[1], r = p->fold[2], w = p->w, h = p->h;
+    float tw = p->fold[0], th = p->fold[1], r = p->fold[2], rl = p->fold[3], rr = p->fold[4], w = p->w, h = p->h;
     float body = sd_rbox(px, py - th / 2, w / 2, (h - th) / 2, r);
-    float tab = sd_rbox(px + (w - tw) / 2, py + h / 2 - (th + 2 * r) / 2, tw / 2, (th + 2 * r) / 2, r);
+    /* (the tab is at least as high as two of its corners, which sd_rbox_top needs; its bottom edge is in the body, on its straight left side) */
+    float depth = fminf(fmaxf(2 * fmaxf(rl, rr), th + r + 1), h - r);
+    float tab = sd_rbox_top(px + (w - tw) / 2, py + h / 2 - depth / 2, tw / 2, depth / 2, rl, rr);
     return fminf(body, tab);
 }
 
@@ -347,11 +371,13 @@ void icon_render(int kind, float w, float h, float r, float cx, float cy, int tw
     if (kind == ICON_LIBRARY)
         library_geo((int)(h + 0.5f), &sh.lib);
     if (kind == ICON_FOLDER) {
-        int tab_w, tab_h, rad;
-        folder_dims((int)(w + 0.5f), (int)(h + 0.5f), &tab_w, &tab_h, &rad);
+        int tab_w, tab_h, rad, rl, rr;
+        folder_dims((int)(w + 0.5f), (int)(h + 0.5f), &tab_w, &tab_h, &rad, &rl, &rr);
         sh.fold[0] = (float)tab_w;
         sh.fold[1] = (float)tab_h;
         sh.fold[2] = (float)rad;
+        sh.fold[3] = (float)rl;
+        sh.fold[4] = (float)rr;
     }
     if (kind == ICON_TRI_R || kind == ICON_TRI_L) { /* the tip is in the middle of the far side */
         float d = kind == ICON_TRI_R ? 1.0f : -1.0f;

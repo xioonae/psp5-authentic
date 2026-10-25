@@ -66,9 +66,21 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
     folder's name; an empty view shows `S_LIB_NO_IN` / `S_LIB_NO_OUT` at (24, 120), size 0.9.
   - *The folder picture* (`icons.c`, `ICON_FOLDER`, `icon_folder_pic`, `gfx_folder_icon`): one image per size like `ICON_LIBRARY`: a body
     and a tab joined by the smaller of two signed distances, so there is one anti-aliased image (no double blending while it fades);
-    the height is about 2/3 of the card's, the width 1.3 x, the tab a fifth of the height and the corners 1/8. All straight edges are
-    on whole pixels (fine sampling under 24 px). It is cheap, so it goes through the normal icon cache (`cache_get`), not the baked
-    pool of the Library picture.
+    the height is about 2/3 of the card's. The shape follows a folder icon the maintainer sent (47 x 34 px): the numbers were found by
+    fitting this shape to that picture (a blur of 0.48 px on the shape, least squares over the pixels; the fit is within a quarter of a
+    pixel at 23 px high): width 1.38 x the height; the tab sticks up 16 % of the height above the body and is 45 % of the width wide;
+    the body's corners (the two at the bottom and the top right one) have 17 % of the height as radius, the tab's top left corner (which is
+    also the folder's top left corner, so the body's own corner there is hidden) 31 % (at most half the tab) and its top right corner 23 %:
+    a soft shoulder that runs down into the top edge of the body. `FolderPic` has `r`, `tab_rl`, `tab_rr` for the three radii; the tab is a
+    box with two rounded top corners (`sd_rbox_top`, exact when the box is at least twice as high as its radii: it reaches down into the body
+    that far). All straight edges are on whole pixels (fine sampling under 24 px). It is cheap, so it goes through the normal icon cache
+    (`cache_get`), not the baked pool of the Library picture.
+  - *The letter on the folder* (`gfx_folder_letter_at` in `gfx.c`, drawn by `draw_card`): in the middle of the body (the part under the
+    tab): sideways text_draw's ALIGN_CENTER (the advance of the letter centred), up and down half a capital (13.7 x the size / 2) above the
+    baseline, both on whole pixels, size 0.037 x the height of the body. The height of a capital, 13.7 px at size 1.0, was measured on the
+    README screenshots (PPSSPP, the real PSP font): the A of the Library title at size 0.66 is 9 px high, the clock's digits at 0.8 are
+    11 px. (Before, the baseline was 7 x the size below the middle, and the mock drew the single letter wrongly, to the right of its place:
+    the mock spreads the letters over 6 px a byte, so the letter looked off centre in the readable test frames.)
   - *Strings* (`lang.c`): `S_LIB_ALL` now says "All games/apps without folders" (it was "All games and apps"), new `S_LIB_IN`,
     `S_LIB_OUT`, `S_LIB_BOTH`, `S_LIB_NO_IN`, `S_LIB_NO_OUT`; the translations (11 languages) are mine and have not been checked by
     native speakers. 167 strings now.
@@ -77,7 +89,10 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
     first one.
   - *Tests* (`host-tests`, not under git): `units/folders_test.c` (paths, names, letters, merging), `ui/library_test.c` (new: all views and
     sorts, the button and popup, opening and closing, the empty views, a deleted game, `psp5.cfg`, drawn letters and the row in
-    11 languages), `ui/folder_fixture.h`, `icons/foldertest.py`; `ui/menu_test.c` and `ui/pixel_test.c` changed for the view button
+    11 languages), `ui/folder_fixture.h`, `icons/foldertest.py` (the shape and the fractions of the fit), `gfx/foldertext_test.c` (the ink of the capital letters
+    A-Z and 0-9 in the folder body at the seven Library card sizes: within a pixel of the middle sideways and up and down, on average within a
+    third of a pixel; with `MOCK_REAL=1` the mock measures text by the advances of its letters and draws it at the real size, so the test needs
+    the atlas from `mkatlas.py`; the PC font's letters are shaped like the PSP's but are not the same); `ui/menu_test.c` and `ui/pixel_test.c` changed for the view button
     (↑ from the first card is the view button; one card has the view button but no Sort button) and draw every view, every folder
     card, the popup and an open folder through the whole-pixel check. Measured on a PC only. The mock measures Cyrillic and Japanese
     as 2 and 3 bytes of 6 px, wider than the real font, so how much of the label is cut in Russian and Japanese on a real PSP is not known.

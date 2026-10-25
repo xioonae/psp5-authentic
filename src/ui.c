@@ -1563,8 +1563,9 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
             if (n < ui->folders.count) {
                 char initial[FOLDER_INITIAL_MAX];
                 folder_initial(ui->folders.items[n].name, initial, sizeof(initial));
-                float body = (float)(pic.h - pic.tab_h), size = 0.037f * body; /* a capital is about half the height of the body */
-                text_draw(floorf(pic.x + pic.w / 2.0f + 0.5f), floorf(pic.y + pic.tab_h + body / 2 + 7.0f * size + 0.5f), size, 0, cc_a, ALIGN_CENTER, initial);
+                float lx, ly, ls;
+                gfx_folder_letter_at(&pic, &lx, &ly, &ls);
+                text_draw(lx, ly, ls, 0, cc_a, ALIGN_CENTER, initial);
             }
         } else {
             gfx_round_rect(x, y, w, h, r, RGBA((cc & 0xFF) + (int)(10 * breath), ((cc >> 8) & 0xFF) + (int)(10 * breath),

@@ -63,7 +63,8 @@ typedef struct {
     int x, y, w, h;   /* the picture, in screen pixels */
     int tab_w;        /* the tab: as wide as this, from the left edge */
     int tab_h;        /* the body's top edge is this far below the picture's top edge (the tab is this high) */
-    int r;            /* corner radius */
+    int r;            /* radius of the body's corners (the bottom two and the top right one) */
+    int tab_rl, tab_rr; /* radius of the tab's top left corner (it is also the corner of the whole folder) and of its top right corner */
 } FolderPic;
 void icon_folder_pic(int l, int t, int w, int h, FolderPic *p);
 
