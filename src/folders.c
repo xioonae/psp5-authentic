@@ -172,6 +172,40 @@ void folder_initial(const char *name, char *out, int size)
     }
 }
 
+void folder_upper(const char *s, char *out, int size)
+{
+    int n = 0;
+    if (size <= 0)
+        return;
+    for (const unsigned char *p = (const unsigned char *)s; *p;) {
+        unsigned c = *p;
+        int len = c >= 0xF0 ? 4 : c >= 0xE0 ? 3 : c >= 0xC0 ? 2 : 1;
+        int ok = 1;
+        for (int i = 1; i < len; i++)
+            if ((p[i] & 0xC0) != 0x80) { /* damaged UTF-8: the byte is copied as it is */
+                ok = 0;
+                break;
+            }
+        char buf[4];
+        int m;
+        if (!ok || len == 4) { /* (a letter outside every alphabet here, or damage: unchanged) */
+            m = ok ? 4 : 1;
+            memcpy(buf, p, m);
+        } else {
+            c = len == 3 ? c & 0x0F : len == 2 ? c & 0x1F : c;
+            for (int i = 1; i < len; i++)
+                c = (c << 6) | (p[i] & 0x3F);
+            m = put_utf8(buf, upper_of(c));
+        }
+        if (n + m >= size)
+            break;
+        memcpy(out + n, buf, m);
+        n += m;
+        p += ok ? len : 1;
+    }
+    out[n] = 0;
+}
+
 /* --- all the folders --- */
 
 typedef struct {

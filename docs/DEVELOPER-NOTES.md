@@ -53,7 +53,9 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
     does nothing on a folder. New `view_anim` / `view_frame` like `sort_anim` / `sort_frame` (`sort_anim` now only follows
     `lib_focus == 1`).
   - *The row at the top* (`lib_header`, used by the drawing and by the ↑ choice): the view button's text is the name of the view
-    (`S_LIB_ALL`, `S_LIB_IN`, `S_LIB_OUT`, `S_LIB_BOTH`), or inside a folder the folder's name without a frame; size 0.66, smaller
+    (`S_LIB_ALL`, `S_LIB_IN`, `S_LIB_OUT`, `S_LIB_BOTH`) **with a ":" after it** ("All: 15"), or inside a folder the folder's name with a ":"
+    ("Racing: 3"), without a frame; the number of cards is *inside* the frame now (`view_r` = the end of the number + `SORT_PAD`), a
+    space (`gap`, whole pixels) after the colon; size 0.66, smaller
     (`text_fit`, down to 0.45) when it does not fit in the room left of the Sort button (12 px gap, the number of cards 8 px after the
     text); when even 0.45 is too wide next to the number, the number is dropped, then the end of the text is cut ("..."). The frame is
     `SORT_PAD` (9 px) wider than the text on each side and 22 px high, on the same line as the Sort frame
@@ -62,7 +64,9 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
     label + 32 (at least 200, at most 450).
   - *Drawing*: the folder card is a card in the theme's colour (`theme_cur()->card`, like the Library card) with `gfx_folder_icon` in a
     light grey (200 .. 255 with the focus) and the letter in the card's colour, size 0.037 x the height of the body (a capital is about half of it), on
-    whole pixels, centred in the body. In the bottom row the tag is `L(S_I_FOLDER)` ("Folder", an existing string) and the title is the
+    whole pixels, centred in the body. In the bottom row the tag is `L(S_I_FOLDER)` ("Folder", an existing string, used as it is by the Information screen) **in capitals**:
+    `folder_upper()` (`folders.c`, UTF-8: ASCII, Latin-1, Latin Extended-A, Greek, Cyrillic; Japanese and anything else as it is, a
+    damaged or 4-byte sequence is copied unchanged) turns it into "FOLDER" like the tags PSP / APP, in every language; the title is the
     folder's name; an empty view shows `S_LIB_NO_IN` / `S_LIB_NO_OUT` at (24, 120), size 0.9.
   - *The folder picture* (`icons.c`, `ICON_FOLDER`, `icon_folder_pic`, `gfx_folder_icon`): one image per size like `ICON_LIBRARY`: a body
     and a tab joined by the smaller of two signed distances, so there is one anti-aliased image (no double blending while it fades);
@@ -81,9 +85,12 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
     README screenshots (PPSSPP, the real PSP font): the A of the Library title at size 0.66 is 9 px high, the clock's digits at 0.8 are
     11 px. (Before, the baseline was 7 x the size below the middle, and the mock drew the single letter wrongly, to the right of its place:
     the mock spreads the letters over 6 px a byte, so the letter looked off centre in the readable test frames.)
-  - *Strings* (`lang.c`): `S_LIB_ALL` now says "All games/apps without folders" (it was "All games and apps"), new `S_LIB_IN`,
-    `S_LIB_OUT`, `S_LIB_BOTH`, `S_LIB_NO_IN`, `S_LIB_NO_OUT`; the translations (11 languages) are mine and have not been checked by
-    native speakers. 167 strings now.
+  - *Strings* (`lang.c`): `S_LIB_ALL` says "All" (it was "All games and apps"), `S_LIB_IN` "In folders", `S_LIB_OUT` "Outside of folders",
+    `S_LIB_BOTH` "Both in and out of folders" (no colon in the string: `lib_header` adds it), new `S_LIB_NO_IN`, `S_LIB_NO_OUT`; `S_SORT` says
+    "Sort by" ("Sorteren op", "Trier par" ... in Czech and Japanese unchanged: "Seřadit", 並べ替え); it is also the word of the Sort button in
+    Saved Data (`saves.c`). New `S_UNIT_H` / `S_UNIT_MIN` for the time played. The translations (11 languages) are mine and have not
+    been checked by native speakers. 169 strings now. `LibHeader.sort` is 96 bytes: Russian "Сортировать по: Недавно добавленные" is 66
+    bytes, and with 64 it was cut in the middle of a letter (found by `library_test`: the Sort frame has to be as wide as the whole text).
   - *Kept between starts* (`config.c`): `libsort=0|1` and `libview=0..3` in `psp5.cfg` (`g_lib_sort`, `g_lib_view`); `ui_init` reads
     them, `set_sort` / `set_view` write them with `config_save()` (the buffer is 192 bytes now). A value that does not exist is the
     first one.
@@ -94,8 +101,46 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
     third of a pixel; with `MOCK_REAL=1` the mock measures text by the advances of its letters and draws it at the real size, so the test needs
     the atlas from `mkatlas.py`; the PC font's letters are shaped like the PSP's but are not the same); `ui/menu_test.c` and `ui/pixel_test.c` changed for the view button
     (↑ from the first card is the view button; one card has the view button but no Sort button) and draw every view, every folder
-    card, the popup and an open folder through the whole-pixel check. Measured on a PC only. The mock measures Cyrillic and Japanese
+    card, the popup and an open folder through the whole-pixel check (`menu_test.c`'s check "↑ from the first row selects the nearest
+    button" now takes the two frames from what is drawn, because the mock makes the Russian Sort button as wide as the row). Measured on a PC only. The mock measures Cyrillic and Japanese
     as 2 and 3 bytes of 6 px, wider than the real font, so how much of the label is cut in Russian and Japanese on a real PSP is not known.
+- **Time played** (`playtime.c` / `playtime.h` new, `main.c`, `ui.c`, `ui.h`, `lang.c`, `Makefile`).
+  - *What is known*: psp5 is not running while a game is. In launcher mode (`sys_is_launcher()`) ARK starts psp5 again when the game ends,
+    and the existing `ingame` marker (`<DATA_DIR>/ingame`, created before the launch, removed at the start so that the start-up screen
+    is skipped) is the place for the start. As a normal app the PSP goes back to the XMB and psp5 is not started again: no marker is
+    written (`set_ingame_mark` only in launcher mode) and nothing is counted.
+  - *The marker*: `playtime_mark_write(path, entry, sys_us, rtc_us)` writes `psp5-ingame 1\nsys N\nrtc N\nkey NAME\n`: the two clocks
+    (`sceKernelGetSystemTimeWide()` and `sceRtcGetCurrentTick()`, both microseconds) and the key of the game (`entry_cover_key()`: the
+    disc ID of an ISO/UMD, else the folder name of an EBOOT or the file name without the extension; a game that is in two places is one).
+    `playtime_mark_take()` (first thing in `main`, before `app_start`, replaces the old `take_ingame_mark`) removes the file, returns 1 if there
+    was one, and adds the time to the game: the smaller of the two clocks' differences, a clock that went backwards (a restart of the PSP; the
+    real-time clock set back) is not used, and a session under `PLAYTIME_MIN_SECS` (10 s) or over `PLAYTIME_MAX_SECS` (a day) adds nothing. An
+    empty marker (written by an older psp5), a marker cut off anywhere (the key line must end with a newline), a number that is too big
+    or a name that is too long are all "a game ended, nothing to add". `%llu` is not used in `printf` (the PSP's libc): the numbers are
+    written and read by hand.
+  - *The file* `<DATA_DIR>/playtime.txt`: a line per game `"<seconds> <key>"`, up to 4096 games (the first wins when a name is there twice; a full
+    table takes no new game but keeps the others; CRLF is fine; a bad line is skipped). It is written when a session is added
+    (whole file, `sceIoOpen` + write). Sums stop at `0xFFFFFF00` (no overflow).
+  - *The text* `playtime_text(secs, out, size)`: under 60 s nothing; under an hour "%umin"; else the hours, rounded down, at most 9999,
+    "%uh", the units `S_UNIT_MIN` / `S_UNIT_H` (h, min; Dutch u; Russian ч, мин; Japanese 時間, 分). Never both, as the maintainer asked.
+  - *The pill* (`ui.c`, `draw_play_pill`; `PILL_H` 26, `PILL_PAD` 12, `CLOCK_D` 12, `CLOCK_GAP` 6, text size 0.66, baseline `by + 17.5` like
+    *Start*): drawn with `button_bg` (the dark pill of the bottom-row buttons, never selected), a white face (`gfx_circle`, 12 px) with two
+    dark hands (1 x 5 up from the middle and 4 x 1 to the left, `gfx_rect`, whole pixels) and the text, its right edge at `SCREEN_W - MARGIN`
+    (456); in the Games tab (`draw_details`) opposite *Start* / Options (the pill is clear of the Options circle by at least 10 px in all
+    11 languages), in the Library (bottom row) opposite the tag and the title, whose room `max_w` is 12 px less than the pill (the cache of
+    the shortened title, `lib_label`, also remembers its room: `lib_label_room`). Nothing is drawn for a text that is empty (never played,
+    under a minute), a folder card, or the Library card. `play_text()` looks the seconds up once per selected game (`pt_for`, `pt_secs`; reset
+    next to every `lib_label_for = -2`) and makes the text at every draw, so a language changed in Settings is followed.
+  - *Limits*: only the time between the start of the game and the next start of psp5 is known, so whatever happens in between is in it
+    (a PSP that sleeps while the game runs is counted only if the system clock keeps running during sleep - the smaller of the two clocks is
+    taken, and the system time is thought to stand still, which was not measured; a PSP that is switched off or whose battery runs out
+    during a game and is started again within a day: the system time then starts from zero, so only the real-time clock is left and it also
+    counts the time the PSP was off). Sessions under 10 s or over a day are dropped. Nothing was tried on a PSP.
+  - *Tests* (`host-tests`, not under git): `units/playtime_test.c` (new, 191 checks: no file, one and several sessions, the two clocks,
+    backwards clocks, 9 / 10 s, a day, empty / cut at every length / random / huge markers, the file's format and limits, the same game in
+    another file, the texts in 11 languages; mutation-tested), `ui/library_test.c` (the clock in the Library and the Games tab: exact place of
+    the text and of the two hands, nothing for unplayed games, folders or the Library card, the title cut before the clock, the room in 11
+    languages), `ui/pixel_test.c` (every game has a time: the clock is drawn through the whole-pixel check in every state).
 - **.jso files are read** (`lzo.c`, `lzo.h` new; `scan.c`, `info.c`, `gameops.c`, `files.c`, `iso.c`): a JSO is a CISO-like container
   ("JISO", block size at 6, method at 0x0A: 0 = LZO, 1 = zlib, unpacked size at 0x0C); libcisoread already reads the container and
   calls `lzo1x_decompress(src, src_len, dst, &dst_len, wrk)`, which `iso.c` only had as an empty stub returning -1. `lzo.c` is a decoder

@@ -26,6 +26,10 @@ void folder_clean(const char *raw, char *out, int size);
  * something that is not a letter (digits, symbols, Japanese) gives its first character as it is. */
 void folder_initial(const char *name, char *out, int size);
 
+/* The text in capitals, for a tag ("Folder" -> "FOLDER", "Složka" -> "SLOŽKA", "Папка" -> "ПАПКА"): the letters of the alphabets psp5 is in
+ * (ASCII, Latin-1, Latin Extended-A, Greek, Cyrillic); everything else (Japanese, digits, signs) stays as it is. Cut to `size`. */
+void folder_upper(const char *s, char *out, int size);
+
 typedef struct {
     char name[FOLDER_NAME_MAX]; /* the clean name */
     int count;                  /* how many games and apps are in it */

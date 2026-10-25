@@ -102,6 +102,10 @@ typedef struct {
     int grid_target;     /* raden som ska stå överst */
     char lib_label[160];
     int lib_label_for;
+    float lib_label_room; /* the room the title in lib_label was shortened for (less when the small clock with the time played is there) */
+    int pt_for;           /* the game whose time played is in pt_secs (-2 = none yet): kept so that the list is not searched every frame */
+    unsigned pt_secs;     /* ... its seconds */
+    char pt_text[16];     /* ... as "54h" or "45min" (made at every draw, in the language of that moment), empty when there is nothing to show */
 
     /* musik */
     int music_sel;

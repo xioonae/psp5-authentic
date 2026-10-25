@@ -21,6 +21,7 @@
 #include "osd.h"
 #include "gameops.h"
 #include "home.h"
+#include "playtime.h"
 #include "popup.h"
 #include "config.h"
 #include "testrun.h"
@@ -251,6 +252,7 @@ static void library_reselect(Ui *ui, int chosen, int snap)
     ui->tab_anim = 0.4f;
     ui->still = 0;
     ui->lib_label_for = -2;
+    ui->pt_for = -2;
 }
 
 /* The Sort popup of the Library: sort again but keep the same card selected */
@@ -409,6 +411,7 @@ void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch)
     ui->bg_index = -1;
     ui->label_for = -2;
     ui->lib_label_for = -2;
+    ui->pt_for = -2;
     ui->cover_for = -2;
     ui->tab_anim = 1;
     ui->top_focus = -1;
@@ -482,6 +485,7 @@ static void relist(Ui *ui, int removed, int added_front, int keep_place)
     ui->bg_index = remap_index(ui->bg_index, removed, added_front);
     ui->label_for = -2;
     ui->lib_label_for = -2;
+    ui->pt_for = -2;
     ui->menu_open = 0; /* kortet menyn gällde kan ha flyttats */
     ui->menu_anim = 0;
     if (ui->menu_stage == 1)
@@ -955,13 +959,13 @@ static const char *view_label(int view)
  * button), then how many cards there are, and the Sort button at the right. Where everything goes depends on the language, so
  * the drawing and the ↑ that picks the nearest button both ask here. The frames of the buttons stick out SORT_PAD past the text. */
 typedef struct {
-    char view[96];           /* the view button's text (or the folder's name), shortened to fit */
+    char view[100];          /* the view button's text with a ":" after it (or the folder's name), shortened to fit */
     float view_size;         /* ... its size, and its width */
     float view_w;
-    float view_l, view_r;    /* the left and right edge of its frame */
+    float view_l, view_r;    /* the left and right edge of its frame: around the text and the number of cards after it ("All: 15") */
     float count_x;           /* where the number of cards goes ... */
     int show_count;          /* ... if there is room for it: the name of the view comes first */
-    char sort[64];
+    char sort[96];  /* (Russian "Сортировать по: Недавно добавленные" is 66 bytes) */
     float sort_w;
     float sort_l, sort_r;    /* the same for the Sort button */
 } LibHeader;
@@ -976,10 +980,12 @@ static void lib_header(const Ui *ui, LibHeader *h)
     h->sort_r = SCREEN_W - MARGIN + SORT_PAD;
     h->sort_l = SCREEN_W - MARGIN - h->sort_w - SORT_PAD;
     int open = ui->lib_open >= 0;
-    const char *name = open ? ui->lib_open_name : view_label(ui->lib_view);
+    char name[FOLDER_NAME_MAX + 8];
+    snprintf(name, sizeof(name), "%s:", open ? ui->lib_open_name : view_label(ui->lib_view)); /* "All: 15", "Racing: 3" */
     float pad = open ? 0 : SORT_PAD; /* (a folder's name has no frame) */
+    float gap = fmaxf(3.0f, ceilf(text_width(0.6f, 0, " "))); /* a space between the colon and the number (whole pixels) */
     float room = h->sort_l - 12 - MARGIN - 2 * pad; /* for the text of the view button, with a gap before the Sort button */
-    float room_n = room - 8 - count_w;              /* ... with the number of cards next to it */
+    float room_n = room - gap - count_w;            /* ... with the number of cards next to it */
     h->show_count = 1;
     h->view_size = text_fit(0.66f, 0.45f, 0, room_n, name);
     if (text_width(h->view_size, 0, name) > room_n) { /* too long in this language even at the smallest size: the number goes first */
@@ -995,8 +1001,8 @@ static void lib_header(const Ui *ui, LibHeader *h)
         snprintf(h->view, sizeof(h->view), "%s", name);
     h->view_w = text_width(h->view_size, 0, h->view);
     h->view_l = MARGIN - pad;
-    h->view_r = MARGIN + h->view_w + pad;
-    h->count_x = h->view_r + 8;
+    h->count_x = MARGIN + h->view_w + gap;
+    h->view_r = (h->show_count ? h->count_x + count_w : MARGIN + h->view_w) + pad;
 }
 
 enum { LIB_BTN_SORT = 1, LIB_BTN_VIEW = 2 }; /* what Ui.lib_focus can be, and the bits of lib_buttons() */
@@ -1648,6 +1654,50 @@ static void button_bg(float x, float y, float w, float h, float t, float fade)
     gfx_round_rect(x, y, w, h, h / 2, with_alpha(mix_color(RGBA(0, 0, 0, 110), COLOR_ALPHA(LIGHT, 242), t), fade));
 }
 
+/* The small clock with the time played, a pill like the buttons of the bottom row (the same height and look), at the right edge of the row:
+ * the Games tab has it opposite Start and Options, the Library opposite the tag and the title. A white clock face with two hands
+ * (all on whole pixels) and the time, "54h" or "45min" (never both). Nothing is drawn for a game that has not been played. */
+#define PILL_H   26.0f
+#define PILL_PAD 12.0f
+#define CLOCK_D  12.0f /* the clock face: 12 px, so that it sits in the middle of the 26 px pill */
+#define CLOCK_GAP 6.0f
+#define PILL_SIZE 0.66f /* the text, as large as the text of Start */
+
+/* the time played of the game `i` of the list as text; "" = nothing to show. The seconds are looked up once for the game that is selected
+ * (the file is searched for it), the text is made every time so that it follows the language (Settings can change it while this is open). */
+static const char *play_text(Ui *ui, int i)
+{
+    if (i < 0)
+        return "";
+    if (ui->pt_for != i) {
+        ui->pt_secs = playtime_seconds(&ui->list->items[i]);
+        ui->pt_for = i;
+    }
+    playtime_text(ui->pt_secs, ui->pt_text, sizeof(ui->pt_text));
+    return ui->pt_text;
+}
+
+static float play_pill_width(const char *text)
+{
+    return text[0] ? PILL_PAD + CLOCK_D + CLOCK_GAP + ceilf(text_width(PILL_SIZE, 0, text)) + PILL_PAD : 0;
+}
+
+/* draws the pill with its right edge at `right` on the row whose middle is BOTTOM_Y; `fade` 0..1 */
+static void draw_play_pill(const char *text, float right, float fade)
+{
+    float w = play_pill_width(text);
+    if (w <= 0 || fade <= 0)
+        return;
+    float x = floorf(right - w + 0.5f), by = BOTTOM_Y - PILL_H / 2;
+    button_bg(x, by, w, PILL_H, 0, fade);
+    float cx = x + PILL_PAD, cy = by + (PILL_H - CLOCK_D) / 2; /* the top left of the clock face */
+    gfx_circle(cx + CLOCK_D / 2, cy + CLOCK_D / 2, CLOCK_D / 2, with_alpha(LIGHT, fade));
+    u32 hands = with_alpha(DARK, fade);
+    gfx_rect(cx + CLOCK_D / 2, cy + 2, 1, CLOCK_D / 2 - 1, hands);      /* the long hand: up from the middle */
+    gfx_rect(cx + CLOCK_D / 2 - 3, cy + CLOCK_D / 2, 4, 1, hands);      /* the short one: to the left */
+    text_draw(cx + CLOCK_D + CLOCK_GAP, by + 17.5f, PILL_SIZE, 0, with_alpha(TEXT_MAIN, fade), ALIGN_LEFT, text);
+}
+
 static void draw_details(Ui *ui)
 {
     int i = sel_card(ui);
@@ -1682,6 +1732,8 @@ static void draw_details(Ui *ui)
     u32 dots = with_alpha(mix_color(TEXT_MAIN, DARK, t1), fade);
     for (int k = -1; k <= 1; k++)
         gfx_circle(mx + bh / 2 + k * 6, by + bh / 2, 2, dots);
+
+    draw_play_pill(play_text(ui, i), SCREEN_W - MARGIN, fade * la); /* the time played, on the right of the same row */
 }
 
 /* Alternativmenyn (START, eller ✕ på Alternativ-knappen): en mörk, fyrkantig panel intill det valda kortet, med valen Hantera sparad data / Radera / Information /
@@ -1849,14 +1901,17 @@ static void draw_library(Ui *ui)
     }
     gfx_clip_reset();
 
-    /* vald titel med typetikett nere till vänster, på samma rad som Start och Alternativ i Spel. A folder has the tag "Folder" and its name. */
+    /* vald titel med typetikett nere till vänster, på samma rad som Start och Alternativ i Spel. A folder has the tag "FOLDER" (in
+     * capitals like PSP and APP, in the language of the launcher) and its name. */
     int card = sel_card(ui), i = card;
     const char *type = NULL, *title = NULL;
+    char folder_tag[32];
     if (i >= 0) {
         type = type_name(ui->list->items[i].type);
         title = ui->list->items[i].title;
     } else if (LIB_IS_FOLDER(card) && LIB_FOLDER_NO(card) < ui->folders.count) {
-        type = L(S_I_FOLDER);
+        folder_upper(L(S_I_FOLDER), folder_tag, sizeof(folder_tag));
+        type = folder_tag;
         title = ui->folders.items[LIB_FOLDER_NO(card)].name;
     }
     if (type) {
@@ -1864,11 +1919,14 @@ static void draw_library(Ui *ui)
         gfx_round_rect(MARGIN, BOTTOM_Y - 8, bw, 15, 3, with_alpha(LIGHT, 0.92f * ui_a));
         text_draw(MARGIN + bw / 2, BOTTOM_Y + 3.5f, 0.5f, 1, with_alpha(DARK, ui_a), ALIGN_CENTER, type);
         float tx = MARGIN + bw + 8;
-        float max_w = SCREEN_W - MARGIN - tx;
-        if (ui->lib_label_for != card) {
+        const char *played = play_text(ui, i); /* the pill with the time played is on the right of the row: the title stops before it */
+        float max_w = SCREEN_W - MARGIN - tx - (played[0] ? play_pill_width(played) + 12 : 0);
+        if (ui->lib_label_for != card || ui->lib_label_room != max_w) {
             text_ellipsis(ui->lib_label, sizeof(ui->lib_label), title, 0.66f, max_w);
             ui->lib_label_for = card;
+            ui->lib_label_room = max_w;
         }
+        draw_play_pill(played, SCREEN_W - MARGIN, ui_a * focus_anim);
         text_draw(tx + (1 - focus_anim) * 6, BOTTOM_Y + 4.5f, 0.66f, 0, with_alpha(TEXT_MAIN, ui_a * focus_anim),
                   ALIGN_LEFT, ui->lib_label);
     }

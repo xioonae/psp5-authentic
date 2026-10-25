@@ -5,6 +5,7 @@
 #include <pspctrl.h>
 #include <psputility.h>
 #include <psppower.h>
+#include <psprtc.h>
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -30,6 +31,7 @@
 #include "gameops.h"
 #include "saves.h"
 #include "home.h"
+#include "playtime.h"
 
 PSP_MODULE_INFO("psp5", PSP_MODULE_USER, 0, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
@@ -113,22 +115,22 @@ static int confirm_is_circle(void)
     return v == 0; /* 0 = ○ bekräftar (japansk inställning) */
 }
 
+/* The marker of a game that is running (see playtime.h): it is there when psp5 is started again after a game. The time the game was played is
+ * added to it then. */
 static int take_ingame_mark(void)
 {
-    SceIoStat st;
-    if (sceIoGetstat(INGAME_MARK, &st) < 0)
-        return 0;
-    sceIoRemove(INGAME_MARK);
-    return 1;
+    u64 rtc = 0;
+    sceRtcGetCurrentTick(&rtc);
+    return playtime_mark_take(INGAME_MARK, sceKernelGetSystemTimeWide(), rtc);
 }
 
-static void set_ingame_mark(void)
+static void set_ingame_mark(const Entry *game)
 {
     if (!sys_is_launcher())
-        return; /* som vanlig app går systemet till XMB efter spelet */
-    SceUID fd = sceIoOpen(INGAME_MARK, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
-    if (fd >= 0)
-        sceIoClose(fd);
+        return; /* som vanlig app går systemet till XMB efter spelet (and psp5 is not started again by itself: no time can be counted) */
+    u64 rtc = 0;
+    sceRtcGetCurrentTick(&rtc);
+    playtime_mark_write(INGAME_MARK, game, sceKernelGetSystemTimeWide(), rtc);
 }
 
 static void start_write(int count)
@@ -471,6 +473,7 @@ int main(int argc, char *argv[])
 
     EntryList list = { 0 };
     Ui ui;
+    playtime_load(DATA_DIR); /* (before the marker is taken: it adds the time of the game that has just ended) */
     app_start(&list, &ui, !take_ingame_mark()); /* ingen startskärm efter ett spel */
     if (s_safe)
         ui_toast(&ui, L(S_SAFE_START));
@@ -632,7 +635,7 @@ int main(int argc, char *argv[])
             sound_wait(700);      /* låt startljudet klinga ut */
             app_stop(&list, &ui); /* frigör allt minne innan spelet laddas */
             start_confirmed();    /* ett spel som hänger sig räknas inte mot psp5 */
-            set_ingame_mark();
+            set_ingame_mark(&chosen);
             launch_entry(&chosen);
             /* hit kommer vi bara om starten misslyckades */
             sceIoRemove(INGAME_MARK);
