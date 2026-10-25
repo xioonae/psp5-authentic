@@ -8,23 +8,42 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 - **Library: a button that chooses what the Library shows – with folders.** The title at the top left (it used to say *All games
   and apps*) is a button now, framed when selected like **Sort**, in the same row. ↑ from a card selects the button nearest above
   it (the new one on the left, Sort on the right); ← → move between the two; ✕ opens a list of four views:
-  - **All games/apps without folders** – everything in one list, as before.
-  - **Only games/apps in folders** – a card for every folder. A game's folder is the last folder before its own folder in
+  - **All** – everything in one list, as before.
+  - **In folders** – a card for every folder. A game's folder is the last folder before its own folder in
     `PSP/GAME` (`PSP/GAME/Racing/MyGame/EBOOT.PBP` is in *Racing*), or before the image in `ISO` (`ISO/Racing/MyGame.iso`).
     ✕ on a folder opens it and its games and apps take the place of the folders; the folder's name is at the top where the button
     was, and **○ goes back** to the folders (○ again closes the Library). START does nothing on a folder.
-  - **Only games/apps out of folders** – only what is not in any folder.
-  - **Both games/apps in and out of folders** – the folders first, then the games and apps that are in no folder (the UMD disc stays
+  - **Outside of folders** – only what is not in any folder.
+  - **Both in and out of folders** – the folders first, then the games and apps that are in no folder (the UMD disc stays
     first of all).
+  The button has a **colon and the number of cards** in it, like on the real console: *All: 15*, *In folders: 3*. Inside a folder
+  the name has the colon too (*Racing: 3*). The Sort button says **Sort by:** (*Sort by: Name (A-Z)*) – in Saved Data too, which
+  uses the same word.
   A folder card is in your theme's colour with a folder drawn by the launcher (a wide folder with a soft, rounded tab, shaped after a
   folder picture the maintainer chose) and the folder's first letter in the middle of it, as a capital (two
-  letters for a pair like *Ch*). Its name is in the bottom row, where a game's name is, with the tag *Folder*. The folders are sorted
+  letters for a pair like *Ch*). Its name is in the bottom row, where a game's name is, with the tag **FOLDER** (in capitals like
+  PSP and APP, in every language). The folders are sorted
   by the Sort button like games (by name, or the folder with the newest game first). Folder names are shown the way the
   Categories Lite plugin shows them: without `CAT_` and without the two sort digits (`01Racing` is *Racing*). Folders with the
   same name – in `GAME` and in `ISO`, on the Memory Stick and on the internal storage – are one card.
   If a view has nothing to show (no folders at all, say) the screen says so and the button stays selected so you can change the view.
   When there is not enough room in a language with long words, the number of games next to the button is left out first and the
   text gets a little smaller.
+  (The new names are translated into all 11 languages by Claude, not by a native speaker – please check them. In Czech and
+  Japanese the Sort word stays as it was: *Seřadit*, 並べ替え.)
+- **Time played.** A small dark pill with a clock and the time, like **54h** or **45min**, shows on the right-hand end of the
+  bottom row – in the Games tab opposite *Start* and the ⋯ button, in the Library opposite the tag and the name. It shows
+  **minutes up to an hour, then whole hours – never both** (*h* / *min* in most languages, *u* in Dutch, *ч* / *мин* in Russian,
+  時間 / 分 in Japanese). Nothing is shown for a game that has not been played, or for less than a minute. The time is added up
+  when you come back to psp5 after a game, in a file `playtime.txt` next to the other psp5 files, one line per game. Games that
+  are the same (the same disc ID, or the same folder / file name) share one time, wherever the files are.
+  **It only works when psp5 is ARK's launcher** (the *VBOOT.PBP* swap in `INSTALL.md`; *Settings → psp5* then says *psp5 is ARK's
+  launcher: Yes*): then ARK starts psp5 again when the game ends and psp5 knows exactly when you started and when you stopped. When psp5 is started as a normal app from the XMB, the
+  PSP goes back to the XMB after the game, psp5 is not told, and **nothing is counted** (it would only be a guess).
+  Things to know: the time of one session is the *smaller* of two clocks (so a PSP that sleeps with a game running does not add
+  its whole sleep, if one of the clocks stops while it sleeps – not measured); a session shorter than 10 seconds or longer than a
+  day is not counted; if the PSP is switched off or the battery runs out during a game and you start it again, only one clock is left
+  for that session and it also counts the time the PSP was off (up to a day). (Checked on a PC with made-up files; not tried on a PSP.)
 - **The Library remembers the Sort and the view** after a restart (two lines in `psp5.cfg`). Before, it was *by name* every time.
 - **.jso games** (an ISO packed with LZO) show up in the Library, can be started, deleted and looked at in the file manager and in
   Information, like .iso, .cso, .zso and .dax. (Checked on a PC with made-up data against the reference LZO library; no real .jso file
