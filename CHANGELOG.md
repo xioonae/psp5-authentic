@@ -3,6 +3,11 @@
 All notable changes of **psp5-authentic**, a fork of [psp5](https://github.com/08Weber/psp5) by Mille Weber (08Weber).
 Newest first. Changes that are not in a release yet are under *Unreleased*.
 
+## Unreleased
+
+- **PS1 theme: the four symbols sit lower.** They moved from behind the clock and the battery to the right side, under the row of
+  cards on Home, so they can be seen clearly. They are in the same place on every screen.
+
 ## 1.1.0 – the Library card, the battery percentage and a PSP Go fix
 
 ### PSP Go
