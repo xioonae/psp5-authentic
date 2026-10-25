@@ -31,10 +31,12 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   text gets a little smaller.
   (The new names are translated into all 11 languages by Claude, not by a native speaker – please check them. In Czech and
   Japanese the Sort word stays as it was: *Seřadit*, 並べ替え.)
+- **The *Start* button in Games says *Play* now** (*Spela*, *Spielen*, *Jouer*, *Jugar*, *Gioca*, *Spelen*, *Jogar*, *Играть*, *プレイ*, *Hrát*).
+  The Library card's button still says **Open**. (The Play words are Claude's translations; Czech was *Spustit* before.)
 - **Time played.** A small dark pill with a clock and the time, like **54h** or **45min**, shows on the right-hand end of the
-  bottom row – in the Games tab opposite *Start* and the ⋯ button, in the Library opposite the tag and the name. It shows
+  bottom row – in the Games tab opposite *Play* and the ⋯ button, in the Library opposite the tag and the name. It shows
   **minutes up to an hour, then whole hours – never both** (*h* / *min* in most languages, *u* in Dutch, *ч* / *мин* in Russian,
-  時間 / 分 in Japanese). Nothing is shown for a game that has not been played, or for less than a minute. The time is added up
+  時間 / 分 in Japanese). Nothing is shown for a game that has not been played, or for less than a minute, and **never** for the Library card or a folder (the launcher's own cards). The time is added up
   when you come back to psp5 after a game, in a file `playtime.txt` next to the other psp5 files, one line per game. Games that
   are the same (the same disc ID, or the same folder / file name) share one time, wherever the files are.
   **It only works when psp5 is ARK's launcher** (the *VBOOT.PBP* swap in `INSTALL.md`; *Settings → psp5* then says *psp5 is ARK's
