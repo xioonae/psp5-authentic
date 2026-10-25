@@ -168,7 +168,7 @@ static void scan_iso_dir(ScanState *s, const char *dir, int depth)
                 if (depth < MAX_ISO_DEPTH)
                     scan_iso_dir(s, path, depth + 1);
             } else if (has_ext(ent.d_name, "iso") || has_ext(ent.d_name, "cso") || has_ext(ent.d_name, "zso") ||
-                       has_ext(ent.d_name, "dax")) { /* libcisoread reads all of them, and so does ARK */
+                       has_ext(ent.d_name, "dax") || has_ext(ent.d_name, "jso")) { /* libcisoread reads all of them (JSO with lzo.c), and so does ARK */
                 add_iso(s, path, ent.d_name, (u32)ent.d_stat.st_size, scan_pack_time(&ent.d_stat.sce_st_mtime));
             }
         }

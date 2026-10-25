@@ -5,7 +5,7 @@
 #include <psptypes.h>
 
 typedef enum {
-    ENTRY_ISO,      /* iso/cso/zso/dax i ms0:/ISO */
+    ENTRY_ISO,      /* iso/cso/zso/dax/jso i ms0:/ISO */
     ENTRY_HOMEBREW, /* EBOOT.PBP, kategori MG */
     ENTRY_PSN,      /* EBOOT.PBP, kategori EG */
     ENTRY_POPS,     /* EBOOT.PBP, kategori ME (PS1) */

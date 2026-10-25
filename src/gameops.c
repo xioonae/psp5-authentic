@@ -74,7 +74,7 @@ int gameops_target(const Entry *e, char *path, int size, int *is_dir)
             return 0;
         const char *dot = strrchr(rel, '.');
         if (!dot || (strcasecmp(dot + 1, "iso") && strcasecmp(dot + 1, "cso") && strcasecmp(dot + 1, "zso") &&
-                     strcasecmp(dot + 1, "dax")))
+                     strcasecmp(dot + 1, "dax") && strcasecmp(dot + 1, "jso")))
             return 0;
         if ((int)strlen(p) >= size)
             return 0;

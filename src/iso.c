@@ -28,11 +28,7 @@ int zlib_inflate(void *dst, int dst_len, void *src)
     return (ret == Z_STREAM_END || ret == Z_OK || ret == Z_BUF_ERROR) ? out : -1;
 }
 
-/* JSO (LZO) stöds inte – vi skannar bara iso/cso/zso/dax. */
-int lzo1x_decompress(const void *src, unsigned src_len, void *dst, unsigned *dst_len, void *wrk)
-{
-    return -1;
-}
+/* (A JSO packed with LZO is unpacked by lzo1x_decompress in lzo.c, which libcisoread calls.) */
 
 static int read_raw(void *arg, void *buf, uint32_t size, uint32_t offset)
 {

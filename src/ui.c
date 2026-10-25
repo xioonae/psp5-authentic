@@ -146,13 +146,65 @@ static int cmp_recent(const void *a, const void *b)
     return cmp_name(a, b);
 }
 
-static void sort_library(Ui *ui)
+/* the folders in the order of the Sort button: by name (the folders are numbered in the order of their names), or the one with the
+ * newest game first */
+static const FolderSet *s_sort_folders;
+static int cmp_folder_name(const void *a, const void *b)
+{
+    return *(const int *)a - *(const int *)b;
+}
+static int cmp_folder_recent(const void *a, const void *b)
+{
+    const Folder *x = &s_sort_folders->items[*(const int *)a], *y = &s_sort_folders->items[*(const int *)b];
+    if (x->newest != y->newest)
+        return x->newest > y->newest ? -1 : 1;
+    return cmp_folder_name(a, b);
+}
+
+/* What the Library shows, for the view button (lib_view) and the folder that is open (lib_open), in the order of the Sort button:
+ *   open folder          its games and apps
+ *   ALL                  every game and app
+ *   LOOSE                the games and apps that are in no folder
+ *   FOLDERS              the folders (as cards)
+ *   BOTH                 the UMD disc (it is in no folder, and always first), the folders, the rest of the games and apps that are in no folder
+ * It is written into the same array every time (the loader thread reads it): a card is a game's index in the list, or a folder's
+ * LIB_FOLDER_ID. */
+static void rebuild_library(Ui *ui)
 {
     LoaderView *v = &ui->views[TAB_LIBRARY];
-    if (!v->idx || v->count < 2)
+    const FolderSet *fs = &ui->folders;
+    const EntryList *list = ui->list;
+    int *t = v->idx ? malloc((list->count + 1) * sizeof(int)) : NULL;
+    int n = 0, open = ui->lib_open, view = ui->lib_view;
+    if (!t)
         return;
-    s_sort_list = ui->list;
-    qsort(v->idx, v->count, sizeof(int), ui->lib_sort ? cmp_recent : cmp_name);
+    if (open < 0 && (view == LIB_VIEW_FOLDERS || view == LIB_VIEW_BOTH)) {
+        for (int f = 0; f < fs->count; f++)
+            t[n++] = f;
+        s_sort_folders = fs;
+        qsort(t, n, sizeof(int), ui->lib_sort ? cmp_folder_recent : cmp_folder_name);
+        for (int k = 0; k < n; k++)
+            t[k] = LIB_FOLDER_ID(t[k]);
+    }
+    int first = n;
+    for (int i = 0; i < list->count; i++) {
+        int f = i < fs->of_count ? fs->of[i] : -1;
+        int take = open >= 0 ? f == open : view == LIB_VIEW_ALL ? 1 : (view == LIB_VIEW_LOOSE || view == LIB_VIEW_BOTH) && f < 0;
+        if (take)
+            t[n++] = i;
+    }
+    if (n - first > 1) {
+        s_sort_list = list;
+        qsort(t + first, n - first, sizeof(int), ui->lib_sort ? cmp_recent : cmp_name);
+    }
+    if (first && n > first && list->items[t[first]].type == ENTRY_UMD) { /* the disc goes in front of the folders */
+        int umd = t[first];
+        memmove(t + 1, t, first * sizeof(int));
+        t[0] = umd;
+    }
+    memcpy(v->idx, t, n * sizeof(int));
+    v->count = n;
+    free(t);
 }
 
 static void build_views(Ui *ui)
@@ -161,35 +213,108 @@ static void build_views(Ui *ui)
         ui->views[t].idx = malloc((ui->list->count + 1) * sizeof(int)); /* (Home has the Library card on top of the games) */
         ui->views[t].count = 0;
     }
-    LoaderView *homev = &ui->views[TAB_GAMES], *lib = &ui->views[TAB_LIBRARY];
+    folders_free(&ui->folders);
+    folders_build(ui->list, &ui->folders);
+    if (ui->lib_open >= 0) { /* the folder that is open is found again by its name; it is gone when its last game is */
+        ui->lib_open = folders_find(&ui->folders, ui->lib_open_name);
+        if (ui->lib_open < 0)
+            ui->lib_open_name[0] = 0;
+    }
+    LoaderView *homev = &ui->views[TAB_GAMES];
     if (homev->idx)
         homev->count = home_build(ui->list, homev->idx, ui->list->count + 1); /* Home: the disc, the pinned cards, the ones opened last, the Library card */
-    for (int i = 0; lib->idx && i < ui->list->count; i++)
-        lib->idx[lib->count++] = i;
-    sort_library(ui);
+    rebuild_library(ui);
 }
 
-/* The Sort popup of the Library: sort again but keep the same game selected */
+/* The Library's sort and view are kept in psp5.cfg: they are the same the next time */
+static void remember_library_choice(const Ui *ui)
+{
+    g_lib_sort = ui->lib_sort ? 1 : 0;
+    g_lib_view = (unsigned char)ui->lib_view;
+    config_save(PSP5_DATA_DIR);
+}
+
+/* The Library's cards have been made again: the selection goes to `chosen` (a game's index or a folder's id) if it is there, else to
+ * the first card. `snap`: the rows jump to it (a new set of cards), else they glide. */
+static void library_reselect(Ui *ui, int chosen, int snap)
+{
+    const LoaderView *v = &ui->views[TAB_LIBRARY];
+    ui->sel[TAB_LIBRARY] = 0;
+    for (int p = 0; p < v->count; p++)
+        if (v->idx[p] == chosen)
+            ui->sel[TAB_LIBRARY] = p;
+    if (snap) {
+        int row = ui->sel[TAB_LIBRARY] / GRID_COLS;
+        ui->grid_target = row > GRID_ROWS - 1 ? row - (GRID_ROWS - 1) : 0;
+        ui->grid_scroll = (float)ui->grid_target;
+    }
+    ui->tab_anim = 0.4f;
+    ui->still = 0;
+    ui->lib_label_for = -2;
+}
+
+/* The Sort popup of the Library: sort again but keep the same card selected */
 static void set_sort(Ui *ui, int sort)
 {
     if (sort == ui->lib_sort)
         return;
-    LoaderView *v = &ui->views[TAB_LIBRARY];
-    int chosen = ui_selected(ui);
+    int chosen = sel_card(ui);
     ui->lib_sort = sort;
-    sort_library(ui);
-    for (int p = 0; p < v->count; p++)
-        if (v->idx[p] == chosen)
-            ui->sel[TAB_LIBRARY] = p;
-    ui->tab_anim = 0.4f;
-    ui->lib_label_for = -2;
+    rebuild_library(ui);
+    library_reselect(ui, chosen, 0);
+    remember_library_choice(ui);
     sound_play(SND_SELECT);
+}
+
+/* The view popup of the Library: another set of cards; the same card stays selected if it is still there */
+static void set_view(Ui *ui, int view)
+{
+    if (view == ui->lib_view || view < 0 || view >= LIB_VIEW_COUNT)
+        return;
+    int chosen = sel_card(ui);
+    ui->lib_view = view;
+    rebuild_library(ui);
+    library_reselect(ui, chosen, 1);
+    remember_library_choice(ui);
+    sound_play(SND_SELECT);
+}
+
+/* ✕ on a folder card: the folder opens, and shows its games and apps in place of the folders */
+static void open_folder(Ui *ui, int n)
+{
+    if (n < 0 || n >= ui->folders.count)
+        return;
+    ui->lib_open = n;
+    snprintf(ui->lib_open_name, sizeof(ui->lib_open_name), "%s", ui->folders.items[n].name);
+    rebuild_library(ui);
+    library_reselect(ui, -1, 1);
+    ui->lib_focus = 0;
+    sound_play(SND_SELECT);
+}
+
+/* ○ in an open folder: the folders again, on the card of the folder that was open. (Also used when the Library is left.) */
+static void leave_folder(Ui *ui)
+{
+    int id = LIB_FOLDER_ID(ui->lib_open);
+    ui->lib_open = -1;
+    ui->lib_open_name[0] = 0;
+    rebuild_library(ui);
+    library_reselect(ui, id, 1);
+}
+
+static void close_folder(Ui *ui)
+{
+    leave_folder(ui);
+    ui->lib_focus = 0;
+    sound_play(SND_BACK);
 }
 
 static void set_tab(Ui *ui, int tab, SoundId sound)
 {
     if (tab == ui->tab || tab < 0 || tab >= TAB_COUNT)
         return;
+    if (ui->tab == TAB_LIBRARY && ui->lib_open >= 0)
+        leave_folder(ui); /* the Library opens on its folders (or all its games) next time */
     ui->tab = tab;
     ui->tab_anim = 0;
     sound_play(sound);
@@ -288,6 +413,9 @@ void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch)
     ui->tab_anim = 1;
     ui->top_focus = -1;
     ui->card_ring = 1;
+    ui->lib_sort = g_lib_sort ? 1 : 0; /* the Library comes back as it was left (psp5.cfg) */
+    ui->lib_view = g_lib_view < LIB_VIEW_COUNT ? g_lib_view : LIB_VIEW_ALL;
+    ui->lib_open = -1;
     home_load(list);
     build_views(ui);
     ui->tab = TAB_GAMES; /* (it always has the Library card) */
@@ -312,12 +440,15 @@ static void relist(Ui *ui, int removed, int added_front, int keep_place)
 {
     int chosen[TAB_COUNT], old_pos[TAB_COUNT];
     int old_sel = ui->sel[ui->tab];
+    char folder_key[FOLDER_NAME_MAX] = ""; /* the name of the folder card that is selected in the Library: its number changes with the list */
     for (int t = 0; t < TAB_COUNT; t++) {
         LoaderView *v = &ui->views[t];
         old_pos[t] = ui->sel[t];
         chosen[t] = -1;
         if (t != TAB_MUSIC && v->count && v->idx)
             chosen[t] = remap_index(v->idx[ui->sel[t]], removed, added_front);
+        if (t == TAB_LIBRARY && v->count && v->idx && LIB_IS_FOLDER(v->idx[ui->sel[t]]) && LIB_FOLDER_NO(v->idx[ui->sel[t]]) < ui->folders.count)
+            snprintf(folder_key, sizeof(folder_key), "%s", ui->folders.items[LIB_FOLDER_NO(v->idx[ui->sel[t]])].name);
         /* står man först i fliken blir en nyinsatt skiva markerad */
         if (added_front && (t == TAB_GAMES || t == TAB_LIBRARY) && ui->sel[t] == 0)
             chosen[t] = 0;
@@ -326,6 +457,10 @@ static void relist(Ui *ui, int removed, int added_front, int keep_place)
         v->count = 0;
     }
     build_views(ui);
+    if (folder_key[0]) {
+        int f = folders_find(&ui->folders, folder_key);
+        chosen[TAB_LIBRARY] = f >= 0 ? LIB_FOLDER_ID(f) : -1;
+    }
     for (int t = 0; t < TAB_COUNT; t++) {
         if (t == TAB_MUSIC)
             continue;
@@ -491,6 +626,18 @@ static void menu_build_sort(Ui *ui, const UiInput *in)
     ui->menu_dir = menu_dir_of(in);
 }
 
+/* The view button of the Library: the four views, the one in use chosen */
+static void menu_build_view(Ui *ui, const UiInput *in)
+{
+    ui->menu_kind = MENU_VIEW;
+    ui->menu_n = LIB_VIEW_COUNT;
+    for (int k = 0; k < LIB_VIEW_COUNT; k++)
+        ui->menu_item[k] = (unsigned char)(MI_VIEW_ALL + k);
+    ui->menu_sel = ui->lib_view;
+    ui->menu_stage = 0;
+    ui->menu_dir = menu_dir_of(in);
+}
+
 /* Stänger menyn. Innehållet står kvar medan den tonas ut. */
 /* SELECT: the power popup, the same four choices in the same order as Settings > Power and USB */
 static void menu_build_power(Ui *ui, const UiInput *in)
@@ -577,6 +724,7 @@ void ui_free(Ui *ui)
         ui->views[t].idx = NULL;
         ui->views[t].count = 0;
     }
+    folders_free(&ui->folders);
 }
 
 void ui_replay_intro(Ui *ui)
@@ -780,11 +928,14 @@ static void start_game(Ui *ui)
     }
 }
 
-/* ✕ on the selected card or on the Start (Open) button: a game starts, the Library card opens the Library */
+/* ✕ on the selected card or on the Start (Open) button: a game starts, the Library card opens the Library, a folder opens */
 static void activate_card(Ui *ui)
 {
-    if (sel_card(ui) == HOME_LIBRARY)
+    int card = sel_card(ui);
+    if (card == HOME_LIBRARY)
         open_library(ui);
+    else if (LIB_IS_FOLDER(card))
+        open_folder(ui, LIB_FOLDER_NO(card));
     else
         start_game(ui);
 }
@@ -793,6 +944,83 @@ static void activate_card(Ui *ui)
 static void sort_text(const Ui *ui, char *out, int size)
 {
     snprintf(out, size, "%s: %s", L(S_SORT), L(ui->lib_sort ? S_SORT_RECENT : S_SORT_NAME));
+}
+
+static const char *view_label(int view)
+{
+    return L(view == LIB_VIEW_FOLDERS ? S_LIB_IN : view == LIB_VIEW_LOOSE ? S_LIB_OUT : view == LIB_VIEW_BOTH ? S_LIB_BOTH : S_LIB_ALL);
+}
+
+/* The row at the top of the Library: the view button at the left (inside an open folder the folder's name instead, which is not a
+ * button), then how many cards there are, and the Sort button at the right. Where everything goes depends on the language, so
+ * the drawing and the ↑ that picks the nearest button both ask here. The frames of the buttons stick out SORT_PAD past the text. */
+typedef struct {
+    char view[96];           /* the view button's text (or the folder's name), shortened to fit */
+    float view_size;         /* ... its size, and its width */
+    float view_w;
+    float view_l, view_r;    /* the left and right edge of its frame */
+    float count_x;           /* where the number of cards goes ... */
+    int show_count;          /* ... if there is room for it: the name of the view comes first */
+    char sort[64];
+    float sort_w;
+    float sort_l, sort_r;    /* the same for the Sort button */
+} LibHeader;
+
+static void lib_header(const Ui *ui, LibHeader *h)
+{
+    char num[16];
+    snprintf(num, sizeof(num), "%d", view(ui)->count);
+    float count_w = text_width(0.6f, 0, num);
+    sort_text(ui, h->sort, sizeof(h->sort));
+    h->sort_w = text_width(SORT_SIZE, 0, h->sort);
+    h->sort_r = SCREEN_W - MARGIN + SORT_PAD;
+    h->sort_l = SCREEN_W - MARGIN - h->sort_w - SORT_PAD;
+    int open = ui->lib_open >= 0;
+    const char *name = open ? ui->lib_open_name : view_label(ui->lib_view);
+    float pad = open ? 0 : SORT_PAD; /* (a folder's name has no frame) */
+    float room = h->sort_l - 12 - MARGIN - 2 * pad; /* for the text of the view button, with a gap before the Sort button */
+    float room_n = room - 8 - count_w;              /* ... with the number of cards next to it */
+    h->show_count = 1;
+    h->view_size = text_fit(0.66f, 0.45f, 0, room_n, name);
+    if (text_width(h->view_size, 0, name) > room_n) { /* too long in this language even at the smallest size: the number goes first */
+        h->show_count = 0;
+        room_n = room;
+        h->view_size = text_fit(0.66f, 0.45f, 0, room_n, name);
+    }
+    if (room_n < 24)
+        room_n = 24;
+    if (text_width(h->view_size, 0, name) > room_n) /* ... and then the end of the name */
+        text_ellipsis(h->view, sizeof(h->view), name, h->view_size, room_n);
+    else
+        snprintf(h->view, sizeof(h->view), "%s", name);
+    h->view_w = text_width(h->view_size, 0, h->view);
+    h->view_l = MARGIN - pad;
+    h->view_r = MARGIN + h->view_w + pad;
+    h->count_x = h->view_r + 8;
+}
+
+enum { LIB_BTN_SORT = 1, LIB_BTN_VIEW = 2 }; /* what Ui.lib_focus can be, and the bits of lib_buttons() */
+
+/* The buttons the Library has now: Sort when there is more than one card to sort, the view button unless a folder is open (and
+ * as long as there is anything at all to show) */
+static int lib_buttons(const Ui *ui)
+{
+    return (view(ui)->count >= 2 ? LIB_BTN_SORT : 0) | (ui->lib_open < 0 && ui->list->count > 0 ? LIB_BTN_VIEW : 0);
+}
+
+/* ↑ from the first row: the button nearest to the card (by how far the middle of the card is from the button's frame), the view
+ * button when they are as near. 0 when the Library has no button. */
+static int lib_button_above(const Ui *ui, int pos)
+{
+    int avail = lib_buttons(ui);
+    LibHeader h;
+    lib_header(ui, &h);
+    float cx = MARGIN + (pos % GRID_COLS) * (CELL_W + GRID_GAP) + CELL_W / 2;
+    float dv = cx < h.view_l ? h.view_l - cx : cx > h.view_r ? cx - h.view_r : 0;
+    float ds = cx < h.sort_l ? h.sort_l - cx : cx > h.sort_r ? cx - h.sort_r : 0;
+    if ((avail & LIB_BTN_VIEW) && (!(avail & LIB_BTN_SORT) || dv <= ds))
+        return LIB_BTN_VIEW;
+    return avail & LIB_BTN_SORT ? LIB_BTN_SORT : 0;
 }
 
 /* ↑ from the first thing of a tab (or from the Sort button, to the cog wheel) selects the top bar */
@@ -909,6 +1137,8 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
                 }
                 if (item == MI_SORT_NAME || item == MI_SORT_RECENT)
                     set_sort(ui, item == MI_SORT_RECENT);
+                else if (item >= MI_VIEW_ALL && item <= MI_VIEW_BOTH)
+                    set_view(ui, item - MI_VIEW_ALL);
                 else if (item == MI_CANCEL)
                     sound_play(SND_BACK);
                 else
@@ -925,10 +1155,21 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         open_power_menu(ui, in);
         in = &none;
     }
-    if (ui->tab == TAB_LIBRARY && view(ui)->count < 2)
-        ui->lib_focus = 0; /* nothing to sort */
-    ui->sort_anim = clampf(ui->sort_anim + (ui->lib_focus ? 8 : -8) * dt, 0, 1);
-    ui->sort_frame = clampf(ui->sort_frame + (ui->lib_focus && ui->top_focus < 0 ? 8 : -8) * dt, 0, 1); /* (not while the top bar is selected) */
+    if (ui->tab == TAB_LIBRARY) {
+        int avail = lib_buttons(ui);
+        if (ui->lib_focus == LIB_BTN_SORT && !(avail & LIB_BTN_SORT)) /* nothing to sort: the view button, if there is one */
+            ui->lib_focus = avail & LIB_BTN_VIEW ? LIB_BTN_VIEW : 0;
+        if (ui->lib_focus == LIB_BTN_VIEW && !(avail & LIB_BTN_VIEW)) /* (a folder was opened) */
+            ui->lib_focus = avail & LIB_BTN_SORT ? LIB_BTN_SORT : 0;
+        if (!view(ui)->count && (avail & LIB_BTN_VIEW))
+            ui->lib_focus = LIB_BTN_VIEW; /* no card in this view: the button that changes it is all there is to select */
+    } else {
+        ui->lib_focus = 0;
+    }
+    ui->sort_anim = clampf(ui->sort_anim + (ui->lib_focus == LIB_BTN_SORT ? 8 : -8) * dt, 0, 1);
+    ui->sort_frame = clampf(ui->sort_frame + (ui->lib_focus == LIB_BTN_SORT && ui->top_focus < 0 ? 8 : -8) * dt, 0, 1); /* (not while the top bar is selected) */
+    ui->view_anim = clampf(ui->view_anim + (ui->lib_focus == LIB_BTN_VIEW ? 8 : -8) * dt, 0, 1);
+    ui->view_frame = clampf(ui->view_frame + (ui->lib_focus == LIB_BTN_VIEW && ui->top_focus < 0 ? 8 : -8) * dt, 0, 1);
     int ring_on = ui->top_focus < 0 && !(ui->tab == TAB_LIBRARY && ui->lib_focus) && !ui->btn_focus; /* the card has the focus */
     ui->card_ring = clampf(ui->card_ring + (ring_on ? 8 : -8) * dt, 0, 1);
     if (ui->tab != TAB_GAMES || view(ui)->count == 0)
@@ -957,15 +1198,21 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     int count = view(ui)->count;
     int *sel = &ui->sel[ui->tab];
     int grid = ui->tab == TAB_LIBRARY;
-    int on_sort = grid && ui->lib_focus; /* the Sort button is selected, not a card */
+    int on_sort = grid && ui->lib_focus == LIB_BTN_SORT; /* the Sort button is selected, not a card */
+    int on_view = grid && ui->lib_focus == LIB_BTN_VIEW; /* ... or the view button */
+    int on_top_btn = on_sort || on_view;
     u32 ok = ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS;
     u32 back_btn = ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE;
     int on_btn = ui->btn_focus; /* Games: 1 = Start, 2 = Options (the card stays selected) */
-    if (grid && !on_sort && (in->pressed & back_btn) && ui->intro >= 1) { /* ○ closes the Library, also an empty one (on the Sort button it only goes back to the cards) */
-        close_library(ui);
+    if (grid && !on_top_btn && (in->pressed & back_btn) && ui->intro >= 1) { /* ○ closes an open folder, else the Library, also an empty one (on a button at the top it only goes back to the cards) */
+        if (ui->lib_open >= 0)
+            close_folder(ui);
+        else
+            close_library(ui);
         return UI_NONE;
     }
-    if ((ui->tab == TAB_GAMES || (grid && !on_sort)) && (in->pressed & PSP_CTRL_START) && count && ui->intro >= 1)
+    if ((ui->tab == TAB_GAMES || (grid && !on_top_btn)) && (in->pressed & PSP_CTRL_START) && count && ui->intro >= 1 &&
+        !(grid && LIB_IS_FOLDER(sel_card(ui)))) /* (a folder has no options) */
         open_card_menu(ui, in);
     UiInput sides = *in;
     if (ui->tab == TAB_GAMES && fabsf((float)in->lx - 128) >= fabsf((float)in->ly - 128))
@@ -998,23 +1245,39 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         if (move == 2 || move == -2 || on_btn)
             move = 0; /* up and down never move the selection in Games, and the buttons keep it where it is */
     }
-    if (on_sort) { /* ↓ or ○ back to the cards, ↑ to the cog wheel, ✕ opens the Sort popup */
+    if (on_top_btn) { /* ↓ or ○ back to the cards, ← → between the two buttons, ↑ to the cog wheel, ✕ opens the popup of the button */
+        int avail = lib_buttons(ui);
         if (move == 2 || (in->pressed & back_btn)) {
-            ui->lib_focus = 0;
-            sound_play(move == 2 ? SND_MOVE : SND_BACK);
+            if (count) {
+                ui->lib_focus = 0;
+                sound_play(move == 2 ? SND_MOVE : SND_BACK);
+            } else if ((in->pressed & back_btn) && ui->intro >= 1) { /* nothing to go back to: ○ closes the Library */
+                close_library(ui);
+                return UI_NONE;
+            }
         } else if (move == -2) {
             if (fresh)
-                enter_top_bar(ui, TOP_COG); /* the Sort button stays what ↓ comes back to */
+                enter_top_bar(ui, TOP_COG); /* the button stays what ↓ comes back to */
+        } else if (move == -1 && on_sort && (avail & LIB_BTN_VIEW)) {
+            ui->lib_focus = LIB_BTN_VIEW;
+            sound_play(SND_MOVE);
+        } else if (move == 1 && on_view && (avail & LIB_BTN_SORT)) {
+            ui->lib_focus = LIB_BTN_SORT;
+            sound_play(SND_MOVE);
         } else if ((in->pressed & ok) && ui->intro >= 1) {
-            menu_build_sort(ui, in);
+            if (on_sort)
+                menu_build_sort(ui, in);
+            else
+                menu_build_view(ui, in);
             ui->menu_open = 1;
             sound_play(SND_SELECT);
         }
         move = 0;
-    } else if (grid && move == -2 && *sel < GRID_COLS) { /* ↑ from any card of the first row: to the Sort button, the first stop on the way up (only when there is one:
-                                                          * with a single card there is no Sort button and ↑ goes straight to the cog wheel) */
-        if (count > 1) {
-            ui->lib_focus = 1;
+    } else if (grid && move == -2 && *sel < GRID_COLS) { /* ↑ from any card of the first row: to the button nearest above it, the first stop on the way up (when there
+                                                          * is none - a folder with a single game - ↑ goes straight to the cog wheel) */
+        int btn = lib_button_above(ui, *sel);
+        if (btn) {
+            ui->lib_focus = btn;
             sound_play(SND_MOVE);
         } else if (fresh) {
             enter_top_bar(ui, TOP_COG); /* (the word "Library" cannot be selected, so this is the only thing up there) */
@@ -1043,7 +1306,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     ui->still += dt;
 
     /* ✕ startar – på kortet och på Start-knappen; på Alternativ-knappen öppnar det menyn (ut till XMB går man med HOME) */
-    if ((in->pressed & ok) && count && ui->intro >= 1 && !on_sort && on_btn != 2)
+    if ((in->pressed & ok) && count && ui->intro >= 1 && !on_top_btn && on_btn != 2)
         activate_card(ui);
 
     /* rutnätet rullar så att markerad rad alltid syns helt */
@@ -1266,7 +1529,8 @@ static void card_geometry(float d, float *x, float *w, float *h, float *y)
 static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h, float focus, float ring, float alpha, int grid)
 {
     int library = list_index == HOME_LIBRARY; /* the Library card has no icon to load: a card in the theme's colour with its picture */
-    IconSlot *slot = library ? NULL : loader_icon(list_index);
+    int folder = LIB_IS_FOLDER(list_index);   /* ... and so has a folder of the Library: the same colour, a folder with its first letter */
+    IconSlot *slot = library || folder ? NULL : loader_icon(list_index);
     float r = w / 12.0f; /* corner radius: 1/12 of the width at every size, which is what art.c cuts the pictures to */
     /* the card's pixels: a pixel is part of it when its middle is (the picture, the ring and the corners all use this box) */
     int l = (int)ceilf(x - 0.5f), t = (int)ceilf(y - 0.5f);
@@ -1281,7 +1545,7 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
     }
     if (shown < 1) {
         /* platshållare: mörkt kort med initial, andas svagt medan den laddas */
-        int loading = !library && (!slot || slot->state == SLOT_EMPTY || slot->state == SLOT_LOADING);
+        int loading = !library && !folder && (!slot || slot->state == SLOT_EMPTY || slot->state == SLOT_LOADING);
         float breath = loading ? 0.5f + 0.5f * sinf(ui->time * 4.0f + list_index) : 0;
         float pa = alpha * (1 - shown);
         u32 cc = theme_cur()->card; /* temats färg, andas medan bilden laddas */
@@ -1289,6 +1553,19 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
             int tint = (int)lerpf(200, 255, focus); /* as dim as a picture is when it is not selected */
             gfx_round_rect(l, t, rt - l, b - t, r, RGBA(cc & 0xFF, (cc >> 8) & 0xFF, (cc >> 16) & 0xFF, (int)(255 * pa)));
             gfx_library_icon(l, t, rt - l, b - t, RGBA(tint, tint, tint, (int)(255 * pa)));
+        } else if (folder) { /* a folder drawn by the launcher, the capital letter of the folder's name cut out of its body */
+            int tint = (int)lerpf(200, 255, focus);
+            u32 cc_a = RGBA(cc & 0xFF, (cc >> 8) & 0xFF, (cc >> 16) & 0xFF, (int)(255 * pa));
+            gfx_round_rect(l, t, rt - l, b - t, r, cc_a);
+            FolderPic pic;
+            gfx_folder_icon(l, t, rt - l, b - t, RGBA(tint, tint, tint, (int)(255 * pa)), &pic);
+            int n = LIB_FOLDER_NO(list_index);
+            if (n < ui->folders.count) {
+                char initial[FOLDER_INITIAL_MAX];
+                folder_initial(ui->folders.items[n].name, initial, sizeof(initial));
+                float body = (float)(pic.h - pic.tab_h), size = 0.037f * body; /* a capital is about half the height of the body */
+                text_draw(floorf(pic.x + pic.w / 2.0f + 0.5f), floorf(pic.y + pic.tab_h + body / 2 + 7.0f * size + 0.5f), size, 0, cc_a, ALIGN_CENTER, initial);
+            }
         } else {
             gfx_round_rect(x, y, w, h, r, RGBA((cc & 0xFF) + (int)(10 * breath), ((cc >> 8) & 0xFF) + (int)(10 * breath),
                                                ((cc >> 16) & 0xFF) + (int)(12 * breath), (int)(235 * pa)));
@@ -1425,6 +1702,10 @@ static const char *menu_label(int item)
     case MI_UNPIN:        return L(S_HOME_UNPIN);
     case MI_SORT_NAME:    return L(S_SORT_NAME);
     case MI_SORT_RECENT:  return L(S_SORT_RECENT);
+    case MI_VIEW_ALL:
+    case MI_VIEW_FOLDERS:
+    case MI_VIEW_LOOSE:
+    case MI_VIEW_BOTH:    return view_label(item - MI_VIEW_ALL);
     case MI_CANCEL:       return L(S_F_CANCEL);
     case MI_SLEEP:        return L(S_SLEEP);
     case MI_SHUTDOWN:     return L(S_SHUTDOWN);
@@ -1453,8 +1734,16 @@ static void draw_menu(Ui *ui)
     }
     float w = 200, h = MENU_EDGE + ui->menu_n * MENU_ITEM_H + MENU_EDGE;
     float x, y;
+    if (ui->menu_kind == MENU_VIEW) { /* wide enough for the longest of the four views */
+        for (int k = 0; k < ui->menu_n; k++)
+            w = fmaxf(w, ceilf(text_width(0.62f, 0, menu_label(ui->menu_item[k]))) + 32);
+        w = fminf(w, SCREEN_W - 2 * (MARGIN - 9)); /* (the widest it can be: the screen less 15 px each side) */
+    }
     if (ui->menu_kind == MENU_SORT) { /* under the Sort button, whose right edge it shares */
         x = SCREEN_W - MARGIN + 9 - w + (1 - a) * 10;
+        y = 66;
+    } else if (ui->menu_kind == MENU_VIEW) { /* under the view button, whose left edge it shares */
+        x = MARGIN - 9 - (1 - a) * 10;
         y = 66;
     } else if (ui->menu_kind == MENU_POWER) { /* in the middle of the screen, rising into place like the questions */
         x = (SCREEN_W - w) / 2;
@@ -1489,26 +1778,38 @@ static void draw_library(Ui *ui)
 
     /* (bakgrunden mörkas av draw_dim, före topplisten) */
 
-    /* rubrik: antal till vänster, sortering till höger */
-    char head[96];
-    snprintf(head, sizeof(head), "%s", L(S_LIB_ALL));
-    text_draw(MARGIN, 53, 0.66f, 0, with_alpha(TEXT_MAIN, ui_a), ALIGN_LEFT, head);
+    /* the row at the top: the view button at the left (inside an open folder the folder's name, which is not a button), then how many
+     * cards there are, and the Sort button at the right */
+    LibHeader hd;
+    lib_header(ui, &hd);
+    float view_sel = smooth(ui->view_anim), view_shown = smooth(ui->view_frame);
+    float sort_mid = popup_label_mid(53, SORT_SIZE); /* (both buttons have their frame centred on the same line, whatever the size of their text) */
+    float head_y = floorf(sort_mid - popup_label_mid(0, hd.view_size) + 0.5f);
+    if (ui->lib_open < 0 && view_shown * ui_a > 0.01f) { /* selected with ↑ from a card under it (or ← from the Sort button): the frame of a chosen entry; ✕ opens the popup */
+        float fy, fh;
+        popup_frame_around(sort_mid, 22, &fy, &fh);
+        popup_choice(hd.view_l, fy, hd.view_r - hd.view_l, fh, view_shown * ui_a);
+    }
+    text_draw(MARGIN, head_y, hd.view_size, 0, with_alpha(TEXT_MAIN, ui_a), ALIGN_LEFT, hd.view);
     char num[16];
     snprintf(num, sizeof(num), "%d", v->count);
-    float hw = text_width(0.66f, 0, head);
-    text_draw(MARGIN + hw + 8, 53, 0.6f, 0, with_alpha(TEXT_DIM, ui_a), ALIGN_LEFT, num);
+    if (hd.show_count)
+        text_draw(hd.count_x, 53, 0.6f, 0, with_alpha(TEXT_DIM, ui_a), ALIGN_LEFT, num);
 
     /* the Sort button: selected with ↑ from a card under it, it gets the frame of a chosen entry; ✕ opens the popup. Its frame
      * is gone for as long as the top bar has the focus (sort_frame), so moving along the top bar never brings it back. */
-    char sort[64];
-    sort_text(ui, sort, sizeof(sort));
-    float sort_w = text_width(SORT_SIZE, 0, sort), on_sort = smooth(ui->sort_anim), sort_shown = smooth(ui->sort_frame);
+    float on_sort = smooth(ui->sort_anim), sort_shown = smooth(ui->sort_frame);
     if (sort_shown * ui_a > 0.01f) {
         float fy, fh; /* centred on the text, whose baseline is at 53 */
-        popup_frame_around(popup_label_mid(53, SORT_SIZE), 22, &fy, &fh);
-        popup_choice(SCREEN_W - MARGIN - sort_w - SORT_PAD, fy, sort_w + 2 * SORT_PAD, fh, sort_shown * ui_a);
+        popup_frame_around(sort_mid, 22, &fy, &fh);
+        popup_choice(hd.sort_l, fy, hd.sort_r - hd.sort_l, fh, sort_shown * ui_a);
     }
-    text_draw(SCREEN_W - MARGIN, 53, SORT_SIZE, 0, with_alpha(sort_shown > 0.5f ? TEXT_MAIN : TEXT_DIM, ui_a), ALIGN_RIGHT, sort);
+    text_draw(SCREEN_W - MARGIN, 53, SORT_SIZE, 0, with_alpha(sort_shown > 0.5f ? TEXT_MAIN : TEXT_DIM, ui_a), ALIGN_RIGHT, hd.sort);
+
+    if (!v->count) { /* the view has nothing in it (no folders, or nothing outside them): the button above changes the view */
+        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, ui_a), ALIGN_LEFT, L(ui->lib_view == LIB_VIEW_FOLDERS ? S_LIB_NO_IN : S_LIB_NO_OUT));
+        return;
+    }
 
     /* korten – klipps under rubriken */
     int sel = ui->sel[TAB_LIBRARY];
@@ -1543,22 +1844,29 @@ static void draw_library(Ui *ui)
             cx = lerpf(cx, SCREEN_W / 2, launch);
             cy = lerpf(cy, SCREEN_H / 2, launch);
         }
-        draw_card(ui, v->idx[sel], cx - w / 2, cy - h / 2, w, h, (0.4f + 0.6f * focus_anim) * (1 - on_sort), (0.4f + 0.6f * focus_anim) * smooth(ui->card_ring), a, 1);
+        draw_card(ui, v->idx[sel], cx - w / 2, cy - h / 2, w, h, (0.4f + 0.6f * focus_anim) * (1 - fmaxf(on_sort, view_sel)), (0.4f + 0.6f * focus_anim) * smooth(ui->card_ring), a, 1);
     }
     gfx_clip_reset();
 
-    /* vald titel med typetikett nere till vänster, på samma rad som Start och Alternativ i Spel */
-    int i = ui_selected(ui);
+    /* vald titel med typetikett nere till vänster, på samma rad som Start och Alternativ i Spel. A folder has the tag "Folder" and its name. */
+    int card = sel_card(ui), i = card;
+    const char *type = NULL, *title = NULL;
     if (i >= 0) {
-        const char *type = type_name(ui->list->items[i].type);
+        type = type_name(ui->list->items[i].type);
+        title = ui->list->items[i].title;
+    } else if (LIB_IS_FOLDER(card) && LIB_FOLDER_NO(card) < ui->folders.count) {
+        type = L(S_I_FOLDER);
+        title = ui->folders.items[LIB_FOLDER_NO(card)].name;
+    }
+    if (type) {
         float bw = ceilf(text_width(0.5f, 1, type)) + 12;
         gfx_round_rect(MARGIN, BOTTOM_Y - 8, bw, 15, 3, with_alpha(LIGHT, 0.92f * ui_a));
         text_draw(MARGIN + bw / 2, BOTTOM_Y + 3.5f, 0.5f, 1, with_alpha(DARK, ui_a), ALIGN_CENTER, type);
         float tx = MARGIN + bw + 8;
         float max_w = SCREEN_W - MARGIN - tx;
-        if (ui->lib_label_for != i) {
-            text_ellipsis(ui->lib_label, sizeof(ui->lib_label), ui->list->items[i].title, 0.66f, max_w);
-            ui->lib_label_for = i;
+        if (ui->lib_label_for != card) {
+            text_ellipsis(ui->lib_label, sizeof(ui->lib_label), title, 0.66f, max_w);
+            ui->lib_label_for = card;
         }
         text_draw(tx + (1 - focus_anim) * 6, BOTTOM_Y + 4.5f, 0.66f, 0, with_alpha(TEXT_MAIN, ui_a * focus_anim),
                   ALIGN_LEFT, ui->lib_label);
@@ -1743,7 +2051,7 @@ static void draw_empty(Ui *ui)
 #define DIM_COLOR RGBA(8, 8, 12, 150)
 static void draw_dim(Ui *ui)
 {
-    if (ui->tab == TAB_MUSIC || (ui->tab == TAB_LIBRARY && view(ui)->count)) /* (an empty Library is shown as an empty tab) */
+    if (ui->tab == TAB_MUSIC || (ui->tab == TAB_LIBRARY && ui->list->count)) /* (an empty Library is shown as an empty tab) */
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, DIM_COLOR);
 }
 
@@ -1755,7 +2063,7 @@ void ui_draw(Ui *ui)
     draw_top_bar(ui);
     if (ui->tab == TAB_MUSIC) {
         draw_music(ui);
-    } else if (view(ui)->count && ui->tab == TAB_LIBRARY) {
+    } else if (ui->tab == TAB_LIBRARY && ui->list->count) { /* (a view without cards is drawn too: its button is what changes it) */
         draw_library(ui);
     } else if (view(ui)->count) {
         draw_row(ui);

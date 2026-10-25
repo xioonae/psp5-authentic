@@ -24,6 +24,73 @@ into psp5 instead of the XMB.
 
 All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`) until the next version is released.
 
+- **Library: the view button and folders** (`ui.c`, `ui.h`, new `folders.c` / `folders.h`, `icons.c`, `gfx.c`, `lang.c`, `config.c`).
+  - *Where a game is* (`folders.c`, `folder_raw`): nothing is stored (no change in the list cache): the folder comes from
+    `Entry.path`. After the first `/PSP/GAME/` or `/ISO/` of the path (also `ef0:`), the parts are counted: for ISO the folder is the
+    part before the file (needs 2 parts), for PSP/GAME the part before the game's own folder (needs 3). `PSP/GAME/Hello/EBOOT.PBP` and
+    `ISO/x.iso` are in no folder; `PSP/GAME/PS1/Crash/EBOOT.PBP` is in "PS1". `folder_clean` drops `CAT_` (any case) and two digits that
+    are followed by a non-digit (`01Racing`, `CAT_01Racing` -> "Racing"; "2048", "007 Games" and a name that is only the prefix stay).
+    `folder_initial`: the first letter as a capital (ASCII, Latin-1, Latin Extended-A, Greek, Cyrillic; other characters as they are),
+    two letters for Ch, Dz, IJ, Lj, Ll, Nj (written Ch, Dz, IJ, Lj, Ll, Nj), skipping a leading space `_ - . [ (`.
+    `folders_build` makes the `FolderSet` (names sorted without regard to case, equal names are one `Folder` with `count` and
+    `newest` file time, `of[i]` = folder of list entry i or -1). `Ui.folders` is built again in `build_views`.
+  - *The cards*: a folder card in the Library's `LoaderView` is `LIB_FOLDER_ID(n)` = -10 - n (`ui.h`; the loader leaves every negative
+    index alone, like `HOME_LIBRARY` = -3). `ui_selected()` is -1 on a folder (no background, no options). `rebuild_library()`
+    makes the list for `lib_view` (`LIB_VIEW_ALL / FOLDERS / LOOSE / BOTH`, in the order of the popup and of `libview=` in `psp5.cfg`) and
+    `lib_open` (the open folder, -1 = none): folders first (by name = their number, or the newest `Folder.newest` first), then the games
+    of the view (`cmp_name` / `cmp_recent`, the UMD first); in BOTH the disc is moved in front of the folders. It builds in a
+    temporary array and copies it into the same buffer (the loader thread reads it) and sets `count` last. `sort_library()` is gone.
+    `lib_open` is kept as a number and as a name (`lib_open_name`): `build_views` finds the folder again by its name after the
+    list changed and closes it (`lib_open = -1`) when its last game is gone. `relist()` also remembers the name of a selected folder
+    card and selects it again. Leaving the Library (`set_tab`) closes an open folder (`leave_folder`).
+  - *Buttons*: `lib_focus` is 0 = a card, 1 = Sort (`LIB_BTN_SORT`), 2 = the view button (`LIB_BTN_VIEW`). `lib_buttons()` says which
+    exist: Sort with 2 or more cards, the view button unless a folder is open (and when the list has any game). ↑ from the first row
+    (`lib_button_above`): the nearest button by the distance from the middle of the card to the button's frame (equal: the view
+    button), none: straight to the cog wheel. ← → move between the two, ↓ / ○ to the cards (with no cards ○ closes the Library), ↑
+    to the cog wheel; ↓ from the cog wheel returns to the button ↑ came from, as before. With no card in the view (`FOLDERS` with
+    no folders, `LOOSE` with everything in folders) `lib_focus` is forced to the view button. ○ on a card: an open folder closes
+    (`close_folder`: the folders again, on its card), else the Library closes. ✕ on a folder opens it (`activate_card`). START
+    does nothing on a folder. New `view_anim` / `view_frame` like `sort_anim` / `sort_frame` (`sort_anim` now only follows
+    `lib_focus == 1`).
+  - *The row at the top* (`lib_header`, used by the drawing and by the ↑ choice): the view button's text is the name of the view
+    (`S_LIB_ALL`, `S_LIB_IN`, `S_LIB_OUT`, `S_LIB_BOTH`), or inside a folder the folder's name without a frame; size 0.66, smaller
+    (`text_fit`, down to 0.45) when it does not fit in the room left of the Sort button (12 px gap, the number of cards 8 px after the
+    text); when even 0.45 is too wide next to the number, the number is dropped, then the end of the text is cut ("..."). The frame is
+    `SORT_PAD` (9 px) wider than the text on each side and 22 px high, on the same line as the Sort frame
+    (`popup_label_mid(53, SORT_SIZE)`); the baseline of the text is worked out from its size (`popup_label_mid`) so that the middle of the text stays
+    on that line, whatever the size (`text_fit` may have made it smaller). The view popup (`MENU_VIEW`, four `MI_VIEW_*`) opens at x = 15 (the frame's left edge), y = 66, as wide as the widest
+    label + 32 (at least 200, at most 450).
+  - *Drawing*: the folder card is a card in the theme's colour (`theme_cur()->card`, like the Library card) with `gfx_folder_icon` in a
+    light grey (200 .. 255 with the focus) and the letter in the card's colour, size 0.037 x the height of the body (a capital is about half of it), on
+    whole pixels, centred in the body. In the bottom row the tag is `L(S_I_FOLDER)` ("Folder", an existing string) and the title is the
+    folder's name; an empty view shows `S_LIB_NO_IN` / `S_LIB_NO_OUT` at (24, 120), size 0.9.
+  - *The folder picture* (`icons.c`, `ICON_FOLDER`, `icon_folder_pic`, `gfx_folder_icon`): one image per size like `ICON_LIBRARY`: a body
+    and a tab joined by the smaller of two signed distances, so there is one anti-aliased image (no double blending while it fades);
+    the height is about 2/3 of the card's, the width 1.3 x, the tab a fifth of the height and the corners 1/8. All straight edges are
+    on whole pixels (fine sampling under 24 px). It is cheap, so it goes through the normal icon cache (`cache_get`), not the baked
+    pool of the Library picture.
+  - *Strings* (`lang.c`): `S_LIB_ALL` now says "All games/apps without folders" (it was "All games and apps"), new `S_LIB_IN`,
+    `S_LIB_OUT`, `S_LIB_BOTH`, `S_LIB_NO_IN`, `S_LIB_NO_OUT`; the translations (11 languages) are mine and have not been checked by
+    native speakers. 167 strings now.
+  - *Kept between starts* (`config.c`): `libsort=0|1` and `libview=0..3` in `psp5.cfg` (`g_lib_sort`, `g_lib_view`); `ui_init` reads
+    them, `set_sort` / `set_view` write them with `config_save()` (the buffer is 192 bytes now). A value that does not exist is the
+    first one.
+  - *Tests* (`host-tests`, not under git): `units/folders_test.c` (paths, names, letters, merging), `ui/library_test.c` (new: all views and
+    sorts, the button and popup, opening and closing, the empty views, a deleted game, `psp5.cfg`, drawn letters and the row in
+    11 languages), `ui/folder_fixture.h`, `icons/foldertest.py`; `ui/menu_test.c` and `ui/pixel_test.c` changed for the view button
+    (↑ from the first card is the view button; one card has the view button but no Sort button) and draw every view, every folder
+    card, the popup and an open folder through the whole-pixel check. Measured on a PC only. The mock measures Cyrillic and Japanese
+    as 2 and 3 bytes of 6 px, wider than the real font, so how much of the label is cut in Russian and Japanese on a real PSP is not known.
+- **.jso files are read** (`lzo.c`, `lzo.h` new; `scan.c`, `info.c`, `gameops.c`, `files.c`, `iso.c`): a JSO is a CISO-like container
+  ("JISO", block size at 6, method at 0x0A: 0 = LZO, 1 = zlib, unpacked size at 0x0C); libcisoread already reads the container and
+  calls `lzo1x_decompress(src, src_len, dst, &dst_len, wrk)`, which `iso.c` only had as an empty stub returning -1. `lzo.c` is a decoder
+  of the LZO1X format that checks every read and write against the end of the buffers (a damaged block returns an error, never
+  writes outside `dst`; `dst_len` is the number of bytes written). `scan.c` lists `.jso`, `info.c` recognises `JISO` (label "JSO", size
+  = 32 bits at 12), `gameops.c` may delete it, `files.c` colours it like the other images. Tests: `units/lzo_test.c` with
+  `units/lzo_vectors.py` (196 pairs packed by liblzo2: both packers, runs, long matches, random data; each cut off at many lengths
+  and damaged at random, in exactly sized buffers under AddressSanitizer; 100 % of the lines of `lzo.c`), and the scanner, the
+  Information and delete tests with a made-up `.jso`. No real `.jso` file and no PSP was used.
+
 - **PS1 theme: the symbols moved down** (`theme.c`, `theme_backdrop`): `deco_ps1(time, a, 418, 30, 0.6f)` became
   `deco_ps1(time, a, 418, 130, 0.6f)`; only the centre's y changed (x 418 and the size 0.6 are as before). At y = 30 the group
   (a diamond of four symbols, `d` = 14.4 px from the centre, `r` = 6.3 px, a glow of 8 px, a bob of +-2 px) covered about y 8..52
@@ -528,7 +595,7 @@ Unknown lines and comments are kept.
 | HOME | back to the XMB (the system's own question) |
 
 ## What is shown
-- `ms0:/ISO` (+ one level of sub-folders): `.iso`, `.cso`, `.zso`, `.dax`
+- `ms0:/ISO` (+ one level of sub-folders): `.iso`, `.cso`, `.zso`, `.dax`, `.jso`
 - `ms0:/PSP/GAME/*/EBOOT.PBP`: PSN and PS1 games and apps
 - Everything shows up in the **Library**; **Games** (Home) shows the cards opened last and the pinned ones
 - The UMD in the drive: first under **Games** and in the **Library**
@@ -584,7 +651,9 @@ tried on the PSP.
 | `src/gfx.c` | a small GU renderer + intraFont text |
 | `src/loader.c` | background thread that loads pictures |
 | `src/art.c`, `src/image.c` | covers/cache, PNG, scaling, blur, NTX format |
-| `src/scan.c`, `src/iso.c`, `src/sfo.c` | scanning, ISO/CSO/ZSO/DAX, PARAM.SFO |
+| `src/scan.c`, `src/iso.c`, `src/sfo.c` | scanning, ISO/CSO/ZSO/DAX/JSO, PARAM.SFO |
+| `src/lzo.c` | LZO1X unpacking for JSO |
+| `src/folders.c` | the folder of a game (Library), its name and letter |
 | `src/launch.c` | start through ARK-5's systemctrl |
 | `src/settings.c` | the settings screen |
 | `src/arkcfg.c`, `src/plugins.c` | ARK's SETTINGS.TXT and PLUGINS.TXT |

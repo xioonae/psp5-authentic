@@ -5,6 +5,29 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ## Unreleased
 
+- **Library: a button that chooses what the Library shows – with folders.** The title at the top left (it used to say *All games
+  and apps*) is a button now, framed when selected like **Sort**, in the same row. ↑ from a card selects the button nearest above
+  it (the new one on the left, Sort on the right); ← → move between the two; ✕ opens a list of four views:
+  - **All games/apps without folders** – everything in one list, as before.
+  - **Only games/apps in folders** – a card for every folder. A game's folder is the last folder before its own folder in
+    `PSP/GAME` (`PSP/GAME/Racing/MyGame/EBOOT.PBP` is in *Racing*), or before the image in `ISO` (`ISO/Racing/MyGame.iso`).
+    ✕ on a folder opens it and its games and apps take the place of the folders; the folder's name is at the top where the button
+    was, and **○ goes back** to the folders (○ again closes the Library). START does nothing on a folder.
+  - **Only games/apps out of folders** – only what is not in any folder.
+  - **Both games/apps in and out of folders** – the folders first, then the games and apps that are in no folder (the UMD disc stays
+    first of all).
+  A folder card is in your theme's colour with a folder drawn by the launcher and the folder's first letter in it, as a capital (two
+  letters for a pair like *Ch*). Its name is in the bottom row, where a game's name is, with the tag *Folder*. The folders are sorted
+  by the Sort button like games (by name, or the folder with the newest game first). Folder names are shown the way the
+  Categories Lite plugin shows them: without `CAT_` and without the two sort digits (`01Racing` is *Racing*). Folders with the
+  same name – in `GAME` and in `ISO`, on the Memory Stick and on the internal storage – are one card.
+  If a view has nothing to show (no folders at all, say) the screen says so and the button stays selected so you can change the view.
+  When there is not enough room in a language with long words, the number of games next to the button is left out first and the
+  text gets a little smaller.
+- **The Library remembers the Sort and the view** after a restart (two lines in `psp5.cfg`). Before, it was *by name* every time.
+- **.jso games** (an ISO packed with LZO) show up in the Library, can be started, deleted and looked at in the file manager and in
+  Information, like .iso, .cso, .zso and .dax. (Checked on a PC with made-up data against the reference LZO library; no real .jso file
+  and no PSP was used.)
 - **PS1 theme: the four symbols sit lower.** They moved from behind the clock and the battery to the right side, under the row of
   cards on Home, so they can be seen clearly. They are in the same place on every screen.
 
