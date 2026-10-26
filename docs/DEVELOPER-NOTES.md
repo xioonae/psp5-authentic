@@ -60,7 +60,7 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
     text); when even 0.45 is too wide next to the number, the number is dropped, then the end of the text is cut ("..."). The frame is
     `SORT_PAD` (9 px) wider than the text on each side and 22 px high, on the same line as the Sort frame
     (`popup_label_mid(53, SORT_SIZE)`); the baseline of the text is worked out from its size (`popup_label_mid`) so that the middle of the text stays
-    on that line, whatever the size (`text_fit` may have made it smaller). The view popup (`MENU_VIEW`, four `MI_VIEW_*`) opens at x = 15 (the frame's left edge), y = 66, as wide as the widest
+    on that line, whatever the size (`text_fit` may have made it smaller). The number of cards is drawn on that same baseline (`head_y`, size 0.6): it was at 53, the Sort button's baseline, and so one pixel above the text (`ui/library_test.c` compares the two in all 11 languages and four views). The view popup (`MENU_VIEW`, four `MI_VIEW_*`) opens at x = 15 (the frame's left edge), y = 66, as wide as the widest
     label + 32 (at least 200, at most 450).
   - *Drawing*: the folder card is a card in the theme's colour (`theme_cur()->card`, like the Library card) with `gfx_folder_icon` in a
     light grey (200 .. 255 with the focus) and the letter in the card's colour, size 0.037 x the height of the body (a capital is about half of it), on

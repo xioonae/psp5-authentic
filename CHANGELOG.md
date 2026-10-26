@@ -5,6 +5,9 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ## Unreleased
 
+- **Library: the number of cards is level with the text before it.** In the row at the top (*All: 15*) the number was drawn on the baseline of
+  the Sort button, one pixel higher than *All:*, which sits a little lower so that it is centred with the button. It is on the baseline of the text now.
+  (Seen in the PC test frames; not looked at on a PSP.)
 - **Library: a button that chooses what the Library shows – with folders.** The title at the top left (it used to say *All games
   and apps*) is a button now, framed when selected like **Sort**, in the same row. ↑ from a card selects the button nearest above
   it (the new one on the left, Sort on the right); ← → move between the two; ✕ opens a list of four views:
