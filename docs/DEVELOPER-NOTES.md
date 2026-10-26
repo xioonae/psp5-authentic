@@ -143,6 +143,8 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
     - *psp5 itself*: ARK's runlevel `game` also matches homebrew (`matchingRunlevel` in `core/systemctrl/src/plugin.c` looks for the word `game`, `homebrew` or `app` in the homebrew
       case, `umd`/`psp`/`game` for ISO and UMD games, `pops`/`ps1`/`psx` for PS1), so the plugin is loaded into psp5 too. `awake_is_psp5(sceKernelInitFileName())` makes it end at once there
       (`VBOOT.PBP`, or `EBOOT.PBP` in a folder called `PSP5`): psp5 is not a game, and as the launcher it is started again right after every game.
+      The plugin cannot know a psp5 that was put in a folder with another name (it would count it as a game), so psp5 also knows itself: `main()` calls `playtime_set_self(argv[0])`, and `merge_played` removes (and does not add) a file whose name is the folder
+      of psp5's own EBOOT.PBP (compared without regard to capitals, FAT does not tell them apart). The plugin does write that file while psp5 runs; it is removed at the next start.
     - *psp5's side* (`merge_played` in `playtime.c`, called by `playtime_load`, which `main()` calls before it takes the marker): every `*.txt` in `<data dir>/played` that is whole (`awake_parse`) is added to its game
       (`add`: no overflow), `playtime.txt` is saved once, and only when that worked the files are removed (none are lost when the card is full or read-only; a `playtime.txt` that cannot be read, because it is too big, is not written over
       and the files stay). Files that are not whole are left alone. At most 256 files per start. The games that got time are remembered for this start: when the marker (psp5 as the launcher) names one of them, `playtime_mark_take`
@@ -186,12 +188,12 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
     is started again within a day: the time it was off is counted too. If psp5 is the launcher (VBOOT.PBP swapped) but ARK is not told to
     start it again after a game ("Boot into psp5" off), the marker would stay until the next start of psp5 and the whole time between is
     counted (up to a day); not tried, and no guard is built in. Sessions under 10 s or over a day are dropped.
-  - *Tests* (`host-tests`, not under git): `units/playtime_test.c` (new, 255 checks: no file, one and several sessions, the two clocks,
+  - *Tests* (`host-tests`, not under git): `units/playtime_test.c` (new, 260 checks: no file, one and several sessions, the two clocks,
     backwards clocks, 9 / 10 s, a day, empty / cut at every length / random / huge markers, the file's format and limits, the same game in
     another file, the texts in 11 languages; mutation-tested), `ui/library_test.c` (the clock in the Library and the Games tab: exact place of
     the text and of the two hands, nothing for unplayed games, folders or the Library card, the title cut before the clock, the room in 11
     languages), `ui/pixel_test.c` (every game has a time: the clock is drawn through the whole-pixel check in every state).
-    For the helper plugin (counts: awake_test 198, psp5time_test 71, the plugin parts of playtime_test are in its 255): `units/awake_test.c` (the counter with sleeps, a clock that stands still or goes back, the file's format cut at every length, the names of games from paths and from a PARAM.SFO with
+    For the helper plugin (counts: awake_test 198, psp5time_test 76, the plugin parts of playtime_test are in its 260): `units/awake_test.c` (the counter with sleeps, a clock that stands still or goes back, the file's format cut at every length, the names of games from paths and from a PARAM.SFO with
     wrapping offsets and cut pieces, the folder and file names, `awake_is_psp5`), `plugin/psp5time_test.c` (includes the real `psp5time.c` and runs its loop against a fake clock with sleeps and a throwaway
     memory stick with a made-up disc: a game from the XMB, a disc that is readable late or never, the writes in place, under 10 s, sleep for hours, switched off, a game played twice, `ef0:`, a folder that is not there,
     a 6-hour game, psp5 itself skipped, psp5 as the launcher with a marker), the "helper plugin's files" and "name a game the same way" parts of `units/playtime_test.c` (merging, files that are not whole, a full or

@@ -26,6 +26,11 @@
 #define PLAYTIME_MIN_SECS 10          /* a shorter session is a game that did not really start */
 #define PLAYTIME_MAX_SECS (24 * 3600) /* a longer one is a marker that was left behind */
 
+/* psp5's own EBOOT.PBP (argv[0]). The helper plugin does not count psp5 (it knows it by the folder name PSP5, and VBOOT.PBP as the launcher), but
+ * when psp5 has been put in a folder with another name, it would count the time psp5 is open as a game: playtime_load() then drops that file.
+ * Call it before playtime_load(). NULL, or a path that is not an EBOOT.PBP in a folder, clears it. */
+void playtime_set_self(const char *path);
+
 /* Reads <dir>/playtime.txt (no file = nobody has played yet) and adds the time that the helper plugin kept in <dir>/played (saved at once, then the
  * files are removed). Call it again to forget what was read. */
 void playtime_load(const char *dir);

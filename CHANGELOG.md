@@ -60,6 +60,8 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   Without the plugin everything works as before. The plugin and its counting were tested on a PC (the plugin's own loop against a clock that sleeps, a throwaway memory stick and a made-up disc); it has **not** been run on a PSP. Not known: that ARK accepts the module as it is built, what
   the file name of a PS1 game or a disc is for ARK in every case (it is used as ARK gives it), the PSP Go (the plugin keeps its files in the folder it was loaded from, so on the internal storage they are on `ef0:`), and whether the Go's pause mode (the game paused behind the XMB) is left out.
   Any other homebrew you run gets a time line in `playtime.txt` too (under its folder name): it is never shown, but it is there.
+  **psp5 itself is never counted**: the plugin ends at once in psp5 (an `EBOOT.PBP` in a folder called `PSP5`, or ARK's launcher `VBOOT.PBP`), and as a second guard psp5 knows its own path and throws away any
+  file the plugin made for psp5's own folder, so even a psp5 that was put in a folder with another name does not get a time of its own.
 - **The Library remembers the Sort and the view** after a restart (two lines in `psp5.cfg`). Before, it was *by name* every time.
 - **.jso games** (an ISO packed with LZO) show up in the Library, can be started, deleted and looked at in the file manager and in
   Information, like .iso, .cso, .zso and .dax. (Checked on a PC with made-up data against the reference LZO library; no real .jso file

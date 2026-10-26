@@ -84,6 +84,16 @@ static int save(void)
 static char s_merged[MAX_PLAYED][KEY_LEN]; /* the games that got time from the plugin at this start */
 static int s_nmerged;
 
+static char s_self_key[KEY_LEN]; /* the folder of psp5's own EBOOT.PBP: psp5 is not a game */
+
+void playtime_set_self(const char *path)
+{
+    s_self_key[0] = 0;
+    char key[KEY_LEN];
+    if (path && awake_key_from_path(path, key, sizeof(key)) == 1)
+        snprintf(s_self_key, sizeof(s_self_key), "%s", key);
+}
+
 static int was_merged(const char *key)
 {
     for (int i = 0; i < s_nmerged; i++)
@@ -93,7 +103,7 @@ static int was_merged(const char *key)
 }
 
 /* Adds what the plugin kept in <dir>/played/<game>.txt to the games, saves playtime.txt, and only then removes the files (a file that is not
- * whole, or not one of the plugin's, is left alone). The games that got time are remembered: for them psp5's own measuring (the marker) is not used. */
+ * whole, or not one of the plugin's, is left alone; psp5's own folder is dropped, see playtime_set_self). The games that got time are remembered: for them psp5's own measuring (the marker) is not used. */
 static void merge_played(void)
 {
     typedef struct {
@@ -127,6 +137,8 @@ static void merge_played(void)
             sceIoClose(fd);
         }
         if (got > 0 && awake_parse(text, got, &found[n].secs)) {
+            if (s_self_key[0] && !strcasecmp(found[n].key, s_self_key))
+                found[n].secs = 0; /* the plugin counted the time psp5 was open (it only knows psp5 by the folder name PSP5): not a game, the file is removed */
             snprintf(found[n].name, sizeof(found[n].name), "%s", ent.d_name);
             n++;
         }
