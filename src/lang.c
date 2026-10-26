@@ -265,8 +265,6 @@ static const char *const T[S_COUNT][NL] = {
                        "Žádné hry ani aplikace nejsou mimo složky" },
     /* the units of the time played (the small clock in Games and the Library): "54h" and "45min", no space; either hours or minutes */
     [S_UNIT_H] = { "h", "h", "h", "h", "h", "h", "u", "h", "ч", "時間", "h" },
-    [S_EXACT_TIME] = { "Exact time played", "Exakt speltid", "Genaue Spielzeit", "Temps de jeu exact", "Tiempo de juego exacto", "Tempo di gioco esatto",
-                       "Exacte speeltijd", "Tempo de jogo exato", "Точное время игры", "正確なプレイ時間", "Přesný herní čas" },
     [S_UNIT_MIN] = { "min", "min", "min", "min", "min", "min", "min", "min", "мин", "分", "min" },
     [S_SORT] = { "Sort by", "Sortera efter", "Sortieren nach", "Trier par", "Ordenar por", "Ordina per", "Sorteren op", "Ordenar por",
                  "Сортировать по", "並べ替え", "Seřadit" },

@@ -185,10 +185,9 @@ static int helper_line(const char *name, const char *level)
     return -1;
 }
 
-int plugins_helper_on(const char *name)
+int plugins_helper_any(const char *name)
 {
-    int g = helper_line(name, "game"), p = helper_line(name, "pops");
-    return g >= 0 && p >= 0 && s_plugins[g].on && s_plugins[p].on;
+    return helper_line(name, "game") >= 0 || helper_line(name, "pops") >= 0;
 }
 
 /* The file the new lines go into: the first one that is there (the ARK folder's file is read first, so it is that one when both are),
@@ -212,24 +211,21 @@ static PluginFile *helper_file(void)
     return f;
 }
 
-int plugins_helper_set(const char *prx_path, int on)
+int plugins_helper_add(const char *prx_path)
 {
     const char *name = strrchr(prx_path, '/');
     name = name ? name + 1 : prx_path;
     static const char *const levels[] = { "game", "pops" };
     for (int k = 0; k < 2; k++) {
-        int i = helper_line(name, levels[k]);
-        if (i >= 0) {
-            s_plugins[i].on = on ? 1 : 0;
-        } else if (on) {
-            PluginFile *f = helper_file();
-            if (!f || f->count >= MAX_LINES)
-                return 0;
-            int line = f->count++;
-            snprintf(f->lines[line], LINE_LEN, "%s, %s, on", levels[k], prx_path);
-            f->dirty = 1;
-            parse_line((int)(f - s_files), line);
-        }
+        if (helper_line(name, levels[k]) >= 0)
+            continue; /* a line that is there is left as it is (on or off) */
+        PluginFile *f = helper_file();
+        if (!f || f->count >= MAX_LINES)
+            return 0;
+        int line = f->count++;
+        snprintf(f->lines[line], LINE_LEN, "%s, %s, on", levels[k], prx_path);
+        f->dirty = 1;
+        parse_line((int)(f - s_files), line);
     }
     return plugins_save();
 }

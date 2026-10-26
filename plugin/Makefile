@@ -1,5 +1,5 @@
 # The helper plugin (psp5time.prx): a kernel module that ARK loads into a game. psp5 carries it inside its own EBOOT.PBP
-# (see ../Makefile) and writes it out when "Exact time played" is turned on.
+# (see ../Makefile) and writes it out at every start with ARK (src/helper.c).
 TARGET = psp5time
 OBJS = psp5time.o awake.o
 

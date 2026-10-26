@@ -34,11 +34,8 @@ this fork does it the same way. This is version 1.1.0 (1.0.0 was the first relea
 - **Games (Home).** Your last played games and apps plus the ones you pinned, in one row. The selected card is big, with its
   artwork behind it. ↓ selects the **Play** and **⋯** (options) buttons. A UMD in the drive shows up first.
 - **Time played.** A small clock with the time (*54h*, *45min* or *<1min*) on the right of the bottom row, in Games and in the Library.
-  By default it counts only when psp5 is ARK's launcher (see *Optional: replace ARK's Custom Launcher with psp5* in `INSTALL.md`, with *Boot into psp5* turned on; *Settings → psp5* says
-  *psp5 is ARK's launcher: Yes*): ARK then starts psp5 again when a game ends. That is the case when psp5 was opened with the Custom Launcher entry in the XMB or by ARK itself; started from Game → Memory Stick as a normal app, psp5 does not note the game and nothing is counted.
-  In that mode it is the time between *Play* and the next start of psp5, so time the PSP spends asleep or switched off during a game is counted too (up to a day).
-  Turn on **Settings → psp5 → Exact time played** and psp5 installs a tiny helper plugin that runs inside every game (PSP games, ISOs, homebrew and PS1 games), however you started it, and counts only the time the PSP is awake. psp5 then does not need to be the launcher;
-  the times are added when psp5 starts next.
+  With ARK, psp5 installs a tiny helper plugin by itself (nothing to switch on). It runs inside every game (PSP games, ISOs, homebrew and PS1 games), **however you started it** (from psp5, from the XMB, with or without psp5 as ARK's launcher),
+  and counts only the time the PSP is awake. The times are added when psp5 starts next. To turn it off, turn off the two `psp5time.prx` lines in *Settings → Plugins*. Without ARK, or with those lines off, nothing is counted.
 - **Options** (START, or ✕ on ⋯). Manage Saved Data, Information, Delete, Remove from / Add to Home, Pin to / Unpin from Home.
 - **Library.** The last card of Games. It opens a grid with everything you have, games and apps together, a **Sort** button (by
   name or by what you added last) and a **view** button (*All*, *In folders*, *Outside of folders* or *Both in and out of

@@ -18,10 +18,10 @@ Plugin *plugins_get(int i);
 /* Skriver tillbaka ändrade filer – bara på/av-fältet ändras. */
 int plugins_save(void);
 
-/* The helper plugin (helper.c): are its two lines ("game" and "pops", by the file name) there and on? */
-int plugins_helper_on(const char *name);
-/* Turns the two lines for the plugin at `prx_path` on or off and adds them (to the file the plugins are in) when they are missing and on = 1;
- * everything else in the files stays as it is. Writes the files; 1 = done. */
-int plugins_helper_set(const char *prx_path, int on);
+/* The helper plugin (helper.c): is there a line for it ("game" or "pops", by the file name), on or off? */
+int plugins_helper_any(const char *name);
+/* Adds the two lines ("game" and "pops") for the plugin at `prx_path`, on, to the file the plugins are in (the ARK folder's when there is none),
+ * those that are missing; a line that is there stays as it is, and everything else in the files too. Writes the files; 1 = done. */
+int plugins_helper_add(const char *prx_path);
 
 #endif
