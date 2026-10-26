@@ -1847,7 +1847,7 @@ static void draw_library(Ui *ui)
     char num[16];
     snprintf(num, sizeof(num), "%d", v->count);
     if (hd.show_count)
-        text_draw(hd.count_x, 53, 0.6f, 0, with_alpha(TEXT_DIM, ui_a), ALIGN_LEFT, num);
+        text_draw(hd.count_x, head_y, 0.6f, 0, with_alpha(TEXT_DIM, ui_a), ALIGN_LEFT, num); /* (on the baseline of the text before it, not of the Sort button: the label is larger and sits lower) */
 
     /* the Sort button: selected with ↑ from a card under it, it gets the frame of a chosen entry; ✕ opens the popup. Its frame
      * is gone for as long as the top bar has the focus (sort_frame), so moving along the top bar never brings it back. */
