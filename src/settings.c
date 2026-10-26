@@ -11,7 +11,6 @@
 #include "settings.h"
 #include "arkcfg.h"
 #include "plugins.h"
-#include "helper.h"
 #include "system.h"
 #include "sound.h"
 #include "lang.h"
@@ -45,7 +44,6 @@ typedef struct {
     char info[48];               /* INFO-värde / undertext */
     int plugin;                  /* >0: plugin nr (1-baserat) */
     int own;                     /* psp5:s egen inställning (psp5.cfg) */
-    int helper;                  /* "Exact time played": turned on / off by installing the helper plugin (helper.c), not by a file of its own */
 } Item;
 
 typedef struct {
@@ -59,7 +57,6 @@ enum { CAT_PSP5, CAT_THEME, CAT_PERF, CAT_SYSTEM, CAT_PLUGINS, CAT_POWER, CAT_CO
 
 static Category s_cats[CAT_COUNT];
 static unsigned char s_plugin_on[MAX_PLUGINS];
-static unsigned char s_exact; /* "Exact time played": the helper plugin is on */
 /* Radbrytningen mäter texten många gånger – gör den bara när texten byts, inte varje bildruta */
 static const char *s_wrapped; /* texten som s_desc håller, NULL = inget */
 static int s_wrapped_n;
@@ -68,7 +65,7 @@ static struct {
     int cat, item[CAT_COUNT];
     int focus;          /* 0 = kategorier, 1 = alternativ */
     float scroll, open, time;
-    int cfw_dirty, plugins_dirty, own_dirty, helper_dirty;
+    int cfw_dirty, plugins_dirty, own_dirty;
     int repeat_dir;
     float repeat_timer;
     int stick_x;        /* the analog stick sideways as it was last time: -1, 0 or 1 */
@@ -196,8 +193,6 @@ static void build(int rebuild)
     c->items[c->count - 1].own = 1;
     toggle(c, L(S_BATTERY_PCT), &g_battery_pct);
     c->items[c->count - 1].own = 1;
-    toggle(c, L(S_EXACT_TIME), &s_exact); /* installs the helper plugin (helper.c): it counts every game, started from psp5 or not */
-    c->items[c->count - 1].helper = 1;
     choice(c, L(S_LANGUAGE), &g_lang_setting, OPT_LANG, LANG_COUNT);
     c->items[c->count - 1].own = 1;
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
@@ -305,7 +300,6 @@ void settings_open(void)
     snprintf(path, sizeof(path), "%sSETTINGS.TXT", sys_ark_dir());
     arkcfg_load(path);
     plugins_load(sys_ark_dir());
-    s_exact = helper_on();
     build(0);
     memset(&S, 0, sizeof(S));
 }
@@ -325,19 +319,7 @@ int settings_commit(void)
             plugins_get(i)->on = s_plugin_on[i];
         plugins_save();
     }
-    if (S.helper_dirty) {
-        if (helper_set(s_exact))
-            changed = 1;
-        else
-            sound_play(SND_ERROR); /* the plugin could not be written: the switch goes back (and nothing was saved) */
-        /* the list of plugins has changed (its two lines): read it again, and show what is really so */
-        plugins_load(sys_ark_dir());
-        s_exact = helper_on();
-        build(0);
-        if (S.item[CAT_PLUGINS] >= s_cats[CAT_PLUGINS].count)
-            S.item[CAT_PLUGINS] = s_cats[CAT_PLUGINS].count ? s_cats[CAT_PLUGINS].count - 1 : 0;
-    }
-    S.cfw_dirty = S.plugins_dirty = S.own_dirty = S.helper_dirty = 0;
+    S.cfw_dirty = S.plugins_dirty = S.own_dirty = 0;
     return changed;
 }
 
@@ -383,9 +365,7 @@ static int vertical(const UiInput *in, int stick, float dt)
 
 static void mark_dirty(const Item *it)
 {
-    if (it->helper)
-        S.helper_dirty = 1;
-    else if (it->own)
+    if (it->own)
         S.own_dirty = 1;
     else if (it->plugin)
         S.plugins_dirty = 1;

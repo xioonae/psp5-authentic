@@ -12,12 +12,6 @@ static void prx_path(char *out, int size)
     snprintf(out, size, "%s/" HELPER_NAME, PSP5_DATA_DIR);
 }
 
-static int is_there(const char *path)
-{
-    SceIoStat st;
-    return sceIoGetstat(path, &st) >= 0;
-}
-
 /* 1 = the file has exactly the bytes that are inside psp5 */
 static int same_file(const char *path)
 {
@@ -54,26 +48,15 @@ static int install(const char *path)
     return n == (int)size_psp5time_prx;
 }
 
-int helper_on(void)
+void helper_setup(void)
 {
+    if (!sys_has_ark())
+        return;
     char path[64];
     prx_path(path, sizeof(path));
-    return is_there(path) && plugins_helper_on(HELPER_NAME);
-}
-
-int helper_set(int on)
-{
-    char path[64];
-    prx_path(path, sizeof(path));
-    if (on && !install(path))
-        return 0;
-    return plugins_helper_set(path, on);
-}
-
-void helper_sync(void)
-{
-    char path[64];
-    prx_path(path, sizeof(path));
-    if (is_there(path) && !same_file(path))
-        install(path);
+    if (!install(path))
+        return; /* no lines for a file that is not there */
+    plugins_load(sys_ark_dir());
+    if (!plugins_helper_any(HELPER_NAME))
+        plugins_helper_add(path);
 }

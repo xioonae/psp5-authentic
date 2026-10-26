@@ -81,9 +81,6 @@ static int save(void)
 
 #define MAX_PLAYED 256 /* files taken at one start; the rest next time */
 
-static char s_merged[MAX_PLAYED][KEY_LEN]; /* the games that got time from the plugin at this start */
-static int s_nmerged;
-
 static char s_self_key[KEY_LEN]; /* the folder of psp5's own EBOOT.PBP: psp5 is not a game */
 
 void playtime_set_self(const char *path)
@@ -94,16 +91,8 @@ void playtime_set_self(const char *path)
         snprintf(s_self_key, sizeof(s_self_key), "%s", key);
 }
 
-static int was_merged(const char *key)
-{
-    for (int i = 0; i < s_nmerged; i++)
-        if (!strcmp(s_merged[i], key))
-            return 1;
-    return 0;
-}
-
 /* Adds what the plugin kept in <dir>/played/<game>.txt to the games, saves playtime.txt, and only then removes the files (a file that is not
- * whole, or not one of the plugin's, is left alone; psp5's own folder is dropped, see playtime_set_self). The games that got time are remembered: for them psp5's own measuring (the marker) is not used. */
+ * whole, or not one of the plugin's, is left alone; psp5's own folder is dropped, see playtime_set_self). */
 static void merge_played(void)
 {
     typedef struct {
@@ -111,7 +100,6 @@ static void merge_played(void)
         char key[KEY_LEN];
         unsigned secs;
     } Found;
-    s_nmerged = 0;
     char dir[64];
     snprintf(dir, sizeof(dir), "%s/%s", s_dir, AWAKE_PLAYED_DIR);
     SceUID d = sceIoDopen(dir);
@@ -148,8 +136,6 @@ static void merge_played(void)
     for (int i = 0; i < n; i++)
         if (found[i].secs > 0) {
             add(found[i].key, found[i].secs);
-            if (s_nmerged < MAX_PLAYED && !was_merged(found[i].key))
-                snprintf(s_merged[s_nmerged++], KEY_LEN, "%s", found[i].key);
             added = 1;
         }
     if (!added || save())
@@ -205,7 +191,6 @@ static int read_games(void)
 void playtime_load(const char *dir)
 {
     s_n = 0;
-    s_nmerged = 0;
     snprintf(s_dir, sizeof(s_dir), "%s", dir);
     if (read_games()) /* (a file that could not be read is not written over with what the plugin kept) */
         merge_played();
@@ -220,107 +205,6 @@ unsigned playtime_seconds(const Entry *e)
     entry_cover_key(e, key, sizeof(key));
     const Game *g = find(key);
     return g ? g->secs : 0;
-}
-
-/* --- the marker --- */
-
-#define MARK_HEAD "psp5-ingame 1\n"
-
-/* a 64 bit number as digits (the C library of the PSP toolchain may not do %llu) */
-static char *u64_text(unsigned long long v, char *out)
-{
-    char tmp[24];
-    int n = 0;
-    do {
-        tmp[n++] = (char)('0' + (int)(v % 10));
-        v /= 10;
-    } while (v);
-    for (int i = 0; i < n; i++)
-        out[i] = tmp[n - 1 - i];
-    out[n] = 0;
-    return out;
-}
-
-int playtime_mark_write(const char *path, const Entry *e, unsigned long long sys_us, unsigned long long rtc_us)
-{
-    char key[KEY_LEN], text[KEY_LEN + 96], sys[24], rtc[24];
-    entry_cover_key(e, key, sizeof(key));
-    int n = snprintf(text, sizeof(text), MARK_HEAD "sys %s\nrtc %s\nkey %s\n", u64_text(sys_us, sys), u64_text(rtc_us, rtc), key);
-    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
-    if (fd < 0)
-        return 0;
-    int written = sceIoWrite(fd, text, n);
-    sceIoClose(fd);
-    return written == n;
-}
-
-/* a line "name 123" of the marker: the number, or -1 */
-static long long marker_number(const char *text, const char *name)
-{
-    size_t l = strlen(name);
-    for (const char *p = text; p && *p; p = strchr(p, '\n') ? strchr(p, '\n') + 1 : NULL)
-        if (!strncmp(p, name, l) && p[l] == ' ' && p[l + 1] >= '0' && p[l + 1] <= '9') {
-            unsigned long long v = 0;
-            for (const char *d = p + l + 1; *d >= '0' && *d <= '9'; d++) {
-                if (v > (~0ULL >> 1) / 10 - 1)
-                    return -1; /* (too big to be a clock) */
-                v = v * 10 + (unsigned)(*d - '0');
-            }
-            return (long long)v;
-        }
-    return -1;
-}
-
-int playtime_mark_take(const char *path, unsigned long long sys_us, unsigned long long rtc_us)
-{
-    SceIoStat st;
-    if (sceIoGetstat(path, &st) < 0)
-        return 0;
-    char text[KEY_LEN + 160];
-    int got = 0;
-    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
-    if (fd >= 0) {
-        got = sceIoRead(fd, text, sizeof(text) - 1);
-        sceIoClose(fd);
-    }
-    text[got > 0 ? got : 0] = 0;
-    sceIoRemove(path);
-    if (strncmp(text, MARK_HEAD, strlen(MARK_HEAD)))
-        return 1; /* an empty marker (from an older psp5), or a damaged one: a game ended, but nothing is known about how long */
-    long long sys0 = marker_number(text, "sys"), rtc0 = marker_number(text, "rtc");
-    const char *key = strstr(text, "\nkey ");
-    if (!key || !key[5] || key[5] == '\n')
-        return 1;
-    key += 5;
-    int name_len = (int)strcspn(key, "\r\n");
-    if (key[name_len] != '\n')
-        return 1; /* the end of the name is missing: the file was cut off while it was written */
-    char name[KEY_LEN];
-    snprintf(name, sizeof(name), "%.*s", name_len, key);
-    if (was_merged(name))
-        return 1; /* the helper plugin counted this game (only the time the PSP was awake): the clocks of the marker would count sleep too */
-    /* The two clocks; one that has gone backwards (the PSP was restarted, the clock was set) or could not be read (0) cannot be used.
-     * Starting a game and leaving it restart the PSP's software and the system clock with it (seen in a log from a real PSP: 7 s when the game
-     * was started, 3 s when psp5 was started again after it), so mostly only the real-time clock is left. The system clock is also not used
-     * when it says less than the shortest session while the real-time clock says more: it has started again from zero and come back to
-     * a few seconds above the old reading, which is not a measure of the game. */
-    long long sys_d = -1, rtc_d = -1;
-    if (sys0 > 0 && sys_us >= (unsigned long long)sys0)
-        sys_d = (long long)((sys_us - (unsigned long long)sys0) / 1000000ULL);
-    if (rtc0 > 0 && rtc_us >= (unsigned long long)rtc0)
-        rtc_d = (long long)((rtc_us - (unsigned long long)rtc0) / 1000000ULL);
-    long long best = -1;
-    if (sys_d >= 0 && rtc_d >= 0)
-        best = (sys_d < PLAYTIME_MIN_SECS && rtc_d >= PLAYTIME_MIN_SECS) || rtc_d < sys_d ? rtc_d : sys_d;
-    else if (rtc_d >= 0)
-        best = rtc_d;
-    else if (sys_d >= 0)
-        best = sys_d;
-    if (best >= PLAYTIME_MIN_SECS && best <= PLAYTIME_MAX_SECS && name[0]) {
-        add(name, (unsigned)best);
-        save();
-    }
-    return 1;
 }
 
 void playtime_text(unsigned secs, char *out, int size)

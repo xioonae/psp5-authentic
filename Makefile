@@ -34,7 +34,7 @@ PSPSDK = $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
 
 # The helper plugin (plugin/psp5time.c, a kernel module that ARK loads into a game) is built first and carried inside psp5 as a C array
-# (src/helper.c writes it out when "Exact time played" is turned on).
+# (src/helper.c writes it out at every start with ARK, and adds its two lines to PLUGINS.TXT the first time).
 plugin/psp5time.prx: plugin/psp5time.c plugin/exports.exp plugin/Makefile src/awake.c src/awake.h
 	$(MAKE) -C plugin
 

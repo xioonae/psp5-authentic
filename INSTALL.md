@@ -49,13 +49,16 @@ Then *Custom Launcher* in the XMB opens psp5, and your PSP can start straight in
 
 To get to the XMB from there: settings → *Power and USB* → *Exit to XMB*.
 
-### Optional: exact time played
+## Time played
 
-The clock on a game's card normally counts the time from *Play* until psp5 starts again, so a PSP that sleeps or is switched off in the
-middle of a game counts that time too, and only when psp5 is ARK's launcher (see above). To count only the time you really play, **and also for games you start
-from the XMB**: settings → *psp5* → turn on **Exact time played**, and leave the settings. psp5 then puts a tiny helper plugin (`psp5time.prx`) in its `PSP5` folder and adds two lines for it to the
-`PLUGINS.TXT` that ARK reads (one for PSP games and homebrew, one for PS1 games). Your other plugins stay as they are. It works from the next game you
-start, with no restart: the plugin keeps the seconds of each game in `PSP5/played`, and psp5 adds them the next time it starts. Turn the switch off to stop using it.
+There is nothing to set up. The first time psp5 starts on a PSP with ARK it puts a tiny helper plugin (`psp5time.prx`) in its `PSP5` folder and adds two lines for it to the
+`PLUGINS.TXT` that ARK reads (one for PSP games and homebrew, one for PS1 games). Your other lines stay as they are. It counts from the next game you start, with no restart,
+**however you start the game** (from psp5, or from the XMB; psp5 does not have to be ARK's launcher), and only the time the PSP is awake: sleep and switched-off time are not counted.
+The plugin keeps the seconds of each game in `PSP5/played`, and psp5 adds them to the times it shows the next time it starts.
+
+- To turn it off, open *Settings → Plugins* and turn off the two `psp5time.prx` lines (*Games* and *PS1*). psp5 leaves those lines as they are, so they stay off (it only adds them when there is no line for the plugin at all).
+- Without ARK, or with the lines off, nothing is counted. A game under 10 seconds is not counted, and neither is an ISO without a disc ID.
+- When psp5 is updated, the plugin file is replaced by the one that comes with it.
 
 ## Where your games go
 

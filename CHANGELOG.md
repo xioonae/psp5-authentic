@@ -37,28 +37,22 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   bottom row – in the Games tab opposite *Play* and the ⋯ button, in the Library opposite the tag and the name. It shows
   **minutes up to an hour, then whole hours – never both** (*h* / *min* in most languages, *u* in Dutch, *ч* / *мин* in Russian,
   時間 / 分 in Japanese). Nothing is shown for a game that has not been played, and **never** for the Library card or a folder (the launcher's own cards). Something played but under a minute shows **<1min**. The time is added up
-  when you come back to psp5 after a game, in a file `playtime.txt` next to the other psp5 files, one line per game. Games that
+  when psp5 starts, in a file `playtime.txt` next to the other psp5 files, one line per game. Games that
   are the same (the same disc ID, or the same folder / file name) share one time, wherever the files are.
-  **Without the helper plugin (next paragraph) it only works when psp5 is ARK's launcher** (the *VBOOT.PBP* swap and *Boot into psp5* in `INSTALL.md`; *Settings → psp5* then says
-  *psp5 is ARK's launcher: Yes*): then ARK starts psp5 again when the game ends and psp5 knows exactly when you started and when you stopped. That is also the case when you open psp5 with the Custom Launcher entry in the XMB (checked on a real PSP: the game was
-  counted and ARK went straight back to psp5). Started from Game → Memory Stick as a normal app, psp5 does not note the game and **nothing is counted**.
-  Things to know: without the helper plugin (next paragraph) the time of one session is measured with the PSP's real-time clock (starting a game restarts the
-  system clock, so that one cannot be used after a game; measured on a real PSP); a session shorter than 10 seconds or longer than a
-  day is not counted; a PSP that sleeps while the game is open counts the time it slept (up to a day), and one that was switched off during a game and started again
-  counts the time it was off too. In a test on a real PSP with psp5 as ARK's launcher a game of about 160 seconds was counted as 159.
-- **Exact time played** (Settings → psp5): a switch that installs a small helper plugin, `psp5time.prx` (a kernel module that is carried inside psp5).
-  It runs inside every PSP game, ISO, homebrew and PS1 game, **whoever started it**, so with it on the time is counted **also for games you start from the XMB, and
+  The time comes from a small helper plugin that psp5 installs by itself (next paragraph). **There is no other way of counting**: with no ARK, with the plugin's lines turned off, or for a game that
+  the plugin cannot name the way psp5 does (an ISO without a disc ID), **nothing is counted**. A game of under 10 seconds is not counted either.
+  (The test builds 4–6 had a switch for this, *Exact time played*, and measured from *Play* to the next start of psp5 when the plugin was off. The switch and that measuring are gone.)
+- **The helper plugin that counts the time (installs itself).** `psp5time.prx` is a small kernel module that is carried inside psp5. At every start with ARK psp5 writes it to the `PSP5` folder (when it is missing or not the one that comes with this psp5) and,
+  when `PLUGINS.TXT` has **no line for it at all**, adds two lines: `game, ...psp5time.prx, on` (PSP games, ISOs and homebrew) and `pops, ...psp5time.prx, on` (PS1 games). Every other line is left as it is, and so are lines for the plugin
+  that are already there, on or off: **to turn it off, turn off the two `psp5time.prx` lines in Settings → Plugins** (they are listed as *Games* and *PS1*) and they stay off. It works from the next game, no restart.
+  It runs inside every PSP game, ISO, homebrew and PS1 game, **whoever started it**, so the time is counted **also for games you start from the XMB, and
   psp5 does not have to be ARK's launcher**. It counts only the seconds the game is running **and the PSP is awake**: sleep and a PSP that was
-  switched off during a game add nothing, and a long sleep no longer makes a 1-hour game show 15 hours. Turning the switch on writes the plugin to the `PSP5` folder and adds
-  two lines (`game, ...psp5time.prx, on` for PSP games and homebrew, and `pops, ...psp5time.prx, on` for PS1 games) to ARK's `PLUGINS.TXT`, leaving every other line as it is; turning it off sets those two lines to off. It
-  works from the next game, no restart.
+  switched off during a game add nothing, and a long sleep no longer makes a 1-hour game show 15 hours.
   The plugin finds out which game it is in by itself and names it as psp5 does in `playtime.txt`: a homebrew, PSN or PS1 game by the folder of its `EBOOT.PBP`, a PSP game (disc, ISO, an installed
   update) by the disc ID in its `PARAM.SFO`. It keeps the seconds of each game in a small file `PSP5/played/<name>.txt` (written in place every 10 seconds, so a battery that runs out loses at most 10 seconds)
   and **psp5 adds them to `playtime.txt` at its next start** (then removes the files). The plugin never writes `playtime.txt` itself, so a game that is switched off cannot damage the list of all your times.
-  When psp5 is the launcher and the plugin counted the game too, the plugin's time is used and the old measuring is not (so the time is not counted twice). A game of under 10 seconds is not counted by the plugin; psp5 then uses its old
-  measuring as before (only as the launcher). A game that psp5 names by its file (an ISO without a disc ID) has no match in the plugin's files and keeps the old measuring.
-  Without the plugin everything works as before. The plugin and its counting were tested on a PC (the plugin's own loop against a clock that sleeps, a throwaway memory stick and a made-up disc); it has **not** been run on a PSP. Not known: that ARK accepts the module as it is built, what
-  the file name of a PS1 game or a disc is for ARK in every case (it is used as ARK gives it), the PSP Go (the plugin keeps its files in the folder it was loaded from, so on the internal storage they are on `ef0:`), and whether the Go's pause mode (the game paused behind the XMB) is left out.
+  The counting was reported to work on a real PSP (test builds 4–6: games started from psp5 and from the XMB were counted correctly). **The self-installing version has been tested on a PC only** (the plugin's own loop against a clock that sleeps, a throwaway memory stick and a made-up disc). Not known: the
+  PSP Go (the plugin keeps its files in the folder it was loaded from, so on the internal storage they are on `ef0:`), ARK-4, the file names ARK gives for ISO, PBOOT, PSN and PS1 games, and whether the Go's pause mode (the game paused behind the XMB) is left out.
   Any other homebrew you run gets a time line in `playtime.txt` too (under its folder name): it is never shown, but it is there.
   **psp5 itself is never counted**: the plugin ends at once in psp5 (an `EBOOT.PBP` in a folder called `PSP5`, or ARK's launcher `VBOOT.PBP`), and as a second guard psp5 knows its own path and throws away any
   file the plugin made for psp5's own folder, so even a psp5 that was put in a folder with another name does not get a time of its own.
