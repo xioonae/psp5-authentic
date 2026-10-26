@@ -118,20 +118,13 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
     empty marker (written by an older psp5), a marker cut off anywhere (the key line must end with a newline), a number that is too big
     or a name that is too long are all "a game ended, nothing to add". `%llu` is not used in `printf` (the PSP's libc): the numbers are
     written and read by hand.
-  - *Looking for why nothing is counted* (`playtime.log`): `playtime_log(when, msg)` adds a line to `<DATA_DIR>/playtime.log` (read, the
-    oldest whole lines dropped so that it stays under 8000 bytes, written again: the PC stand-in for the file API has no append). `main.c` writes
-    one line when a game is launched (`launch <key>: marker written (system clock N s)`, or "psp5 is not ARK's launcher ... no time is
-    counted", or "COULD NOT BE WRITTEN" - `playtime_mark_write` returns 0/1 now - or "launch failed") and one at every start of psp5
-    (`start (system clock N s): <report>`), where the report comes from `playtime_mark_take_ex` (no marker / empty or damaged / cut off / the
-    game, the seconds, which clock was used and what each said / too short / more than a day / no clock). The date comes from
-    `sceRtcGetCurrentClockLocalTime`. A clock that could not be read is stored as 0 and counts as unusable (`> 0` checks).
-  - *On the screen* (`playtime.debug`): if the file `<DATA_DIR>/playtime.debug` exists, `take_ingame_mark` keeps `playtime_last_short()` (a message under
-    64 bytes set by every `playtime_mark_take`: "Counted +12min, 3h in all", "Not counted: only 4 s", "No marker: not started by a game", ...) and `main`
-    shows it with `ui_toast` after `app_start` (before the safe-start toast, which wins). For a test build; nothing changes without the file.
-  - *The clocks*: starting a game (`sctrlKernelLoadExecVSHWithApitype`) restarts the PSP's software, which probably starts the system clock
-    (`sceKernelGetSystemTimeWide`) from zero again (not measured; that is what the log's "system clock" numbers will show: small at the
-    next start of psp5 whatever the game's length). That is why a system clock that says under `PLAYTIME_MIN_SECS` while the real-time clock says more is
-    ignored (before, such a start made the session "too short" and dropped it), and a system clock that went back was already ignored.
+  - *The clocks* (measured once, on a real PSP, with a log that has since been taken out): starting a game
+    (`sctrlKernelLoadExecVSHWithApitype`) restarts the PSP's software and the system clock (`sceKernelGetSystemTimeWide`) with it: it said
+    7 s when the game was started and 3 s when psp5 came back, so it "went back" and is no use after a game. The real-time clock
+    (`sceRtcGetCurrentTick`) goes on, and it is the one that counts. A system clock that says under `PLAYTIME_MIN_SECS` while the real-time
+    clock says more is ignored too (a restarted clock can come back to a few seconds above the old reading), and a clock that is 0
+    (could not be read, `> 0` checks) or went back is not used. The same log showed ARK starting psp5 again about 3 s after the game ended
+    in launcher mode, and a game of about 160 s counted as 159 s.
   - *Under a minute*: `playtime_text` gives `<1min` for 1..59 s (it was empty), so a short test shows something; sessions under 10 s are still not
     counted.
   - *The file* `<DATA_DIR>/playtime.txt`: a line per game `"<seconds> <key>"`, up to 4096 games (the first wins when a name is there twice; a full
@@ -147,12 +140,13 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
     the shortened title, `lib_label`, also remembers its room: `lib_label_room`). Nothing is drawn for a text that is empty (never played), a folder card, or the Library card (`play_text()` returns "" for every negative card number, so no lookup is made for
     the launcher's own cards, pinned or not; `library_test` puts lines for "Library", "?library", "PSP5" in playtime.txt to prove it). `play_text()` looks the seconds up once per selected game (`pt_for`, `pt_secs`; reset
     next to every `lib_label_for = -2`) and makes the text at every draw, so a language changed in Settings is followed.
-  - *Limits*: only the time between the start of the game and the next start of psp5 is known, so whatever happens in between is in it
-    (a PSP that sleeps while the game runs is counted only if the system clock keeps running during sleep - the smaller of the two clocks is
-    taken, and the system time is thought to stand still, which was not measured; a PSP that is switched off or whose battery runs out
-    during a game and is started again within a day: the system time then starts from zero, so only the real-time clock is left and it also
-    counts the time the PSP was off). Sessions under 10 s or over a day are dropped. Nothing was tried on a PSP.
-  - *Tests* (`host-tests`, not under git): `units/playtime_test.c` (new, 191 checks: no file, one and several sessions, the two clocks,
+  - *Limits*: only the time between the start of the game and the next start of psp5 is known, so whatever happens in between is in it.
+    The system clock restarts at a game, so the real-time clock decides, and a PSP that sleeps while the game runs is counted for the
+    whole sleep (up to a day; the real-time clock does not stop). A PSP that is switched off or whose battery runs out during a game and
+    is started again within a day: the time it was off is counted too. If psp5 is the launcher (VBOOT.PBP swapped) but ARK is not told to
+    start it again after a game ("Boot into psp5" off), the marker would stay until the next start of psp5 and the whole time between is
+    counted (up to a day); not tried, and no guard is built in. Sessions under 10 s or over a day are dropped.
+  - *Tests* (`host-tests`, not under git): `units/playtime_test.c` (new, 218 checks: no file, one and several sessions, the two clocks,
     backwards clocks, 9 / 10 s, a day, empty / cut at every length / random / huge markers, the file's format and limits, the same game in
     another file, the texts in 11 languages; mutation-tested), `ui/library_test.c` (the clock in the Library and the Games tab: exact place of
     the text and of the two hands, nothing for unplayed games, folders or the Library card, the title cut before the clock, the room in 11

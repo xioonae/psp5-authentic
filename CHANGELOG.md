@@ -42,15 +42,10 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   **It only works when psp5 is ARK's launcher** (the *VBOOT.PBP* swap and *Boot into psp5* in `INSTALL.md`; *Settings → psp5* then says
   *psp5 is ARK's launcher: Yes*): then ARK starts psp5 again when the game ends and psp5 knows exactly when you started and when you stopped. When psp5 is started as a normal app from the XMB, the
   PSP goes back to the XMB after the game, psp5 is not told, and **nothing is counted** (it would only be a guess).
-  **PSP5/playtime.log** says what happened at every game start and every psp5 start (one line each, with the date and time: was the
-  marker written, was it found again, what each clock said, why a time was or was not counted). It keeps the last ~8 KB. If a time does
-  not show up, that file says why. And if you make an **empty file called `PSP5/playtime.debug`**, psp5 also says on the screen,
-  for a moment after it starts, what it counted (*Counted +12min, 3h in all*, *Not counted: only 4 s*, *No marker: not started by a game* ...).
-  Things to know: the time of one session is the *smaller* of two clocks (so a PSP that sleeps with a game running does not add
-  its whole sleep, if one of the clocks stops while it sleeps – not measured; a system clock that says under 10 seconds is ignored,
-  because starting a game may start that clock again from zero); a session shorter than 10 seconds or longer than a
-  day is not counted; if the PSP is switched off or the battery runs out during a game and you start it again, only one clock is left
-  for that session and it also counts the time the PSP was off (up to a day). (Checked on a PC with made-up files; not tried on a PSP.)
+  Things to know: the time of one session is measured with the PSP's real-time clock (starting a game restarts the system clock, so that one
+  cannot be used after a game; measured on a real PSP); a session shorter than 10 seconds or longer than a day is not counted; a PSP that
+  sleeps while the game is open counts the time it slept (up to a day), and one that was switched off during a game and started again
+  counts the time it was off too. In a test on a real PSP with psp5 as ARK's launcher a game of about 160 seconds was counted as 159.
 - **The Library remembers the Sort and the view** after a restart (two lines in `psp5.cfg`). Before, it was *by name* every time.
 - **.jso games** (an ISO packed with LZO) show up in the Library, can be started, deleted and looked at in the file manager and in
   Information, like .iso, .cso, .zso and .dax. (Checked on a PC with made-up data against the reference LZO library; no real .jso file
