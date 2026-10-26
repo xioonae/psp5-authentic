@@ -34,17 +34,6 @@ int playtime_mark_write(const char *path, const Entry *e, unsigned long long sys
  * saved) and 1 is returned; 0 when there was no marker. A marker that is empty or damaged is removed and counted as "a game just ended". */
 int playtime_mark_take(const char *path, unsigned long long sys_us, unsigned long long rtc_us);
 
-/* The same, and `report` (if it is not NULL) gets one line that says what happened and why: "ULUS10041 played 612 s by the real-time clock:
- * counted, 3725 s in all", "... too short, nothing counted", "no marker: psp5 was not started again by a game" ... for playtime.log. */
-int playtime_mark_take_ex(const char *path, unsigned long long sys_us, unsigned long long rtc_us, char *report, int report_size);
-
-/* A short message (under 64 bytes) about the last playtime_mark_take(): "Counted +12min, 3h in all", "Not counted: only 4 s", "No marker: not started by a game" ... */
-const char *playtime_last_short(void);
-
-/* Adds one line "<when>  <msg>" to <data dir>/playtime.log (at most 8000 bytes, the oldest lines go first), so that it can be seen afterwards
- * what happened at the start of a game and at the next start of psp5. */
-void playtime_log(const char *when, const char *msg);
-
 /* The text of a time for the small clock: the minutes ("45min") under an hour, else the whole hours ("54h"), never both; the units are
  * in the language of the launcher. "<1min" when something has been played but not a minute yet; empty only when nothing has. */
 void playtime_text(unsigned secs, char *out, int size);
