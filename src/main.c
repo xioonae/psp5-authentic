@@ -115,22 +115,57 @@ static int confirm_is_circle(void)
     return v == 0; /* 0 = ○ bekräftar (japansk inställning) */
 }
 
+/* One line in playtime.log (the data folder), with the date and time: what happened when a game was started and when psp5 was started
+ * again, so that it can be seen afterwards why a time was or was not counted. */
+static void play_log(const char *msg)
+{
+    ScePspDateTime t;
+    char when[24] = "";
+    if (sceRtcGetCurrentClockLocalTime(&t) >= 0)
+        snprintf(when, sizeof(when), "%04d-%02d-%02d %02d:%02d:%02d", t.year, t.month, t.day, t.hour, t.minute, t.second);
+    playtime_log(when, msg);
+}
+
 /* The marker of a game that is running (see playtime.h): it is there when psp5 is started again after a game. The time the game was played is
  * added to it then. */
+static char s_play_toast[96]; /* what take_ingame_mark() found, to show once the screen is up (only with PSP5/playtime.debug) */
+
 static int take_ingame_mark(void)
 {
     u64 rtc = 0;
-    sceRtcGetCurrentTick(&rtc);
-    return playtime_mark_take(INGAME_MARK, sceKernelGetSystemTimeWide(), rtc);
+    if (sceRtcGetCurrentTick(&rtc) < 0)
+        rtc = 0;
+    u64 sys = sceKernelGetSystemTimeWide();
+    char report[240], line[300];
+    int found = playtime_mark_take_ex(INGAME_MARK, sys, rtc, report, sizeof(report));
+    snprintf(line, sizeof(line), "start (system clock %u s%s%s): %s", (unsigned)(sys / 1000000), rtc ? "" : ", real-time clock not available",
+             sys_is_launcher() ? "" : ", psp5 is not ARK's launcher", report);
+    play_log(line);
+    SceIoStat st;
+    char flag[40];
+    snprintf(flag, sizeof(flag), "%s/playtime.debug", DATA_DIR);
+    if (sceIoGetstat(flag, &st) >= 0) /* an empty file PSP5/playtime.debug: say on the screen what was counted (for finding out why a time is missing) */
+        snprintf(s_play_toast, sizeof(s_play_toast), "%s", playtime_last_short());
+    return found;
 }
 
 static void set_ingame_mark(const Entry *game)
 {
-    if (!sys_is_launcher())
-        return; /* som vanlig app går systemet till XMB efter spelet (and psp5 is not started again by itself: no time can be counted) */
+    char key[80], line[300];
+    entry_cover_key(game, key, sizeof(key));
+    if (!sys_is_launcher()) { /* som vanlig app går systemet till XMB efter spelet */
+        snprintf(line, sizeof(line), "launch %s: psp5 is not ARK's launcher and is not started again after the game, so no time is counted", key);
+        play_log(line);
+        return;
+    }
     u64 rtc = 0;
-    sceRtcGetCurrentTick(&rtc);
-    playtime_mark_write(INGAME_MARK, game, sceKernelGetSystemTimeWide(), rtc);
+    if (sceRtcGetCurrentTick(&rtc) < 0)
+        rtc = 0;
+    u64 sys = sceKernelGetSystemTimeWide();
+    int ok = playtime_mark_write(INGAME_MARK, game, sys, rtc);
+    snprintf(line, sizeof(line), "launch %s: marker %s (system clock %u s%s)", key, ok ? "written" : "COULD NOT BE WRITTEN", (unsigned)(sys / 1000000),
+             rtc ? "" : ", real-time clock not available");
+    play_log(line);
 }
 
 static void start_write(int count)
@@ -475,6 +510,8 @@ int main(int argc, char *argv[])
     Ui ui;
     playtime_load(DATA_DIR); /* (before the marker is taken: it adds the time of the game that has just ended) */
     app_start(&list, &ui, !take_ingame_mark()); /* ingen startskärm efter ett spel */
+    if (s_play_toast[0])
+        ui_toast(&ui, s_play_toast);
     if (s_safe)
         ui_toast(&ui, L(S_SAFE_START));
 #ifdef PSP5_TEST
@@ -639,6 +676,7 @@ int main(int argc, char *argv[])
             launch_entry(&chosen);
             /* hit kommer vi bara om starten misslyckades */
             sceIoRemove(INGAME_MARK);
+            play_log("launch failed: the game did not start, the marker is removed");
             app_start(&list, &ui, 0);
             ui_toast(&ui, L(S_LAUNCH_FAILED));
             continue;
