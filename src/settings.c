@@ -196,7 +196,7 @@ static void build(int rebuild)
     c->items[c->count - 1].own = 1;
     toggle(c, L(S_BATTERY_PCT), &g_battery_pct);
     c->items[c->count - 1].own = 1;
-    toggle(c, L(S_EXACT_TIME), &s_exact); /* only in launcher mode does psp5 note a game, so only there does it do anything */
+    toggle(c, L(S_EXACT_TIME), &s_exact); /* installs the helper plugin (helper.c): it counts every game, started from psp5 or not */
     c->items[c->count - 1].helper = 1;
     choice(c, L(S_LANGUAGE), &g_lang_setting, OPT_LANG, LANG_COUNT);
     c->items[c->count - 1].own = 1;

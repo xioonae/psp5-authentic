@@ -1,9 +1,8 @@
 /* psp5-authentic - see awake.h */
 #include "awake.h"
 
-#define HEAD  "psp5-awake 1\n"
-#define RTC   "rtc "
-#define AWAKE "awake "
+#define HEAD  "psp5-played 1\n"
+#define SECS  "secs "
 #define END   "end\n"
 
 static int starts(const char *s, int left, const char *w)
@@ -45,57 +44,14 @@ unsigned awake_tick(AwakeClock *c, unsigned long long now_us)
     return c->secs;
 }
 
-/* digits[0..n) -> token without leading zeros; 0 when there are none or too many */
-static int copy_number(const char *d, int n, char *token, int size)
+int awake_format(char *out, int size, unsigned secs)
 {
-    int i = 0;
-    while (i < n - 1 && d[i] == '0')
-        i++;
-    n -= i;
-    if (n < 1 || n > 20 || n >= size)
-        return 0;
-    for (int k = 0; k < n; k++) {
-        if (d[i + k] < '0' || d[i + k] > '9')
-            return 0;
-        token[k] = d[i + k];
-    }
-    token[n] = 0;
-    return 1;
-}
-
-int awake_token(const char *marker, int len, char *token, int size)
-{
-    if (!marker || !token || size < 2)
-        return 0;
-    for (int i = 0; i < len; i++) {
-        if ((i == 0 || marker[i - 1] == '\n') && starts(marker + i, len - i, RTC)) {
-            int s = i + 4, e = s;
-            while (e < len && marker[e] >= '0' && marker[e] <= '9')
-                e++;
-            if (e >= len || (marker[e] != '\n' && marker[e] != '\r')) /* the line must end after the digits */
-                return 0;
-            return copy_number(marker + s, e - s, token, size);
-        }
-    }
-    return 0;
-}
-
-int awake_format(char *out, int size, const char *token, unsigned secs)
-{
-    int tl = 0;
-    while (token && token[tl])
-        tl++;
-    if (tl < 1 || tl > 20)
-        return 0;
-    int need = (int)sizeof(HEAD) - 1 + 4 + tl + 1 + 6 + 10 + 1 + (int)sizeof(END) - 1;
+    int need = (int)sizeof(HEAD) - 1 + (int)sizeof(SECS) - 1 + 10 + 1 + (int)sizeof(END) - 1;
     if (!out || size < need + 1)
         return 0;
     int n = 0;
     for (const char *p = HEAD; *p; p++) out[n++] = *p;
-    for (const char *p = RTC; *p; p++) out[n++] = *p;
-    for (int i = 0; i < tl; i++) out[n++] = token[i];
-    out[n++] = '\n';
-    for (const char *p = AWAKE; *p; p++) out[n++] = *p;
+    for (const char *p = SECS; *p; p++) out[n++] = *p;
     for (int i = 9; i >= 0; i--) {
         out[n + i] = (char)('0' + secs % 10);
         secs /= 10;
@@ -107,24 +63,12 @@ int awake_format(char *out, int size, const char *token, unsigned secs)
     return n;
 }
 
-int awake_parse(const char *buf, int len, char *token, int size, unsigned *secs)
+int awake_parse(const char *buf, int len, unsigned *secs)
 {
-    int n = starts(buf, len, HEAD);
-    if (!n)
+    int p = starts(buf, len, HEAD);
+    if (!p || !starts(buf + p, len - p, SECS))
         return 0;
-    int p = n;
-    if (!starts(buf + p, len - p, RTC))
-        return 0;
-    p += 4;
-    int e = p;
-    while (e < len && buf[e] >= '0' && buf[e] <= '9')
-        e++;
-    if (e >= len || buf[e] != '\n' || !copy_number(buf + p, e - p, token, size))
-        return 0;
-    p = e + 1;
-    if (!starts(buf + p, len - p, AWAKE))
-        return 0;
-    p += 6;
+    p += (int)sizeof(SECS) - 1;
     if (len - p < 10 + 1)
         return 0;
     unsigned long long v = 0;
@@ -174,4 +118,165 @@ int awake_is_psp5(const char *init_file)
     while (dstart > 0 && init_file[dstart - 1] != '/' && init_file[dstart - 1] != ':')
         dstart--;
     return same_name(init_file + dstart, dend - dstart, "PSP5");
+}
+
+/* --- the name of a game --- */
+
+static int str_len(const char *s)
+{
+    int n = 0;
+    while (s[n])
+        n++;
+    return n;
+}
+
+int awake_key_from_path(const char *init_file, char *key, int size)
+{
+    if (!init_file || !key || size < 2)
+        return 0;
+    int len = str_len(init_file), bstart = len;
+    while (bstart > 0 && init_file[bstart - 1] != '/' && init_file[bstart - 1] != ':')
+        bstart--;
+    if (bstart >= len)
+        return 0; /* no file name at all */
+    if (same_name(init_file + bstart, len - bstart, "EBOOT.PBP")) {
+        /* as entry_cover_key() does it for a game that is a folder: the name between the last two slashes */
+        int end = len;
+        while (end > 0 && init_file[end - 1] != '/')
+            end--;
+        if (end <= 0)
+            return 0;
+        end--; /* the slash */
+        int start = end;
+        while (start > 0 && init_file[start - 1] != '/')
+            start--;
+        if (end <= start)
+            return 0;
+        int n = end - start;
+        if (n > size - 1)
+            n = size - 1; /* (snprintf cuts it there too) */
+        for (int i = 0; i < n; i++) {
+            if (init_file[start + i] == ':')
+                return 0; /* "ms0:" is a drive, not the folder of a game */
+            key[i] = init_file[start + i];
+        }
+        key[n] = 0;
+        return 1;
+    }
+    /* another .PBP (ARK's menu, a launcher) is not a game; PBOOT.PBP is a PSP game installed with its update */
+    if (len >= 4 && same_name(init_file + len - 4, 4, ".PBP") && !same_name(init_file + bstart, len - bstart, "PBOOT.PBP"))
+        return 0;
+    return 2;
+}
+
+static unsigned rd16(const unsigned char *p)
+{
+    return (unsigned)p[0] | (unsigned)p[1] << 8;
+}
+
+static unsigned rd32(const unsigned char *p)
+{
+    return (unsigned)p[0] | (unsigned)p[1] << 8 | (unsigned)p[2] << 16 | (unsigned)p[3] << 24;
+}
+
+int awake_key_from_sfo(const unsigned char *sfo, unsigned len, char *key, int size)
+{
+    static const char NAME[] = "DISC_ID";
+    if (!sfo || !key || size < 2 || len < 20 || rd32(sfo) != 0x46535000u)
+        return 0;
+    unsigned key_table = rd32(sfo + 8), data_table = rd32(sfo + 12), count = rd32(sfo + 16);
+    if (count > (len - 20) / 16)
+        return 0;
+    for (unsigned i = 0; i < count; i++) {
+        const unsigned char *e = sfo + 20 + i * 16;
+        unsigned long long koff = (unsigned long long)key_table + rd16(e);
+        if (koff >= len)
+            continue;
+        int k = 0;
+        while (NAME[k] && koff + (unsigned)k < len && sfo[koff + (unsigned)k] == (unsigned char)NAME[k])
+            k++;
+        if (NAME[k] || koff + (unsigned)k >= len || sfo[koff + (unsigned)k] != 0)
+            continue;
+        unsigned long long doff = (unsigned long long)data_table + rd32(e + 12);
+        unsigned dlen = rd32(e + 4);
+        if (doff + dlen > len)
+            return 0;
+        unsigned n = dlen;
+        if (n > AWAKE_GAME_ID_MAX - 1)
+            n = AWAKE_GAME_ID_MAX - 1;
+        if (n > (unsigned)size - 1)
+            n = (unsigned)size - 1;
+        unsigned m = 0;
+        while (m < n && sfo[doff + m]) { /* a C string, as psp5 reads it */
+            unsigned char c = sfo[doff + m];
+            if (c < 0x20 || c >= 0x7F || c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|')
+                return 0; /* not a name that can be a file */
+            key[m] = (char)c;
+            m++;
+        }
+        key[m] = 0;
+        return m > 0;
+    }
+    return 0;
+}
+
+/* --- the files of the plugin --- */
+
+int awake_dir_of(const char *module_path, char *out, int size)
+{
+    if (!module_path || !out)
+        return 0;
+    int len = str_len(module_path), slash = len;
+    while (slash > 0 && module_path[slash - 1] != '/')
+        slash--;
+    slash--; /* the slash itself */
+    if (slash <= 0 || slash >= size)
+        return 0;
+    for (int i = 0; i < slash; i++)
+        out[i] = module_path[i];
+    out[slash] = 0;
+    return 1;
+}
+
+int awake_played_dir(const char *dir, char *out, int size)
+{
+    const char *tail = "/" AWAKE_PLAYED_DIR;
+    int d = dir ? str_len(dir) : 0, t = str_len(tail);
+    if (!out || d < 1 || d + t >= size)
+        return 0;
+    for (int i = 0; i < d; i++) out[i] = dir[i];
+    for (int i = 0; i <= t; i++) out[d + i] = tail[i];
+    return 1;
+}
+
+int awake_played_path(const char *dir, const char *key, char *out, int size)
+{
+    int k = key ? str_len(key) : 0, e = str_len(AWAKE_PLAYED_EXT);
+    if (k < 1 || k >= AWAKE_KEY_MAX)
+        return 0;
+    for (int i = 0; i < k; i++)
+        if (key[i] == '/')
+            return 0;
+    if (!awake_played_dir(dir, out, size))
+        return 0;
+    int d = str_len(out);
+    if (d + 1 + k + e >= size)
+        return 0;
+    out[d++] = '/';
+    for (int i = 0; i < k; i++) out[d++] = key[i];
+    for (int i = 0; i <= e; i++) out[d + i] = AWAKE_PLAYED_EXT[i];
+    return 1;
+}
+
+int awake_file_key(const char *file_name, char *key, int size)
+{
+    if (!file_name || !key)
+        return 0;
+    int len = str_len(file_name), e = str_len(AWAKE_PLAYED_EXT), n = len - e;
+    if (n < 1 || n >= size || n >= AWAKE_KEY_MAX || !same_name(file_name + n, e, ".TXT"))
+        return 0;
+    for (int i = 0; i < n; i++)
+        key[i] = file_name[i];
+    key[n] = 0;
+    return 1;
 }

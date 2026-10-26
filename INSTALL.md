@@ -52,10 +52,10 @@ To get to the XMB from there: settings → *Power and USB* → *Exit to XMB*.
 ### Optional: exact time played
 
 The clock on a game's card normally counts the time from *Play* until psp5 starts again, so a PSP that sleeps or is switched off in the
-middle of a game counts that time too. To count only the time you really play: settings → *psp5* → turn on **Exact time played**, and
-leave the settings. psp5 then puts a tiny helper plugin (`psp5time.prx`) in its `PSP5` folder and adds two lines for it to the
+middle of a game counts that time too, and only when psp5 is ARK's launcher (see above). To count only the time you really play, **and also for games you start
+from the XMB**: settings → *psp5* → turn on **Exact time played**, and leave the settings. psp5 then puts a tiny helper plugin (`psp5time.prx`) in its `PSP5` folder and adds two lines for it to the
 `PLUGINS.TXT` that ARK reads (one for PSP games and homebrew, one for PS1 games). Your other plugins stay as they are. It works from the next game you
-start, with no restart. Turn the switch off to stop using it. It only does something when psp5 is ARK's launcher (see above).
+start, with no restart: the plugin keeps the seconds of each game in `PSP5/played`, and psp5 adds them the next time it starts. Turn the switch off to stop using it.
 
 ## Where your games go
 

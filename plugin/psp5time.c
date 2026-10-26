@@ -5,10 +5,13 @@
  * so it runs for exactly as long as the game does. One thread wakes once a second and adds the time since the last wake-up, unless it
  * was much longer than a second: then the PSP slept (the thread did not run), and nothing is added (see awake.c).
  *
- * It only counts for a game that psp5 started: psp5 leaves the file ms0:/PSP5/ingame ("the marker") before it starts a game. The
- * plugin reads the line "rtc N" of it (which game this is) and keeps the seconds in ms0:/PSP5/ingame.awake (see awake.h), every 10 seconds,
- * in place and with the same length each time, so a file cut off by a battery that runs out is at worst a few seconds behind. At its next
- * start psp5 reads that file, uses the seconds in it and removes it. Without a marker the plugin does nothing at all.
+ * It finds out which game it is in by itself, so it counts a game that was started from the XMB as well as one started by psp5:
+ * a homebrew or PS1 game is named by its folder (the EBOOT.PBP that the PSP started), a PSP game by the DISC_ID in its PARAM.SFO. Those
+ * are the names psp5 uses in playtime.txt (entry_cover_key() in scan.c; awake.c has the same rules, and the tests compare the two).
+ * The seconds are kept in <psp5's data folder>/played/<name>.txt (see awake.h), every 10 seconds, in place and with the same length each
+ * time, so a file cut off by a battery that runs out is at worst a few seconds behind. The data folder is the folder this plugin was
+ * loaded from (ARK passes the path of the module to module_start). At its next start psp5 adds the seconds in the files to playtime.txt and
+ * removes them; it never writes playtime.txt from here, so a game that is switched off cannot damage the file with all the times.
  *
  * No libc: only the system calls below and awake.c. */
 #include <pspkernel.h>
@@ -21,15 +24,17 @@ PSP_MAIN_THREAD_ATTR(0);
 
 #define TICK_US       1000000
 #define FLUSH_SECS    10    /* a game that is shorter is not counted by psp5 anyway */
-#define FIND_TRIES    10    /* one a second: the memory stick is there from the start, but a game may not have a marker */
+#define SFO_TRIES     10    /* one a second: a game on a disc is not readable the moment the plugins are loaded */
+#define SFO_PATH      "disc0:/PSP_GAME/PARAM.SFO"
+#define SFO_MAX       8192
+#define PATH_MAX_LEN  256
 #define THREAD_PRIO   0x10
 #define THREAD_STACK  0x4000
 
-/* ms0: is the memory stick; on a PSP Go with the games on the internal storage the marker may be on ef0: */
-static const char *const MARKER[] = { "ms0:/PSP5/ingame", "ef0:/PSP5/ingame" };
-#define N_MARKER 2
+static char s_module[PATH_MAX_LEN]; /* where this plugin was loaded from, as ARK says it: "ms0:/PSP5/psp5time.prx" */
+static unsigned char s_sfo[SFO_MAX];
 
-static int read_file(const char *path, char *buf, int size)
+static int read_file(const char *path, void *buf, int size)
 {
     SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
     if (fd < 0)
@@ -39,21 +44,11 @@ static int read_file(const char *path, char *buf, int size)
     return n;
 }
 
-static void put(char *dst, const char *src, int size)
-{
-    int i = 0;
-    while (src[i] && i < size - 1) {
-        dst[i] = src[i];
-        i++;
-    }
-    dst[i] = 0;
-}
-
 /* the whole file in one write: in place when the file is there, else (or the first time) as a new file */
-static void flush(const char *path, const char *token, unsigned secs, int fresh)
+static void flush(const char *path, unsigned secs, int fresh)
 {
     char buf[AWAKE_FILE_MAX];
-    int n = awake_format(buf, sizeof(buf), token, secs);
+    int n = awake_format(buf, sizeof(buf), secs);
     if (n <= 0)
         return;
     SceUID fd = -1;
@@ -69,59 +64,56 @@ static void flush(const char *path, const char *token, unsigned secs, int fresh)
 
 static int worker(SceSize args, void *argp)
 {
-    if (awake_is_psp5(sceKernelInitFileName()))
-        return 0; /* psp5 itself (as the launcher or as an app): the marker that is there is the one of the game that has just ended */
+    const char *init = sceKernelInitFileName();
+    if (awake_is_psp5(init))
+        return 0; /* psp5 itself (as the launcher or as an app) is not a game */
+
+    char key[AWAKE_KEY_MAX], dir[PATH_MAX_LEN], played[PATH_MAX_LEN], path[PATH_MAX_LEN];
+    int kind = awake_key_from_path(init, key, sizeof(key));
+    if (!kind || !awake_dir_of(s_module, dir, sizeof(dir)))
+        return 0; /* not a game, or we do not know where psp5's folder is */
 
     AwakeClock clk;
     awake_start(&clk, sceKernelGetSystemTimeWide(), 0);
 
-    /* which game is this? (counting has started; what is found later is added to it) */
-    char token[AWAKE_TOKEN_MAX], mpath[32], apath[48];
-    int found = 0;
-    for (int tries = 0; tries < FIND_TRIES && !found; tries++) {
-        sceKernelDelayThread(TICK_US);
-        awake_tick(&clk, sceKernelGetSystemTimeWide());
-        for (int m = 0; m < N_MARKER && !found; m++) {
-            char text[128];
-            int n = read_file(MARKER[m], text, sizeof(text));
-            if (n > 0 && awake_token(text, n, token, sizeof(token))) {
-                put(mpath, MARKER[m], sizeof(mpath));
+    if (kind == 2) { /* a PSP game: its name is in the game (counting has started; the time until the name is known is counted too) */
+        int found = 0;
+        for (int tries = 0; tries < SFO_TRIES && !found; tries++) {
+            sceKernelDelayThread(TICK_US);
+            awake_tick(&clk, sceKernelGetSystemTimeWide());
+            int n = read_file(SFO_PATH, s_sfo, SFO_MAX);
+            if (n > 0 && awake_key_from_sfo(s_sfo, (unsigned)n, key, AWAKE_GAME_ID_MAX))
                 found = 1;
-            }
         }
+        if (!found)
+            return 0;
     }
-    if (!found)
-        return 0; /* not started by psp5: nothing to do */
+    if (!awake_played_dir(dir, played, sizeof(played)) || !awake_played_path(dir, key, path, sizeof(path)))
+        return 0;
 
-    int len = 0;
-    while (mpath[len])
-        len++;
-    put(apath, mpath, sizeof(apath));
-    put(apath + len, ".awake", (int)sizeof(apath) - len);
-
-    /* a game that was started again by itself (a reset) goes on from what it had */
-    {
-        char text[AWAKE_FILE_MAX], t2[AWAKE_TOKEN_MAX];
-        unsigned had = 0;
-        int n = read_file(apath, text, sizeof(text));
-        if (n > 0 && awake_parse(text, n, t2, sizeof(t2), &had)) {
-            int same = 1;
-            for (int i = 0; i < AWAKE_TOKEN_MAX && (t2[i] || token[i]); i++)
-                if (t2[i] != token[i]) {
-                    same = 0;
-                    break;
-                }
-            if (same)
-                awake_add_secs(&clk, had);
-        }
-    }
-
-    unsigned flushed = 0;
+    /* seconds that psp5 has not added yet (an earlier time in this game, or a game that was started again by itself) are kept and added to */
     int fresh = 1;
+    unsigned flushed = 0; /* the seconds in the file: the next write is 10 s after them */
+    {
+        char text[AWAKE_FILE_MAX];
+        unsigned had = 0;
+        int n = read_file(path, text, sizeof(text));
+        if (n > 0 && awake_parse(text, n, &had)) {
+            awake_add_secs(&clk, had);
+            flushed = clk.secs; /* (not more than the largest number a clock holds) */
+            fresh = 0;
+        }
+    }
+
+    int made_dir = 0;
     for (;;) {
         unsigned secs = awake_tick(&clk, sceKernelGetSystemTimeWide());
         if (secs >= flushed + FLUSH_SECS) {
-            flush(apath, token, secs, fresh);
+            if (!made_dir) {
+                sceIoMkdir(played, 0777); /* it is there already after the first time: the error is only "exists" */
+                made_dir = 1;
+            }
+            flush(path, secs, fresh);
             fresh = 0;
             flushed = secs;
         }
@@ -132,6 +124,16 @@ static int worker(SceSize args, void *argp)
 
 int module_start(SceSize args, void *argp)
 {
+    s_module[0] = 0;
+    if (argp && args > 0) {
+        const char *p = (const char *)argp;
+        int i = 0;
+        while ((SceSize)i < args && i < PATH_MAX_LEN - 1 && p[i]) {
+            s_module[i] = p[i];
+            i++;
+        }
+        s_module[i] = 0;
+    }
     SceUID th = sceKernelCreateThread("psp5time", worker, THREAD_PRIO, THREAD_STACK, 0, NULL);
     if (th < 0)
         return 1; /* not resident: nothing was started */
