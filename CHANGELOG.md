@@ -40,8 +40,8 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   when you come back to psp5 after a game, in a file `playtime.txt` next to the other psp5 files, one line per game. Games that
   are the same (the same disc ID, or the same folder / file name) share one time, wherever the files are.
   **It only works when psp5 is ARK's launcher** (the *VBOOT.PBP* swap and *Boot into psp5* in `INSTALL.md`; *Settings → psp5* then says
-  *psp5 is ARK's launcher: Yes*): then ARK starts psp5 again when the game ends and psp5 knows exactly when you started and when you stopped. When psp5 is started as a normal app from the XMB, the
-  PSP goes back to the XMB after the game, psp5 is not told, and **nothing is counted** (it would only be a guess).
+  *psp5 is ARK's launcher: Yes*): then ARK starts psp5 again when the game ends and psp5 knows exactly when you started and when you stopped. That is also the case when you open psp5 with the Custom Launcher entry in the XMB (checked on a real PSP: the game was
+  counted and ARK went straight back to psp5). Started from Game → Memory Stick as a normal app, psp5 does not note the game and **nothing is counted**.
   Things to know: the time of one session is measured with the PSP's real-time clock (starting a game restarts the system clock, so that one
   cannot be used after a game; measured on a real PSP); a session shorter than 10 seconds or longer than a day is not counted; a PSP that
   sleeps while the game is open counts the time it slept (up to a day), and one that was switched off during a game and started again
