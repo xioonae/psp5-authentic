@@ -57,38 +57,115 @@ static void add(const char *key, unsigned secs)
     g->secs = secs > MAX_SECS - g->secs ? MAX_SECS : g->secs + secs;
 }
 
-static void save(void)
+/* 1 = the whole file was written */
+static int save(void)
 {
     char path[48];
     file_path(path, sizeof(path));
     char *text = malloc((size_t)s_n * (KEY_LEN + 16) + 1);
     if (!text)
-        return;
-    int n = 0;
+        return 0;
+    int n = 0, ok = 0;
     for (int i = 0; i < s_n; i++)
         n += snprintf(text + n, KEY_LEN + 16, "%u %s\n", s_games[i].secs, s_games[i].key);
     SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (fd >= 0) {
-        sceIoWrite(fd, text, n);
+        ok = sceIoWrite(fd, text, n) == n;
         sceIoClose(fd);
     }
     free(text);
+    return ok;
 }
 
-void playtime_load(const char *dir)
+/* --- the files of the helper plugin (src/awake.h) --- */
+
+#define MAX_PLAYED 256 /* files taken at one start; the rest next time */
+
+static char s_merged[MAX_PLAYED][KEY_LEN]; /* the games that got time from the plugin at this start */
+static int s_nmerged;
+
+static int was_merged(const char *key)
 {
-    s_n = 0;
-    snprintf(s_dir, sizeof(s_dir), "%s", dir);
+    for (int i = 0; i < s_nmerged; i++)
+        if (!strcmp(s_merged[i], key))
+            return 1;
+    return 0;
+}
+
+/* Adds what the plugin kept in <dir>/played/<game>.txt to the games, saves playtime.txt, and only then removes the files (a file that is not
+ * whole, or not one of the plugin's, is left alone). The games that got time are remembered: for them psp5's own measuring (the marker) is not used. */
+static void merge_played(void)
+{
+    typedef struct {
+        char name[AWAKE_KEY_MAX + 8];
+        char key[KEY_LEN];
+        unsigned secs;
+    } Found;
+    s_nmerged = 0;
+    char dir[64];
+    snprintf(dir, sizeof(dir), "%s/%s", s_dir, AWAKE_PLAYED_DIR);
+    SceUID d = sceIoDopen(dir);
+    if (d < 0)
+        return;
+    Found *found = malloc(MAX_PLAYED * sizeof(Found));
+    if (!found) {
+        sceIoDclose(d);
+        return;
+    }
+    int n = 0;
+    SceIoDirent ent;
+    memset(&ent, 0, sizeof(ent));
+    while (n < MAX_PLAYED && sceIoDread(d, &ent) > 0) {
+        if (strlen(ent.d_name) >= sizeof(found[n].name) || !awake_file_key(ent.d_name, found[n].key, KEY_LEN))
+            continue;
+        char path[160], text[AWAKE_FILE_MAX + 16];
+        snprintf(path, sizeof(path), "%s/%s", dir, ent.d_name);
+        SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+        int got = 0;
+        if (fd >= 0) {
+            got = sceIoRead(fd, text, sizeof(text));
+            sceIoClose(fd);
+        }
+        if (got > 0 && awake_parse(text, got, &found[n].secs)) {
+            snprintf(found[n].name, sizeof(found[n].name), "%s", ent.d_name);
+            n++;
+        }
+    }
+    sceIoDclose(d);
+    int added = 0;
+    for (int i = 0; i < n; i++)
+        if (found[i].secs > 0) {
+            add(found[i].key, found[i].secs);
+            if (s_nmerged < MAX_PLAYED && !was_merged(found[i].key))
+                snprintf(s_merged[s_nmerged++], KEY_LEN, "%s", found[i].key);
+            added = 1;
+        }
+    if (!added || save())
+        for (int i = 0; i < n; i++) {
+            char path[160];
+            snprintf(path, sizeof(path), "%s/%s", dir, found[i].name);
+            sceIoRemove(path);
+        }
+    free(found);
+}
+
+/* the games of playtime.txt; 0 when the file is there but cannot be read (too big, or no memory), 1 otherwise */
+static int read_games(void)
+{
     char path[48];
     file_path(path, sizeof(path));
     SceIoStat st;
-    if (sceIoGetstat(path, &st) < 0 || st.st_size <= 0 || st.st_size > MAX_FILE)
-        return;
+    if (sceIoGetstat(path, &st) < 0)
+        return 1; /* no file: nobody has played yet */
+    if (st.st_size <= 0)
+        return 1;
+    if (st.st_size > MAX_FILE)
+        return 0;
     char *text = malloc((size_t)st.st_size + 1);
     SceUID fd = text ? sceIoOpen(path, PSP_O_RDONLY, 0) : -1;
     if (fd < 0) {
         free(text);
-        return;
+        return 0;
     }
     int got = sceIoRead(fd, text, (unsigned)st.st_size);
     sceIoClose(fd);
@@ -110,7 +187,18 @@ void playtime_load(const char *dir)
         line = end + 1;
     }
     free(text);
+    return 1;
 }
+
+void playtime_load(const char *dir)
+{
+    s_n = 0;
+    s_nmerged = 0;
+    snprintf(s_dir, sizeof(s_dir), "%s", dir);
+    if (read_games()) /* (a file that could not be read is not written over with what the plugin kept) */
+        merge_played();
+}
+
 
 unsigned playtime_seconds(const Entry *e)
 {
@@ -171,35 +259,11 @@ static long long marker_number(const char *text, const char *name)
     return -1;
 }
 
-/* The seconds the helper plugin counted (src/awake.h), when its file is whole and belongs to this marker; else -1. The file is removed
- * either way: it is only for one game. */
-static long long awake_read(const char *path, const char *marker_text, int marker_len)
-{
-    char apath[200], buf[AWAKE_FILE_MAX + 32], file_token[AWAKE_TOKEN_MAX], mark_token[AWAKE_TOKEN_MAX];
-    unsigned secs = 0;
-    long long ret = -1;
-    snprintf(apath, sizeof(apath), "%s.awake", path);
-    SceUID fd = sceIoOpen(apath, PSP_O_RDONLY, 0);
-    if (fd < 0)
-        return -1;
-    int n = sceIoRead(fd, buf, sizeof(buf));
-    sceIoClose(fd);
-    sceIoRemove(apath);
-    if (n > 0 && marker_text && awake_parse(buf, n, file_token, sizeof(file_token), &secs) &&
-        awake_token(marker_text, marker_len, mark_token, sizeof(mark_token)) && strcmp(mark_token, "0") && !strcmp(file_token, mark_token))
-        ret = secs;
-    return ret;
-}
-
 int playtime_mark_take(const char *path, unsigned long long sys_us, unsigned long long rtc_us)
 {
     SceIoStat st;
-    if (sceIoGetstat(path, &st) < 0) {
-        char apath[200]; /* a file of the plugin without a marker is left over from a game that was never counted */
-        snprintf(apath, sizeof(apath), "%s.awake", path);
-        sceIoRemove(apath);
+    if (sceIoGetstat(path, &st) < 0)
         return 0;
-    }
     char text[KEY_LEN + 160];
     int got = 0;
     SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
@@ -208,7 +272,6 @@ int playtime_mark_take(const char *path, unsigned long long sys_us, unsigned lon
         sceIoClose(fd);
     }
     text[got > 0 ? got : 0] = 0;
-    long long awake = awake_read(path, text, got > 0 ? got : 0);
     sceIoRemove(path);
     if (strncmp(text, MARK_HEAD, strlen(MARK_HEAD)))
         return 1; /* an empty marker (from an older psp5), or a damaged one: a game ended, but nothing is known about how long */
@@ -222,6 +285,8 @@ int playtime_mark_take(const char *path, unsigned long long sys_us, unsigned lon
         return 1; /* the end of the name is missing: the file was cut off while it was written */
     char name[KEY_LEN];
     snprintf(name, sizeof(name), "%.*s", name_len, key);
+    if (was_merged(name))
+        return 1; /* the helper plugin counted this game (only the time the PSP was awake): the clocks of the marker would count sleep too */
     /* The two clocks; one that has gone backwards (the PSP was restarted, the clock was set) or could not be read (0) cannot be used.
      * Starting a game and leaving it restart the PSP's software and the system clock with it (seen in a log from a real PSP: 7 s when the game
      * was started, 3 s when psp5 was started again after it), so mostly only the real-time clock is left. The system clock is also not used
@@ -233,9 +298,7 @@ int playtime_mark_take(const char *path, unsigned long long sys_us, unsigned lon
     if (rtc0 > 0 && rtc_us >= (unsigned long long)rtc0)
         rtc_d = (long long)((rtc_us - (unsigned long long)rtc0) / 1000000ULL);
     long long best = -1;
-    if (awake >= 0) /* the plugin counted only the time the PSP was awake: that is the play time (never more than the time that went by) */
-        best = rtc_d >= 0 && awake > rtc_d ? rtc_d : awake;
-    else if (sys_d >= 0 && rtc_d >= 0)
+    if (sys_d >= 0 && rtc_d >= 0)
         best = (sys_d < PLAYTIME_MIN_SECS && rtc_d >= PLAYTIME_MIN_SECS) || rtc_d < sys_d ? rtc_d : sys_d;
     else if (rtc_d >= 0)
         best = rtc_d;
