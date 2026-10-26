@@ -26,6 +26,7 @@ static PluginFile s_files[MAX_FILES];
 static int s_file_count;
 static Plugin s_plugins[MAX_PLUGINS];
 static int s_count;
+static char s_ark_file[200]; /* <ark dir>PLUGINS.TXT: where lines are added when no file has any */
 
 static char *trim(char *s)
 {
@@ -106,6 +107,7 @@ int plugins_load(const char *ark_dir)
     char path[200];
     s_file_count = s_count = 0;
     snprintf(path, sizeof(path), "%sPLUGINS.TXT", ark_dir);
+    snprintf(s_ark_file, sizeof(s_ark_file), "%s", path);
     load_file(path);
     /* ARK-4 utan ARK-mapp använder <lagring>/SEPLUGINS/ som ARK-mapp – läs inte samma fil två gånger */
     char se[40];
@@ -170,4 +172,64 @@ int plugins_save(void)
         f->dirty = 0;
     }
     return ok;
+}
+
+/* --- the helper plugin: the lines "game, <path>, on" and "pops, <path>, on" ---
+ * ARK takes the runlevel as a word to look for: "game" is a PSP game, an ISO or a homebrew, "pops" is a PS1 game. */
+
+static int helper_line(const char *name, const char *level)
+{
+    for (int i = 0; i < s_count; i++)
+        if (!strcasecmp(s_plugins[i].name, name) && !strcasecmp(s_plugins[i].where, level))
+            return i;
+    return -1;
+}
+
+int plugins_helper_on(const char *name)
+{
+    int g = helper_line(name, "game"), p = helper_line(name, "pops");
+    return g >= 0 && p >= 0 && s_plugins[g].on && s_plugins[p].on;
+}
+
+/* The file the new lines go into: the first one that is there (the ARK folder's file is read first, so it is that one when both are),
+ * else the ARK folder's, made on saving. NULL when there is no room or the file cannot be written back whole. */
+static PluginFile *helper_file(void)
+{
+    if (s_file_count > 0)
+        return s_files[0].partial ? NULL : &s_files[0];
+    if (s_file_count >= MAX_FILES || !s_ark_file[0])
+        return NULL;
+    PluginFile *f = &s_files[s_file_count++];
+    memset(f, 0, sizeof(*f));
+    snprintf(f->path, sizeof(f->path), "%s", s_ark_file);
+    char dir[200];
+    snprintf(dir, sizeof(dir), "%s", s_ark_file);
+    char *slash = strrchr(dir, '/');
+    if (slash) {
+        *slash = 0;
+        sceIoMkdir(dir, 0777); /* (the folder is there for ARK; it may not be for <storage>/SEPLUGINS) */
+    }
+    return f;
+}
+
+int plugins_helper_set(const char *prx_path, int on)
+{
+    const char *name = strrchr(prx_path, '/');
+    name = name ? name + 1 : prx_path;
+    static const char *const levels[] = { "game", "pops" };
+    for (int k = 0; k < 2; k++) {
+        int i = helper_line(name, levels[k]);
+        if (i >= 0) {
+            s_plugins[i].on = on ? 1 : 0;
+        } else if (on) {
+            PluginFile *f = helper_file();
+            if (!f || f->count >= MAX_LINES)
+                return 0;
+            int line = f->count++;
+            snprintf(f->lines[line], LINE_LEN, "%s, %s, on", levels[k], prx_path);
+            f->dirty = 1;
+            parse_line((int)(f - s_files), line);
+        }
+    }
+    return plugins_save();
 }

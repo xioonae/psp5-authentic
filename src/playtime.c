@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "playtime.h"
+#include "awake.h"
 #include "lang.h"
 
 #define KEY_LEN   80   /* as home.c: entry_cover_key() callers have always used 80 */
@@ -170,11 +171,35 @@ static long long marker_number(const char *text, const char *name)
     return -1;
 }
 
+/* The seconds the helper plugin counted (src/awake.h), when its file is whole and belongs to this marker; else -1. The file is removed
+ * either way: it is only for one game. */
+static long long awake_read(const char *path, const char *marker_text, int marker_len)
+{
+    char apath[200], buf[AWAKE_FILE_MAX + 32], file_token[AWAKE_TOKEN_MAX], mark_token[AWAKE_TOKEN_MAX];
+    unsigned secs = 0;
+    long long ret = -1;
+    snprintf(apath, sizeof(apath), "%s.awake", path);
+    SceUID fd = sceIoOpen(apath, PSP_O_RDONLY, 0);
+    if (fd < 0)
+        return -1;
+    int n = sceIoRead(fd, buf, sizeof(buf));
+    sceIoClose(fd);
+    sceIoRemove(apath);
+    if (n > 0 && marker_text && awake_parse(buf, n, file_token, sizeof(file_token), &secs) &&
+        awake_token(marker_text, marker_len, mark_token, sizeof(mark_token)) && strcmp(mark_token, "0") && !strcmp(file_token, mark_token))
+        ret = secs;
+    return ret;
+}
+
 int playtime_mark_take(const char *path, unsigned long long sys_us, unsigned long long rtc_us)
 {
     SceIoStat st;
-    if (sceIoGetstat(path, &st) < 0)
+    if (sceIoGetstat(path, &st) < 0) {
+        char apath[200]; /* a file of the plugin without a marker is left over from a game that was never counted */
+        snprintf(apath, sizeof(apath), "%s.awake", path);
+        sceIoRemove(apath);
         return 0;
+    }
     char text[KEY_LEN + 160];
     int got = 0;
     SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
@@ -183,6 +208,7 @@ int playtime_mark_take(const char *path, unsigned long long sys_us, unsigned lon
         sceIoClose(fd);
     }
     text[got > 0 ? got : 0] = 0;
+    long long awake = awake_read(path, text, got > 0 ? got : 0);
     sceIoRemove(path);
     if (strncmp(text, MARK_HEAD, strlen(MARK_HEAD)))
         return 1; /* an empty marker (from an older psp5), or a damaged one: a game ended, but nothing is known about how long */
@@ -207,7 +233,9 @@ int playtime_mark_take(const char *path, unsigned long long sys_us, unsigned lon
     if (rtc0 > 0 && rtc_us >= (unsigned long long)rtc0)
         rtc_d = (long long)((rtc_us - (unsigned long long)rtc0) / 1000000ULL);
     long long best = -1;
-    if (sys_d >= 0 && rtc_d >= 0)
+    if (awake >= 0) /* the plugin counted only the time the PSP was awake: that is the play time (never more than the time that went by) */
+        best = rtc_d >= 0 && awake > rtc_d ? rtc_d : awake;
+    else if (sys_d >= 0 && rtc_d >= 0)
         best = (sys_d < PLAYTIME_MIN_SECS && rtc_d >= PLAYTIME_MIN_SECS) || rtc_d < sys_d ? rtc_d : sys_d;
     else if (rtc_d >= 0)
         best = rtc_d;
