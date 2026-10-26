@@ -57,7 +57,7 @@ There is nothing to set up. The first time psp5 starts on a PSP with ARK it puts
 The plugin keeps the seconds of each game in `PSP5/played`, and psp5 adds them to the times it shows the next time it starts.
 
 - To turn it off, open *Settings → Plugins* and turn off the two `psp5time.prx` lines (*Games* and *PS1*). psp5 leaves those lines as they are, so they stay off (it only adds them when there is no line for the plugin at all).
-- Without ARK, or with the lines off, nothing is counted. A game under 10 seconds is not counted, and neither is an ISO without a disc ID.
+- Without ARK, or with the lines off, nothing is counted. A game under 10 seconds is not counted. A PSP game that has no disc ID (some homebrew ISOs and CSOs) is counted under the name of its ISO file, as psp5 names it: renaming the file starts a new time for it.
 - When psp5 is updated, the plugin file is replaced by the one that comes with it.
 
 ## Where your games go

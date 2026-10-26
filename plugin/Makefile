@@ -14,7 +14,7 @@ USE_KERNEL_LIBC = 1
 USE_KERNEL_LIBS = 1
 
 LDFLAGS = -nostartfiles
-LIBS =
+LIBS = -lpspsystemctrl_kernel
 
 PSP_FW_VERSION = 660
 

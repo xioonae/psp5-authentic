@@ -6,8 +6,9 @@
  * was much longer than a second: then the PSP slept (the thread did not run), and nothing is added (see awake.c).
  *
  * It finds out which game it is in by itself, so it counts a game that was started from the XMB as well as one started by psp5:
- * a homebrew or PS1 game is named by its folder (the EBOOT.PBP that the PSP started), a PSP game by the DISC_ID in its PARAM.SFO. Those
- * are the names psp5 uses in playtime.txt (entry_cover_key() in scan.c; awake.c has the same rules, and the tests compare the two).
+ * a homebrew or PS1 game is named by its folder (the EBOOT.PBP that the PSP started), a PSP game by the DISC_ID in its PARAM.SFO, and a
+ * PSP game that has none (an ISO / CSO / ZSO / DAX / JSO without a disc id) by the name of its ISO file, which ARK knows (sctrlSEGetUmdFile).
+ * Those are the names psp5 uses in playtime.txt (entry_cover_key() in scan.c; awake.c has the same rules, and the tests compare the two).
  * The seconds are kept in <psp5's data folder>/played/<name>.txt (see awake.h), every 10 seconds, in place and with the same length each
  * time, so a file cut off by a battery that runs out is at worst a few seconds behind. The data folder is the folder this plugin was
  * loaded from (ARK passes the path of the module to module_start). At its next start psp5 adds the seconds in the files to playtime.txt and
@@ -31,6 +32,15 @@ PSP_MAIN_THREAD_ATTR(0);
 #define THREAD_PRIO   0x10
 #define THREAD_STACK  0x4000
 
+/* ARK's systemctrl: the ISO file that it has mounted for this game. Looked up when it is needed (not imported), so an ARK that does not have it
+ * only means "no name" and the plugin still loads. The two numbers are the two names the function is exported under. */
+unsigned int sctrlHENFindFunction(const char *mod_name, const char *library, unsigned int nid);
+#define UMD_NID_1     0xBA21998Eu
+#define UMD_NID_2     0xAC56B90Bu
+#ifndef FIND_UMD_GETTER /* (the tests put their own ARK here: a function address does not fit an unsigned int on a PC) */
+#define FIND_UMD_GETTER(mod, lib, nid) ((char *(*)(void))sctrlHENFindFunction(mod, lib, nid))
+#endif
+
 static char s_module[PATH_MAX_LEN]; /* where this plugin was loaded from, as ARK says it: "ms0:/PSP5/psp5time.prx" */
 static unsigned char s_sfo[SFO_MAX];
 
@@ -42,6 +52,26 @@ static int read_file(const char *path, void *buf, int size)
     int n = sceIoRead(fd, buf, size);
     sceIoClose(fd);
     return n;
+}
+
+/* the path of the ISO that ARK mounted ("ms0:/ISO/Foo.iso"), or "" */
+static void umd_file(char *out, int size)
+{
+    static const unsigned int nids[2] = { UMD_NID_1, UMD_NID_2 };
+    out[0] = 0;
+    for (int i = 0; i < 2; i++) {
+        char *(*get)(void) = FIND_UMD_GETTER("SystemControl", "SystemCtrlForKernel", nids[i]);
+        if (!get)
+            continue;
+        const char *p = get();
+        int n = 0;
+        while (p && n < size - 1 && p[n]) {
+            out[n] = p[n];
+            n++;
+        }
+        out[n] = 0;
+        return;
+    }
 }
 
 /* the whole file in one write: in place when the file is there, else (or the first time) as a new file */
@@ -64,7 +94,14 @@ static void flush(const char *path, unsigned secs, int fresh)
 
 static int worker(SceSize args, void *argp)
 {
-    const char *init = sceKernelInitFileName();
+    char init[PATH_MAX_LEN];
+    const char *name = sceKernelInitFileName();
+    int ni = 0;
+    while (name && ni < PATH_MAX_LEN - 1 && name[ni]) {
+        init[ni] = name[ni];
+        ni++;
+    }
+    init[ni] = 0; /* (a copy: it is used again after the wait below) */
     if (awake_is_psp5(init))
         return 0; /* psp5 itself (as the launcher or as an app) is not a game */
 
@@ -85,8 +122,12 @@ static int worker(SceSize args, void *argp)
             if (n > 0 && awake_key_from_sfo(s_sfo, (unsigned)n, key, AWAKE_GAME_ID_MAX))
                 found = 1;
         }
-        if (!found)
-            return 0;
+        if (!found && !awake_key_from_files(init, NULL, key, sizeof(key))) { /* no disc id (or no PARAM.SFO): psp5 names such a game by its ISO file */
+            char umd[PATH_MAX_LEN];
+            umd_file(umd, sizeof(umd)); /* (the PSP did not start the ISO file itself: ARK knows which one it mounted) */
+            if (!awake_key_from_files(init, umd, key, sizeof(key)))
+                return 0;
+        }
     }
     if (!awake_played_dir(dir, played, sizeof(played)) || !awake_played_path(dir, key, path, sizeof(path)))
         return 0;

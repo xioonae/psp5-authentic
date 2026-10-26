@@ -94,16 +94,99 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
   - *Kept between starts* (`config.c`): `libsort=0|1` and `libview=0..3` in `psp5.cfg` (`g_lib_sort`, `g_lib_view`); `ui_init` reads
     them, `set_sort` / `set_view` write them with `config_save()` (the buffer is 192 bytes now). A value that does not exist is the
     first one.
-  - *Tests* (`host-tests`, not under git): `units/playtime_test.c` (93 checks: no file, the format of playtime.txt - CRLF, names with spaces, damaged lines, the same name twice, 4096 games, numbers that cannot overflow -, the games told apart by `entry_cover_key()`,
-    the files of the plugin merged and removed - only whole files, kept when `playtime.txt` cannot be written or read, 256 at a time, psp5's own folder dropped -, the names of the plugin against `entry_cover_key` / `entry_read_sfo`, the text of a time in 11 languages),
-    `units/awake_test.c` (the counter with sleeps, a clock that stands still or goes back, the file's format cut at every length, the names of games from paths and from a PARAM.SFO with wrapping offsets and cut pieces, the folder and file names, `awake_is_psp5`),
-    `plugin/psp5time_test.c` (74 checks; includes the real `psp5time.c` and runs its loop against a fake clock with sleeps and a throwaway memory stick with a made-up disc: a game from the XMB, a disc that is readable late or never, the writes in place, under 10 s,
-    sleep for hours, switched off, a game played twice, `ef0:`, a folder that is not there, a 6-hour game, psp5 itself skipped, and the no-fallback cases: no plugin, under 10 s, an ISO psp5 lists without an id),
+  - *Tests* (`host-tests`, not under git): `units/folders_test.c` (paths, names, letters, merging), `ui/library_test.c` (new: all views and
+    sorts, the button and popup, opening and closing, the empty views, a deleted game, `psp5.cfg`, drawn letters and the row in
+    11 languages), `ui/folder_fixture.h`, `icons/foldertest.py` (the shape and the fractions of the fit), `gfx/foldertext_test.c` (the ink of the capital letters
+    A-Z and 0-9 in the folder body at the seven Library card sizes: within a pixel of the middle sideways and up and down, on average within a
+    third of a pixel; with `MOCK_REAL=1` the mock measures text by the advances of its letters and draws it at the real size, so the test needs
+    the atlas from `mkatlas.py`; the PC font's letters are shaped like the PSP's but are not the same); `ui/menu_test.c` and `ui/pixel_test.c` changed for the view button
+    (↑ from the first card is the view button; one card has the view button but no Sort button) and draw every view, every folder
+    card, the popup and an open folder through the whole-pixel check (`menu_test.c`'s check "↑ from the first row selects the nearest
+    button" now takes the two frames from what is drawn, because the mock makes the Russian Sort button as wide as the row). Measured on a PC only. The mock measures Cyrillic and Japanese
+    as 2 and 3 bytes of 6 px, wider than the real font, so how much of the label is cut in Russian and Japanese on a real PSP is not known.
+- **Time played** (`playtime.c` / `playtime.h` new, `main.c`, `ui.c`, `ui.h`, `lang.c`, `Makefile`).
+  - *What is known*: psp5 is not running while a game is, and the PSP's clocks cannot tell sleep and power-off from play time, so psp5 itself does not measure anything:
+    the time comes only from the helper plugin below. (Test builds 1-6 measured start to next start with a marker file holding two clocks, and had a switch
+    "Exact time played" for the plugin; all of that is removed. Why the clocks were no use: starting a game (`sctrlKernelLoadExecVSHWithApitype`) restarts the PSP's software and the system clock
+    (`sceKernelGetSystemTimeWide`) with it - measured once on a real PSP: 7 s at the start of the game, 3 s when psp5 came back - and the real-time clock goes on through sleep and power-off.)
+  - *The marker that is left*: `<DATA_DIR>/ingame`, an empty file. `set_ingame_mark()` (main.c) writes it before a game is started when psp5 is ARK's launcher (`sys_is_launcher()`), `take_ingame_mark()` removes it
+    at the start and tells `app_start` to skip the start-up screen. It holds nothing and counts nothing. `sys_is_launcher()` is true when psp5 was started as ARK's `VBOOT.PBP`, also from the XMB with the Custom Launcher entry.
+  - *The helper plugin* (installs itself, no switch): a kernel module that ARK loads into every game; it counts only awake time, and it finds out which game it is in by itself, so a game started from the XMB counts too.
+    Files: `plugin/psp5time.c` (the module: `module_start` makes one thread, priority 0x10, stack 0x4000; the thread ticks once a second),
+    `src/awake.c/.h` (shared with psp5, no system calls, **no 64-bit division** - the plugin is linked without libgcc), `plugin/Makefile` (a kernel PRX: `USE_KERNEL_LIBS`, `-lpspsystemctrl_kernel`,
+    `PSP_MODULE_INFO("psp5time", 0x1007, 1, 0)`, exports only `module_start` and `module_info`), `src/helper.c/.h` (`helper_setup`), `plugins.c` (`plugins_helper_any`,
+    `plugins_helper_add`), `playtime.c` (`merge_played`). There is **no fallback**: a game the plugin was not loaded for (no ARK, lines off) or cannot name the way psp5 does gets no time.
+    - *Counting* (`AwakeClock`, `awake_tick`): the thread takes `sceKernelGetSystemTimeWide()` every second and adds the step since the last tick only when it is at most
+      `AWAKE_MAX_STEP_US` (5 s). While the PSP sleeps the thread does not run; when it wakes the step is long (the clock went on) and is dropped, or the clock stood still
+      and the step is normal: either way sleep adds nothing. A clock that went back adds nothing. A step of 5 s or more for another reason (the thread starved) is lost too.
+      The sleeping second itself is lost as well (at most a second per sleep).
+    - *Which game* (`awake_key_from_path`, `awake_key_from_sfo`): the names are the keys psp5 uses in playtime.txt (`entry_cover_key()` in scan.c; the tests compare the two on many names). From
+      `sceKernelInitFileName()`: a file called EBOOT.PBP = a homebrew, PSN or PS1 game, named by the folder between the last two slashes (cut at 79 bytes, as psp5's 80-byte key); another `.PBP`
+      (ARK's menu, a launcher) is not a game; everything else (`disc0:/PSP_GAME/SYSDIR/EBOOT.BIN`, an ISO path, a `PBOOT.PBP`) is a PSP game, named by the `DISC_ID` of `disc0:/PSP_GAME/PARAM.SFO`
+      (at most 15 bytes, as `Entry.game_id`; an id with a path character is refused). The disc may not be readable the moment the plugins are loaded: the plugin tries once a second for 10 s (counting
+      goes on meanwhile) and then gives up. **A PSP game with no disc id** (the SFO has no `DISC_ID`, or there is no PARAM.SFO; psp5 then lists the ISO with an empty `game_id` and `entry_cover_key()` names it by its file) is named the same way after the ten tries:
+      `awake_key_from_files(init, umd, key, size)` takes the name of an ISO-type file (`.iso .cso .zso .dax .jso`, any case) between the last slash and the last dot, cut at 79 bytes, from the file the PSP started (`init`, when ARK starts the ISO
+      by its path) or else from `umd`, the ISO that ARK has mounted. A `.PBP` as `init` (PBOOT.PBP, an installed game) never takes the name from ARK (ARK may remember an old ISO). `umd` comes from `umd_file()` in the plugin:
+      `sctrlHENFindFunction("SystemControl", "SystemCtrlForKernel", nid)` for the two numbers that ARK exports `sctrlSEGetUmdFile` under (0xBA21998E, and 0xAC56B90B from PRO), called only when `init` is not itself the ISO.
+      It is a run-time lookup and not an import on purpose: a stub that cannot be resolved could keep the whole module from loading, a lookup that finds nothing only means "no name". In ARK-4's source `sctrlSEGetUmdFile()` returns
+      `rebootex_config.iso_path`, the path that psp5 (`sctrlSESetUmdFile` in `launch.c`) or ARK's XMB set before the game was started; ARK's own `startPlugins` compares plugin runlevels with it, so it is valid at the time plugins are loaded.
+      No ISO file, no ARK function, an empty path, a path with no slash or an extension that is not an ISO type: no name, the plugin ends and writes nothing.
+      **Not verified on a PSP**: what `sceKernelInitFileName()` is for ISO, PBOOT, PSN and PS1 games under ARK (the code takes anything that is not `EBOOT.PBP` as a disc game, so the disc path works
+      whether it is `disc0:`, the ISO path or `PBOOT.PBP`).
+    - *Where the files go*: ARK starts a plugin with `sceKernelStartModule(uid, strlen(path)+1, path, ...)` (`startPlugins` in plugin.c), so `module_start`'s `argp` is the path the module was loaded from, e.g. `ms0:/PSP5/psp5time.prx`, and
+      its folder (`awake_dir_of`) is psp5's data folder (psp5 wrote the module there): no guessing between `ms0:` and `ef0:`. The seconds of a game are in `<data dir>/played/<key>.txt` (`awake.h`: `psp5-played 1`, `secs` + 10 digits, `end`).
+      The first write is a new file (10 s after what the file had), later ones are in place, without truncation, always the same length, in one `sceIoWrite`, so a power loss leaves the last whole write or nothing.
+      An existing whole file (seconds psp5 has not taken yet: a game played twice before psp5 started, a reset) is continued; one that is not whole (cut off, another format) is replaced.
+    - *psp5 itself*: ARK's runlevel `game` also matches homebrew (`matchingRunlevel` in `core/systemctrl/src/plugin.c` looks for the word `game`, `homebrew` or `app` in the homebrew
+      case, `umd`/`psp`/`game` for ISO and UMD games, `pops`/`ps1`/`psx` for PS1), so the plugin is loaded into psp5 too. `awake_is_psp5(sceKernelInitFileName())` makes it end at once there
+      (`VBOOT.PBP`, or `EBOOT.PBP` in a folder called `PSP5`): psp5 is not a game, and as the launcher it is started again right after every game.
+      The plugin cannot know a psp5 that was put in a folder with another name (it would count it as a game), so psp5 also knows itself: `main()` calls `playtime_set_self(argv[0])`, and `merge_played` removes (and does not add) a file whose name is the folder
+      of psp5's own EBOOT.PBP (compared without regard to capitals, FAT does not tell them apart). The plugin does write that file while psp5 runs; it is removed at the next start.
+    - *psp5's side* (`merge_played` in `playtime.c`, called by `playtime_load`, which `main()` calls at the start): every `*.txt` in `<data dir>/played` that is whole (`awake_parse`) is added to its game
+      (`add`: no overflow), `playtime.txt` is saved once, and only when that worked the files are removed (none are lost when the card is full or read-only; a `playtime.txt` that cannot be read, because it is too big, is not written over
+      and the files stay). Files that are not whole are left alone. At most 256 files per start. A game under 10 s awake writes no file (the first write is at 10 s), so it gets nothing.
+      A switched-off PSP leaves the last write (at most 10 s behind) and the next start of psp5 uses it.
+      Every homebrew you run gets a file and a line in playtime.txt (under its folder name), also ones psp5 never shows.
+    - *Installing* (`helper_setup`, first thing in `main()` after `sys_init`; only with ARK, `sys_has_ark()`): `install()` writes `<data dir>/psp5time.prx` from the C array `psp5time_prx[]` that the Makefile makes with `bin2c`, unless the file is already
+      byte for byte the same (an older, longer, shorter or damaged one is replaced); if that failed nothing else is done (no lines for a file that is not there; it is tried again at the next start). Then `plugins_load(sys_ark_dir())` and, when
+      `plugins_helper_any("psp5time.prx")` says there is no line for it at all (neither `game` nor `pops`, any folder, any case), `plugins_helper_add` appends `game, <path>, on` and `pops, <path>, on` to the first PLUGINS.TXT that exists
+      (the ARK folder's if both do) or creates the ARK folder's; a file that did not fit (more than 96 lines, a line over 191 bytes) is never written, and then nothing is added (not half of the two either).
+      **Lines that are there are never changed**: the opt-out is turning them off in Settings > Plugins (they are listed as `psp5time.prx`, Games and PS1), and they stay off. One line left of the two counts as "there" (nothing is added). The user who deletes both lines gets
+      them back at the next start. ARK reads PLUGINS.TXT at every game start, so no restart is needed. A test build user who had the switch on keeps working (the lines are there); one who had it off has `off` lines and keeps them off.
+    - *Build*: the main Makefile makes `plugin/psp5time.prx` (sub-make), then `plugin/psp5time_prx.h` (`bin2c`), which `src/helper.c` includes; `make clean` cleans the plugin too.
+    - *Not known* (no PSP): that ARK accepts and runs the module as written; the thread's behaviour across a real sleep and wake-up (the code works for a clock that jumps and for one that stands still);
+      the file names `sceKernelInitFileName()` gives (above); that ARK-5 (only ARK-4's source was read) exports `sctrlSEGetUmdFile` under one of the two numbers (without it a game with no disc id gets no time); file calls from the thread on a PSP Go with a game on the internal storage; the PSP Go's pause mode and the HOME menu (user threads are paused, the kernel thread may go on counting).
+      The old test build 4 kept `PSP5/ingame.awake` (a different design, matched by the marker's number); that file is no longer read, and is not removed.
+  - *Under a minute*: `playtime_text` gives `<1min` for 1..59 s (it was empty), so a short test shows something; sessions under 10 s are still not
+    counted.
+  - *The file* `<DATA_DIR>/playtime.txt`: a line per game `"<seconds> <key>"`, up to 4096 games (the first wins when a name is there twice; a full
+    table takes no new game but keeps the others; CRLF is fine; a bad line is skipped). It is written when a session is added
+    (whole file, `sceIoOpen` + write). Sums stop at `0xFFFFFF00` (no overflow).
+  - *The text* `playtime_text(secs, out, size)`: 0 s nothing, under 60 s "<1min"; under an hour "%umin"; else the hours, rounded down, at most 9999,
+    "%uh", the units `S_UNIT_MIN` / `S_UNIT_H` (h, min; Dutch u; Russian ч, мин; Japanese 時間, 分). Never both, as the maintainer asked.
+  - *The pill* (`ui.c`, `draw_play_pill`; `PILL_H` 26, `PILL_PAD` 12, `CLOCK_D` 12, `CLOCK_GAP` 6, text size 0.66, baseline `by + 17.5` like
+    *Start*): drawn with `button_bg` (the dark pill of the bottom-row buttons, never selected), a white face (`gfx_circle`, 12 px) with two
+    dark hands (1 x 5 up from the middle and 4 x 1 to the left, `gfx_rect`, whole pixels) and the text, its right edge at `SCREEN_W - MARGIN`
+    (456); in the Games tab (`draw_details`) opposite *Play* / Options (the pill is clear of the Options circle by at least 10 px in all
+    11 languages), in the Library (bottom row) opposite the tag and the title, whose room `max_w` is 12 px less than the pill (the cache of
+    the shortened title, `lib_label`, also remembers its room: `lib_label_room`). Nothing is drawn for a text that is empty (never played), a folder card, or the Library card (`play_text()` returns "" for every negative card number, so no lookup is made for
+    the launcher's own cards, pinned or not; `library_test` puts lines for "Library", "?library", "PSP5" in playtime.txt to prove it). `play_text()` looks the seconds up once per selected game (`pt_for`, `pt_secs`; reset
+    next to every `lib_label_for = -2`) and makes the text at every draw, so a language changed in Settings is followed.
+  - *Limits*: no ARK, no time (the plugin is an ARK plugin: the PRX is loaded through PLUGINS.TXT); the plugin's lines off, no time; a game under 10 s awake, no time; a PSP game with no disc id whose ISO file name is not known (ARK does not give it), no time (above).
+    The plugin cannot know a psp5 that was put in a folder with another name, so psp5 drops that file itself (above). A PSP that is switched off in a game loses at most the last 10 s. Not known on a PSP: see *Not known* above.
+  - *Tests* (`host-tests`, not under git): `units/playtime_test.c` (96 checks: no file, the format of playtime.txt - CRLF, names with spaces, damaged lines, the same name twice, 4096 games, numbers that cannot overflow -, the games told apart by `entry_cover_key()`,
+    the files of the plugin merged and removed - only whole files, kept when `playtime.txt` cannot be written or read, 256 at a time, psp5's own folder dropped -, the names of the plugin against `entry_cover_key` / `entry_read_sfo`, also for ISO files without a disc id,
+    the text of a time in 11 languages), `units/awake_test.c` (230 checks: the counter with sleeps, a clock that stands still or goes back, the file's format cut at every length, the names of games from paths, from a PARAM.SFO with
+    wrapping offsets and cut pieces and from ISO files, the folder and file names, `awake_is_psp5`),
+    `plugin/psp5time_test.c` (90 checks; includes the real `psp5time.c` and runs its loop against a fake clock with sleeps, a throwaway memory stick with a made-up disc and a stand-in for ARK's function: a game from the XMB, a disc that is readable late or never,
+    the writes in place, under 10 s, sleep for hours, switched off, a game played twice, `ef0:`, a folder that is not there, a 6-hour game, psp5 itself skipped, the no-fallback cases, and a game with no disc id named by the ISO file from the started file or from ARK - by the first
+    number, by the second, not at all -, no use of ARK's old ISO for PBOOT.PBP, the disc id winning, over-long paths),
     `helper/helper_test.c` (33 checks: no ARK = nothing written; the first start writes the file and the two lines; later starts write nothing; off stays off; one line is enough; lines from another folder or in capitals count as there; deleted lines come back; PLUGINS.TXT made when missing;
-    SEPLUGINS; an older, longer, shorter or damaged file replaced; a file that cannot be written, or only half of it, leaves PLUGINS.TXT alone; a PLUGINS.TXT that does not fit is left as it is), the `plugins_helper_*` part of `cfg/cfg_test.c` (77 checks in all) and the plugin part of
+    SEPLUGINS; an older, longer, shorter or damaged file replaced; a file that cannot be written, or only half of it, leaves PLUGINS.TXT alone; a PLUGINS.TXT that does not fit is left as it is), the `plugins_helper_*` part of `cfg/cfg_test.c` (79 checks in all) and the plugin part of
     `settings/settings_test.c` (no "Exact time played" anywhere, the two lines show as Games and PS1, turning one off changes only that line). `ui/library_test.c` (the clock in the Library and the Games tab: exact place of
     the text and of the two hands, nothing for unplayed games, folders or the Library card, the title cut before the clock, the room in 11
-    languages) and `ui/pixel_test.c` (every game has a time: the clock is drawn through the whole-pixel check in every state). `host-tests/plugin/inc/` holds two stand-in headers; the plugin and psp5 code is used as it is.
+    languages) and `ui/pixel_test.c` (every game has a time: the clock is drawn through the whole-pixel check in every state). `host-tests/plugin/inc/` holds two stand-in headers; the plugin and psp5 code is used as it is
+    (the plugin has one hook for the tests, `FIND_UMD_GETTER`, because a function address does not fit its 32-bit lookup result on a 64-bit PC).
 - **.jso files are read** (`lzo.c`, `lzo.h` new; `scan.c`, `info.c`, `gameops.c`, `files.c`, `iso.c`): a JSO is a CISO-like container
   ("JISO", block size at 6, method at 0x0A: 0 = LZO, 1 = zlib, unpacked size at 0x0C); libcisoread already reads the container and
   calls `lzo1x_decompress(src, src_len, dst, &dst_len, wrk)`, which `iso.c` only had as an empty stub returning -1. `lzo.c` is a decoder
