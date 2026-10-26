@@ -49,6 +49,14 @@ Then *Custom Launcher* in the XMB opens psp5, and your PSP can start straight in
 
 To get to the XMB from there: settings → *Power and USB* → *Exit to XMB*.
 
+### Optional: exact time played
+
+The clock on a game's card normally counts the time from *Play* until psp5 starts again, so a PSP that sleeps or is switched off in the
+middle of a game counts that time too. To count only the time you really play: settings → *psp5* → turn on **Exact time played**, and
+leave the settings. psp5 then puts a tiny helper plugin (`psp5time.prx`) in its `PSP5` folder and adds two lines for it to the
+`PLUGINS.TXT` that ARK reads (one for PSP games and homebrew, one for PS1 games). Your other plugins stay as they are. It works from the next game you
+start, with no restart. Turn the switch off to stop using it. It only does something when psp5 is ARK's launcher (see above).
+
 ## Where your games go
 
 | What | Folder |

@@ -2,9 +2,9 @@
 TARGET = psp5
 OBJS = src/main.o src/scan.o src/sfo.o src/iso.o src/lzo.o src/folders.o src/playtime.o src/launch.o \
        src/gfx.o src/image.o src/art.o src/loader.o src/ui.o \
-       src/arkcfg.o src/plugins.o src/system.o src/settings.o src/testrun.o src/sound.o src/lang.o src/config.o src/boot.o src/music.o src/umd.o src/theme.o src/osd.o src/files.o src/diacritic.o src/icons.o src/reccache.o src/info.o src/gameops.o src/popup.o src/saves.o src/home.o src/ark4stub.o
+       src/arkcfg.o src/plugins.o src/system.o src/settings.o src/testrun.o src/sound.o src/lang.o src/config.o src/boot.o src/music.o src/umd.o src/theme.o src/osd.o src/files.o src/diacritic.o src/icons.o src/reccache.o src/info.o src/gameops.o src/popup.o src/saves.o src/home.o src/ark4stub.o src/awake.o src/helper.o
 
-CFLAGS = -O2 -G0 -Wall -Wno-unused-parameter -Wno-stringop-truncation -Wno-format-truncation $(EXTRA) $(ARKFLAGS)
+CFLAGS = -O2 -G0 -Wall -Wno-unused-parameter -Wno-stringop-truncation -Wno-format-truncation -Iplugin $(EXTRA) $(ARKFLAGS)
 ASFLAGS = $(CFLAGS)
 
 # ARK=4 bygger ARK-4-versionen: utan ARK-5:s ArkCtrl-bibliotek (finns inte i ARK-4)
@@ -32,3 +32,19 @@ PSP_EBOOT_PIC1 = res/PIC1.PNG
 
 PSPSDK = $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
+
+# The helper plugin (plugin/psp5time.c, a kernel module that ARK loads into a game) is built first and carried inside psp5 as a C array
+# (src/helper.c writes it out when "Exact time played" is turned on).
+plugin/psp5time.prx: plugin/psp5time.c plugin/exports.exp plugin/Makefile src/awake.c src/awake.h
+	$(MAKE) -C plugin
+
+plugin/psp5time_prx.h: plugin/psp5time.prx
+	bin2c $< $@ psp5time_prx
+
+src/helper.o: plugin/psp5time_prx.h
+
+clean: plugin-clean
+.PHONY: plugin-clean
+plugin-clean:
+	-$(MAKE) -C plugin clean
+	-rm -f plugin/psp5time_prx.h

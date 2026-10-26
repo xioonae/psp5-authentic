@@ -32,6 +32,7 @@
 #include "saves.h"
 #include "home.h"
 #include "playtime.h"
+#include "helper.h"
 
 PSP_MODULE_INFO("psp5", PSP_MODULE_USER, 0, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
@@ -475,6 +476,7 @@ int main(int argc, char *argv[])
 
     EntryList list = { 0 };
     Ui ui;
+    helper_sync(); /* a helper plugin from an older psp5 is replaced */
     playtime_load(DATA_DIR); /* (before the marker is taken: it adds the time of the game that has just ended) */
     app_start(&list, &ui, !take_ingame_mark()); /* ingen startskärm efter ett spel */
     if (s_safe)

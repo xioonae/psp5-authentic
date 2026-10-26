@@ -18,4 +18,10 @@ Plugin *plugins_get(int i);
 /* Skriver tillbaka ändrade filer – bara på/av-fältet ändras. */
 int plugins_save(void);
 
+/* The helper plugin (helper.c): are its two lines ("game" and "pops", by the file name) there and on? */
+int plugins_helper_on(const char *name);
+/* Turns the two lines for the plugin at `prx_path` on or off and adds them (to the file the plugins are in) when they are missing and on = 1;
+ * everything else in the files stays as it is. Writes the files; 1 = done. */
+int plugins_helper_set(const char *prx_path, int on);
+
 #endif
