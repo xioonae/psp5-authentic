@@ -220,6 +220,46 @@ int awake_key_from_sfo(const unsigned char *sfo, unsigned len, char *key, int si
     return 0;
 }
 
+/* "ms0:/ISO/Foo.iso" -> "Foo", as entry_cover_key() does it for an ISO entry: between the last slash and the last dot, cut where psp5's
+ * 80-byte key is. Only the file types psp5 lists as ISO files; no slash, no dot or an empty name is no name. */
+static int key_from_iso_file(const char *path, char *key, int size)
+{
+    if (!path || !key || size < 2)
+        return 0;
+    int len = str_len(path), start = len;
+    while (start > 0 && path[start - 1] != '/')
+        start--;
+    if (start == 0 || start >= len)
+        return 0;
+    int dot = len;
+    while (dot > start && path[dot - 1] != '.')
+        dot--;
+    if (dot <= start + 1) /* no dot, or nothing before it */
+        return 0;
+    const char *ext = path + dot - 1;
+    int elen = len - (dot - 1);
+    if (!same_name(ext, elen, ".ISO") && !same_name(ext, elen, ".CSO") && !same_name(ext, elen, ".ZSO") && !same_name(ext, elen, ".DAX") &&
+        !same_name(ext, elen, ".JSO"))
+        return 0;
+    int n = dot - 1 - start;
+    if (n > size - 1)
+        n = size - 1; /* (snprintf cuts it there too) */
+    for (int i = 0; i < n; i++)
+        key[i] = path[start + i];
+    key[n] = 0;
+    return 1;
+}
+
+int awake_key_from_files(const char *init_file, const char *umd_file, char *key, int size)
+{
+    if (key_from_iso_file(init_file, key, size))
+        return 1;
+    int len = init_file ? str_len(init_file) : 0;
+    if (len >= 4 && same_name(init_file + len - 4, 4, ".PBP"))
+        return 0; /* PBOOT.PBP: an installed game, not an ISO that ARK mounted */
+    return key_from_iso_file(umd_file, key, size);
+}
+
 /* --- the files of the plugin --- */
 
 int awake_dir_of(const char *module_path, char *out, int size)

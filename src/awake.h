@@ -60,6 +60,14 @@ int awake_key_from_path(const char *init_file, char *key, int size);
  * 1 = found; 0 = not, or a name that cannot be a file name (a path character). */
 int awake_key_from_sfo(const unsigned char *sfo, unsigned len, char *key, int size);
 
+/* The name of a PSP game that has no disc id (its PARAM.SFO has none, or there is no PARAM.SFO), as psp5 names such a game in playtime.txt
+ * (entry_cover_key() in scan.c): the name of its ISO file without the extension, "ms0:/ISO/Foo.iso" -> "Foo". An ISO-type file is .iso, .cso, .zso, .dax or .jso.
+ * `init_file` is what the PSP started (sceKernelInitFileName(); it is the ISO file itself when ARK says so, else something like disc0:/...);
+ * `umd_file` is the ISO that ARK has mounted (sctrlSEGetUmdFile()), or NULL / "" when not known. The ISO file is taken from `init_file` first, then
+ * from `umd_file`; a .PBP (PBOOT.PBP, an installed game) is not an ISO and gets no name from `umd_file`.
+ * 1 = found (in `key`, at most size - 1 bytes); 0 = no name. */
+int awake_key_from_files(const char *init_file, const char *umd_file, char *key, int size);
+
 /* The folder of the plugin's own file ("ms0:/PSP5/psp5time.prx" -> "ms0:/PSP5"): that is psp5's data folder. 1 = ok */
 int awake_dir_of(const char *module_path, char *out, int size);
 
