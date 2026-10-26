@@ -36,14 +36,19 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 - **Time played.** A small dark pill with a clock and the time, like **54h** or **45min**, shows on the right-hand end of the
   bottom row – in the Games tab opposite *Play* and the ⋯ button, in the Library opposite the tag and the name. It shows
   **minutes up to an hour, then whole hours – never both** (*h* / *min* in most languages, *u* in Dutch, *ч* / *мин* in Russian,
-  時間 / 分 in Japanese). Nothing is shown for a game that has not been played, or for less than a minute, and **never** for the Library card or a folder (the launcher's own cards). The time is added up
+  時間 / 分 in Japanese). Nothing is shown for a game that has not been played, and **never** for the Library card or a folder (the launcher's own cards). Something played but under a minute shows **<1min**. The time is added up
   when you come back to psp5 after a game, in a file `playtime.txt` next to the other psp5 files, one line per game. Games that
   are the same (the same disc ID, or the same folder / file name) share one time, wherever the files are.
-  **It only works when psp5 is ARK's launcher** (the *VBOOT.PBP* swap in `INSTALL.md`; *Settings → psp5* then says *psp5 is ARK's
-  launcher: Yes*): then ARK starts psp5 again when the game ends and psp5 knows exactly when you started and when you stopped. When psp5 is started as a normal app from the XMB, the
+  **It only works when psp5 is ARK's launcher** (the *VBOOT.PBP* swap and *Boot into psp5* in `INSTALL.md`; *Settings → psp5* then says
+  *psp5 is ARK's launcher: Yes*): then ARK starts psp5 again when the game ends and psp5 knows exactly when you started and when you stopped. When psp5 is started as a normal app from the XMB, the
   PSP goes back to the XMB after the game, psp5 is not told, and **nothing is counted** (it would only be a guess).
+  **PSP5/playtime.log** says what happened at every game start and every psp5 start (one line each, with the date and time: was the
+  marker written, was it found again, what each clock said, why a time was or was not counted). It keeps the last ~8 KB. If a time does
+  not show up, that file says why. And if you make an **empty file called `PSP5/playtime.debug`**, psp5 also says on the screen,
+  for a moment after it starts, what it counted (*Counted +12min, 3h in all*, *Not counted: only 4 s*, *No marker: not started by a game* ...).
   Things to know: the time of one session is the *smaller* of two clocks (so a PSP that sleeps with a game running does not add
-  its whole sleep, if one of the clocks stops while it sleeps – not measured); a session shorter than 10 seconds or longer than a
+  its whole sleep, if one of the clocks stops while it sleeps – not measured; a system clock that says under 10 seconds is ignored,
+  because starting a game may start that clock again from zero); a session shorter than 10 seconds or longer than a
   day is not counted; if the PSP is switched off or the battery runs out during a game and you start it again, only one clock is left
   for that session and it also counts the time the PSP was off (up to a day). (Checked on a PC with made-up files; not tried on a PSP.)
 - **The Library remembers the Sort and the view** after a restart (two lines in `psp5.cfg`). Before, it was *by name* every time.

@@ -118,18 +118,33 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
     empty marker (written by an older psp5), a marker cut off anywhere (the key line must end with a newline), a number that is too big
     or a name that is too long are all "a game ended, nothing to add". `%llu` is not used in `printf` (the PSP's libc): the numbers are
     written and read by hand.
+  - *Looking for why nothing is counted* (`playtime.log`): `playtime_log(when, msg)` adds a line to `<DATA_DIR>/playtime.log` (read, the
+    oldest whole lines dropped so that it stays under 8000 bytes, written again: the PC stand-in for the file API has no append). `main.c` writes
+    one line when a game is launched (`launch <key>: marker written (system clock N s)`, or "psp5 is not ARK's launcher ... no time is
+    counted", or "COULD NOT BE WRITTEN" - `playtime_mark_write` returns 0/1 now - or "launch failed") and one at every start of psp5
+    (`start (system clock N s): <report>`), where the report comes from `playtime_mark_take_ex` (no marker / empty or damaged / cut off / the
+    game, the seconds, which clock was used and what each said / too short / more than a day / no clock). The date comes from
+    `sceRtcGetCurrentClockLocalTime`. A clock that could not be read is stored as 0 and counts as unusable (`> 0` checks).
+  - *On the screen* (`playtime.debug`): if the file `<DATA_DIR>/playtime.debug` exists, `take_ingame_mark` keeps `playtime_last_short()` (a message under
+    64 bytes set by every `playtime_mark_take`: "Counted +12min, 3h in all", "Not counted: only 4 s", "No marker: not started by a game", ...) and `main`
+    shows it with `ui_toast` after `app_start` (before the safe-start toast, which wins). For a test build; nothing changes without the file.
+  - *The clocks*: starting a game (`sctrlKernelLoadExecVSHWithApitype`) restarts the PSP's software, which probably starts the system clock
+    (`sceKernelGetSystemTimeWide`) from zero again (not measured; that is what the log's "system clock" numbers will show: small at the
+    next start of psp5 whatever the game's length). That is why a system clock that says under `PLAYTIME_MIN_SECS` while the real-time clock says more is
+    ignored (before, such a start made the session "too short" and dropped it), and a system clock that went back was already ignored.
+  - *Under a minute*: `playtime_text` gives `<1min` for 1..59 s (it was empty), so a short test shows something; sessions under 10 s are still not
+    counted.
   - *The file* `<DATA_DIR>/playtime.txt`: a line per game `"<seconds> <key>"`, up to 4096 games (the first wins when a name is there twice; a full
     table takes no new game but keeps the others; CRLF is fine; a bad line is skipped). It is written when a session is added
     (whole file, `sceIoOpen` + write). Sums stop at `0xFFFFFF00` (no overflow).
-  - *The text* `playtime_text(secs, out, size)`: under 60 s nothing; under an hour "%umin"; else the hours, rounded down, at most 9999,
+  - *The text* `playtime_text(secs, out, size)`: 0 s nothing, under 60 s "<1min"; under an hour "%umin"; else the hours, rounded down, at most 9999,
     "%uh", the units `S_UNIT_MIN` / `S_UNIT_H` (h, min; Dutch u; Russian ч, мин; Japanese 時間, 分). Never both, as the maintainer asked.
   - *The pill* (`ui.c`, `draw_play_pill`; `PILL_H` 26, `PILL_PAD` 12, `CLOCK_D` 12, `CLOCK_GAP` 6, text size 0.66, baseline `by + 17.5` like
     *Start*): drawn with `button_bg` (the dark pill of the bottom-row buttons, never selected), a white face (`gfx_circle`, 12 px) with two
     dark hands (1 x 5 up from the middle and 4 x 1 to the left, `gfx_rect`, whole pixels) and the text, its right edge at `SCREEN_W - MARGIN`
     (456); in the Games tab (`draw_details`) opposite *Play* / Options (the pill is clear of the Options circle by at least 10 px in all
     11 languages), in the Library (bottom row) opposite the tag and the title, whose room `max_w` is 12 px less than the pill (the cache of
-    the shortened title, `lib_label`, also remembers its room: `lib_label_room`). Nothing is drawn for a text that is empty (never played,
-    under a minute), a folder card, or the Library card (`play_text()` returns "" for every negative card number, so no lookup is made for
+    the shortened title, `lib_label`, also remembers its room: `lib_label_room`). Nothing is drawn for a text that is empty (never played), a folder card, or the Library card (`play_text()` returns "" for every negative card number, so no lookup is made for
     the launcher's own cards, pinned or not; `library_test` puts lines for "Library", "?library", "PSP5" in playtime.txt to prove it). `play_text()` looks the seconds up once per selected game (`pt_for`, `pt_secs`; reset
     next to every `lib_label_for = -2`) and makes the text at every draw, so a language changed in Settings is followed.
   - *Limits*: only the time between the start of the game and the next start of psp5 is known, so whatever happens in between is in it
