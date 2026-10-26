@@ -107,8 +107,9 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
 - **Time played** (`playtime.c` / `playtime.h` new, `main.c`, `ui.c`, `ui.h`, `lang.c`, `Makefile`).
   - *What is known*: psp5 is not running while a game is. In launcher mode (`sys_is_launcher()`) ARK starts psp5 again when the game ends,
     and the existing `ingame` marker (`<DATA_DIR>/ingame`, created before the launch, removed at the start so that the start-up screen
-    is skipped) is the place for the start. As a normal app the PSP goes back to the XMB and psp5 is not started again: no marker is
-    written (`set_ingame_mark` only in launcher mode) and nothing is counted.
+    is skipped) is the place for the start. `sys_is_launcher()` is true when psp5 was started as ARK's `VBOOT.PBP` - also when it was opened from the XMB with the
+    Custom Launcher entry (a game started that way was counted on a real PSP, and ARK went straight back to psp5 without a restart). Started as a normal app
+    (Game → Memory Stick) no marker is written (`set_ingame_mark` only in launcher mode) and nothing is counted.
   - *The marker*: `playtime_mark_write(path, entry, sys_us, rtc_us)` writes `psp5-ingame 1\nsys N\nrtc N\nkey NAME\n`: the two clocks
     (`sceKernelGetSystemTimeWide()` and `sceRtcGetCurrentTick()`, both microseconds) and the key of the game (`entry_cover_key()`: the
     disc ID of an ISO/UMD, else the folder name of an EBOOT or the file name without the extension; a game that is in two places is one).
@@ -587,8 +588,8 @@ Everything that changed compared with the original's v1.5.3 – see `CHANGELOG.m
 ## Version 1.3.1
 
 - **No start-up screen after a game:** as ARK's launcher, psp5 is restarted when a game ends. Before a game starts,
-  `ms0:/PSP5/ingame` is created; if the file exists when psp5 starts, it is removed and the start-up screen is skipped. As a
-  normal app the file is not created (the system goes to the XMB after the game).
+  `ms0:/PSP5/ingame` is created; if the file exists when psp5 starts, it is removed and the start-up screen is skipped. When
+  psp5 was not started as ARK's `VBOOT.PBP` (Game → Memory Stick) the file is not created.
 - **Start-up screen after sleep mode:** a power callback (`scePowerRegisterCallback`, `PSP_POWER_CB_RESUME_COMPLETE`) shows
   the start-up screen again when the PSP is woken with the side button. The start-up sound is recalculated in the sound
   thread (`sound_prepare_boot`), music is paused in the meantime and the cards slide in again (`ui_replay_intro`).
