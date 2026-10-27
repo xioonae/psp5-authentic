@@ -743,22 +743,36 @@ void gfx_library_icon(int l, int t, int w, int h, u32 color)
     gfx_round_rect(x + 27 * u, y + 41 * u, 56 * u, 27 * u, 12 * u, color);
 }
 
-/* A folder card's picture: from the cache above (a folder is a few hundred pixels and two rounded boxes, cheap to make), and if there is
+/* The folder picture p: from the cache above (a folder is a few hundred pixels and two rounded boxes, cheap to make), and if there is
  * no room, two plain rounded rectangles. */
+static void folder_draw(const FolderPic *p, u32 color)
+{
+    IconBox b = { p->w, p->h, p->x, p->y, p->w / 2.0f, p->h / 2.0f, 0, 0 };
+    const Texture *tex = cache_get(ICON_FOLDER, p->w * 4, p->h * 4, 0, 0, 0, p->w, p->h, p->w / 2.0f, p->h / 2.0f);
+    if (tex) {
+        icon_blit(tex, &b, color);
+        return;
+    }
+    gfx_round_rect(p->x, p->y, p->tab_w, p->tab_h + 2 * p->tab_rl, p->tab_rl, color);
+    gfx_round_rect(p->x, p->y + p->tab_h, p->w, p->h - p->tab_h, p->r, color);
+}
+
+/* A folder card's picture, centred in the card */
 void gfx_folder_icon(int l, int t, int w, int h, u32 color, FolderPic *pic)
 {
     FolderPic p;
     icon_folder_pic(l, t, w, h, &p);
     if (pic)
         *pic = p;
-    IconBox b = { p.w, p.h, p.x, p.y, p.w / 2.0f, p.h / 2.0f, 0, 0 };
-    const Texture *tex = cache_get(ICON_FOLDER, p.w * 4, p.h * 4, 0, 0, 0, p.w, p.h, p.w / 2.0f, p.h / 2.0f);
-    if (tex) {
-        icon_blit(tex, &b, color);
-        return;
-    }
-    gfx_round_rect(p.x, p.y, p.tab_w, p.tab_h + 2 * p.tab_rl, p.tab_rl, color);
-    gfx_round_rect(p.x, p.y + p.tab_h, p.w, p.h - p.tab_h, p.r, color);
+    folder_draw(&p, color);
+}
+
+/* The same picture at `h` pixels high in a row of a list (the file manager), its top left corner on the whole pixel (x, y) */
+void gfx_folder_picture(int x, int y, int h, u32 color)
+{
+    FolderPic p;
+    icon_folder_pic_at(x, y, h, &p);
+    folder_draw(&p, color);
 }
 
 /* The logo of the boot screen: one image with a transparent pixel round it, made once. If there is no room for it in the cache (it never is, at the

@@ -24,6 +24,15 @@ into psp5 instead of the XMB.
 
 All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`) until the next version is released.
 
+- **The battery temperature** (`system.c`: `battery_celsius`, used by `sys_about`): `scePowerGetBatteryTemp` gave 3687 on the maintainer's PSP, which is hundredths of a degree (36.87 °C), not the degrees that the SDK says. From 100 up the number is
+  hundredths and is rounded to whole degrees (`raw / 100 + (raw % 100 >= 50)`); below 100 it is taken as it is; a negative one is -1 (the row is left out). Tested by cutting the function out of `system.c` (23 checks, from 3687 to
+  `INT_MIN`; 9 mutation runs: all caught except one that changes nothing (the test for a negative number) and one hole that was closed: that `sys_about` really calls the conversion, which the test script checks in the source). The PSP that
+  gave 3687 is not known by model.
+- **The file manager's folders** (`files.c` `draw_icon`, `gfx.c` `gfx_folder_picture`, `icons.c` `icon_folder_pic_at`): the folder of a row is the picture of the Library's folder cards (`ICON_FOLDER`), 14 px high and 19 wide (`h * 1.38`), its
+  top left corner on the whole pixel (x, 5 px below the top of the row), in the old folder's light grey; `gfx_folder_icon` and `gfx_folder_picture` share `folder_draw` (one image from the cache, two rounded boxes if there is no room), and
+  `icon_folder_pic` is built on `icon_folder_pic_at` (the same numbers as before). The drive icon of the file manager is not a folder and is as it was. Tests (private): the same pixels as the folder of a card of that height (heights 10 to 40),
+  the colour and alpha, whole pixels, the fallback, the rows' positions with and without marks and while the list fades in; 17 mutation runs, all caught after three holes were closed (the odd pixel when a card's folder is centred, the
+  tab in the fallback, the fade of the row).
 - **The start-up logo** (`icons.c` / `icons.h`: `ICON_LOGO`, `icon_logo_width`, `icon_logo_outline`; `gfx.c` / `gfx.h`: `gfx_logo`; `boot.c`; `tools/trace_logo.py`). The grey "psp5" made of strokes is replaced by the PlayStation logo, drawn from code.
   - *The outline*: three solid shapes (the P with its stem, the left swoosh, the right swoosh), 49 + 45 + 48 corners in half pixels of a 2000 x 1544 picture (`LOGO_UNITS_W` 4000 x `LOGO_UNITS_H` 3088; `logo_len`, `logo_pts`,
     570 bytes). `tools/trace_logo.py picture.png [eps]` made them: marching squares on the alpha channel (threshold 0.5, a 2 px empty margin so that a logo that touches the edge of the picture still gives closed outlines),

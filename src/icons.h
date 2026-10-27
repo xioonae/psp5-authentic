@@ -69,6 +69,9 @@ typedef struct {
     int tab_rl, tab_rr; /* radius of the tab's top left corner (it is also the corner of the whole folder) and of its top right corner */
 } FolderPic;
 void icon_folder_pic(int l, int t, int w, int h, FolderPic *p);
+/* The same folder picture, `h` pixels high with its top left corner on the whole pixel (x, y), for a place that has no card round it (a row of the file manager):
+ * it is built exactly as the one on a card of that height (1.38 times as wide as high); icon_render(ICON_FOLDER, p->w, p->h, 0, ...) gives its image. */
+void icon_folder_pic_at(int x, int y, int h, FolderPic *p);
 
 /* The logo of the boot screen (the PlayStation logo, drawn from the outline of its three shapes: the P with its stem and the two swooshes, no
  * picture) is `h` pixels high; this is how wide it is. icon_render(ICON_LOGO, w, h, 0, cx, cy, tw, th, out) gives its image with w = icon_logo_width(h)
