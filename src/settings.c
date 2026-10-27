@@ -21,10 +21,10 @@
 #include "popup.h"
 
 #define TITLE_Y     34.0f
-#define LEFT_X      32.0f
-#define LEFT_W      124.0f
-#define RIGHT_X     176.0f
-#define RIGHT_W     280.0f
+#define LEFT_X      24.0f  /* the same sides as the lists of the file manager and Manage Saved Data: 24 px from the edges of the screen */
+#define LEFT_W      136.0f
+#define RIGHT_X     172.0f /* 12 px after the left column */
+#define RIGHT_W     284.0f /* to 456 */
 #define ROW_H       26.0f
 #define LIST_TOP    58.0f
 #define LIST_BOTTOM 236.0f
@@ -80,6 +80,8 @@ static struct {
     /* the popup of a choice (✕ on it): the list of values, the one chosen, and the first one shown when there are more than fit */
     int pop, pop_cat, pop_item, pop_sel, pop_top;
     float pop_anim, pop_scroll;
+    char toast[96];     /* a message that is shown for a moment (settings_notice) */
+    float toast_time;
 } S;
 
 #define VIS_CATS 6 /* the categories shown at once in the left column */
@@ -213,7 +215,17 @@ static void set_back(int opt) { controls_set_back(opt); }
 
 /* --- Display and Sound: the PSP's own settings (the XMB's too), through the Impose service (system.c) --- */
 
+#define VOLUME_MAX 30 /* the PSP's volume goes from 0 to 30 (the volume bar of osd.c takes the same) */
+#define BRIGHT_MAX 100 /* a brightness the PSP reports above this is not believed (the row is left out) */
+
 static unsigned char s_backlight, s_eq, s_avls; /* the row values: an index in the list of times, the equalizer's mode, 0 / 1 */
+static unsigned char s_volume, s_bright;        /* the volume (0 .. 30, the list is the numbers), an index in the list of brightness levels */
+static char s_vol_text[VOLUME_MAX + 1][4];
+static const char *s_vol_opts[VOLUME_MAX + 1];
+static int s_br_levels[6], s_br_n;              /* the brightness levels in the list: 1 to 4 and the PSP's own, when it is none of those */
+static char s_br_text[6][12];
+static const char *s_br_opts[6];
+static Item *s_br_item;                         /* its row, whose list changes when the PSP has a level that is not in it */
 static int s_bl_secs[8], s_bl_n;                /* the times in the list, in seconds */
 static char s_bl_text[8][20];
 static const char *s_bl_opts[8];
@@ -253,6 +265,42 @@ static void bl_build(int now)
         s_bl_item->opts = s_bl_opts;
         s_bl_item->nopts = n;
     }
+}
+
+/* The brightness list: 1 to 4 like the XMB's (how many levels the PSP has, and whether it counts from 0 or 1, is not known: **not tried on a PSP**),
+ * with the PSP's own level in it, in its place, when it is none of those, so the row never says anything else than what the PSP has. */
+static void br_build(int now)
+{
+    int n = 0;
+    if (now < 1)
+        s_br_levels[n++] = now;
+    for (int i = 1; i <= 4; i++)
+        s_br_levels[n++] = i;
+    if (now > 4)
+        s_br_levels[n++] = now;
+    s_br_n = n;
+    for (int i = 0; i < n; i++) {
+        snprintf(s_br_text[i], sizeof(s_br_text[i]), "%d", s_br_levels[i]);
+        s_br_opts[i] = s_br_text[i];
+        if (s_br_levels[i] == now)
+            s_bright = i;
+    }
+    if (s_br_item) {
+        s_br_item->opts = s_br_opts;
+        s_br_item->nopts = n;
+    }
+}
+
+static void set_brightness(int idx)
+{
+    int now = sys_set_brightness(s_br_levels[idx]);
+    br_build(now >= 0 && now <= BRIGHT_MAX ? now : s_br_levels[s_bright]);
+}
+static void set_volume(int level)
+{
+    int now = sys_set_volume(level);
+    if (now >= 0 && now <= VOLUME_MAX)
+        s_volume = now;
 }
 
 static void set_backlight(int idx)
@@ -346,18 +394,6 @@ static void fill_about(Category *c)
     }
 }
 
-/* "ARK-5 · PSP-2000" – vilken CFW och modell psp5 upptäckte */
-static const char *system_name(void)
-{
-    static char buf[40];
-    const char *model = model_name();
-    if (sys_ark_version())
-        snprintf(buf, sizeof(buf), "ARK-%d  ·  %s", sys_ark_version(), model);
-    else
-        snprintf(buf, sizeof(buf), "-");
-    return buf;
-}
-
 /* rebuild = 1: menyn byggs om (t.ex. nytt språk) utan att tappa osparade val */
 static void build(int rebuild)
 {
@@ -380,12 +416,6 @@ static void build(int rebuild)
     c->items[c->count - 1].own = 1;
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE);
-#ifdef PSP5_ARK4
-    info(c, L(S_VERSION), PSP5_VERSION " (ARK-4)");
-#else
-    info(c, L(S_VERSION), PSP5_VERSION " (ARK-5)");
-#endif
-    info(c, "CFW", system_name());
 
     c = &s_cats[CAT_THEME];
     c->name = L(S_CAT_THEME);
@@ -424,16 +454,33 @@ static void build(int rebuild)
     c = &s_cats[CAT_DISPLAY];
     c->name = L(S_CAT_DISPLAY_SOUND);
     c->desc = L(S_DESC_DISPLAY_SOUND);
-    s_bl_item = NULL;
+    s_bl_item = s_br_item = NULL;
     {
         Item *it;
-        int bl = sys_backlight_off(), eq = sys_equalizer(), av = sys_avls();
+        int bl = sys_backlight_off(), eq = sys_equalizer(), av = sys_avls(), vol = sys_volume(), br = sys_brightness();
+        if (br >= 0 && br <= BRIGHT_MAX) { /* (the screen first, then the sound) */
+            br_build(br);
+            choice(c, L(S_BRIGHTNESS), &s_bright, s_br_opts, s_br_n);
+            it = &c->items[c->count - 1];
+            it->set = set_brightness; it->immediate = 1;
+            s_br_item = it;
+        }
         if (bl >= 0) { /* a row is left out when the PSP does not have the setting or cannot be asked (a PC, an emulator) */
             bl_build(bl);
             choice(c, L(S_BACKLIGHT_OFF), &s_backlight, s_bl_opts, s_bl_n);
             it = &c->items[c->count - 1];
             it->set = set_backlight; it->immediate = 1;
             s_bl_item = it;
+        }
+        if (vol >= 0 && vol <= VOLUME_MAX) {
+            for (int i = 0; i <= VOLUME_MAX; i++) {
+                snprintf(s_vol_text[i], sizeof(s_vol_text[i]), "%d", i);
+                s_vol_opts[i] = s_vol_text[i];
+            }
+            s_volume = vol;
+            choice(c, L(S_VOLUME), &s_volume, s_vol_opts, VOLUME_MAX + 1);
+            it = &c->items[c->count - 1];
+            it->set = set_volume; it->immediate = 1;
         }
         if (eq >= 0 && eq <= 4) {
             s_eq = eq;
@@ -548,6 +595,12 @@ void settings_open(void)
     plugins_load(sys_ark_dir());
     build(0);
     memset(&S, 0, sizeof(S));
+}
+
+void settings_notice(const char *msg)
+{
+    snprintf(S.toast, sizeof(S.toast), "%s", msg);
+    S.toast_time = 2.8f;
 }
 
 int settings_commit(void)
@@ -686,6 +739,8 @@ int settings_update(const UiInput *in, float dt)
 {
     S.open = clampf(S.open + dt * 5.0f, 0, 1);
     S.time += dt;
+    if (S.toast_time > 0)
+        S.toast_time -= dt;
 
     Category *c = &s_cats[S.cat];
     int *sel = &S.item[S.cat];
@@ -991,7 +1046,7 @@ void settings_draw(void)
     gfx_begin(RGBA(20, 20, 24, 255));
     const Theme *shown = shown_theme();
     draw_background(shown);
-    text_draw(LEFT_X - 4 + slide, TITLE_Y, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_SETTINGS));
+    text_draw(LEFT_X + 4 + slide, TITLE_Y, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_SETTINGS));
 
     /* kategorier (more than fit: the column scrolls, the rows at its ends fade, and a small arrow says there are more) */
     for (int i = 0; i < CAT_COUNT; i++) {
@@ -1007,7 +1062,7 @@ void settings_draw(void)
             gfx_frame(LEFT_X, y, LEFT_W, ROW_H, 1, fade(RGBA(232, 232, 236, 230), ca));
         }
         float cs = text_fit(0.66f, 0.5f, 0, LEFT_W - 16, s_cats[i].name);
-        text_draw(LEFT_X + 10 + slide, y + 17.5f, cs, 0, fade(TEXT_MAIN, ca * ta), ALIGN_LEFT, s_cats[i].name);
+        text_draw(LEFT_X + 8 + slide, y + 17.5f, cs, 0, fade(TEXT_MAIN, ca * ta), ALIGN_LEFT, s_cats[i].name);
     }
     for (int dir = -1; dir <= 1; dir += 2) { /* ˄ above and ˅ below, when there are more categories that way */
         if (dir < 0 ? S.cat_top <= 0 : S.cat_top + VIS_CATS >= CAT_COUNT)
@@ -1047,6 +1102,8 @@ void settings_draw(void)
     }
 
     draw_popup();
+    if (S.toast_time > 0) /* as the toast of the other screens: 2.8 s, fading in and out */
+        popup_toast(S.toast, clampf(S.toast_time / 0.4f, 0, 1) * clampf((2.8f - S.toast_time) / 0.2f, 0, 1));
     osd_draw();
     /* in-toning */
     if (a < 1)

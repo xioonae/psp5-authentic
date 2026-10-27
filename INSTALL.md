@@ -83,12 +83,12 @@ Every screen uses the same few buttons for the same things:
 | START | **Options**: of the selected game, card or file · on the Library card: pin / unpin · START again closes the options |
 | SELECT | **Power menu** on every tab: Sleep, Shut down, Restart, Recovery menu (Confirm does it at once, Back or SELECT closes) |
 | L / R | **Switch tabs**: Games and Music (not in the Library: ○ closes it) · in a long list a page up / down |
-| □ △ | Extras on a few screens only: mark / select all in a list (*Manage Saved Data*, the file manager), □ pauses the music |
+| □ △ | Extras on a few screens only: mark / select all in a list (*Manage Saved Data*, the File Manager), □ pauses the music |
 | HOME | Back to the XMB (not as custom launcher)|
 
 By default ✕ confirms and ○ goes back (the other way round when the PSP itself is set to confirm with ○). **Settings → Controls** changes that:
 the PSP's own confirm button (this changes the XMB too), and which of ✕ ○ □ △ confirms and goes back in psp5, and whether START or SELECT
-opens the options and the power menu. If you ever forget what you chose: the hints at the bottom of the file manager and of *Manage Saved Data*
+opens the options and the power menu. If you ever forget what you chose: the hints at the bottom of the File Manager and of *Manage Saved Data*
 show the buttons, and deleting the `confirm=`, `back=` and `options=` lines in `PSP5/psp5.cfg` gives you the usual ones again.
 
 Where to go from there:
@@ -99,10 +99,11 @@ Where to go from there:
 - **↑ from the first thing on a tab** selects the top bar: ← → between Games, Music and the cog wheel (in the Library only the cog wheel: the word *Library* is a title) · Confirm opens a tab, or the settings on the cog wheel · ↓ goes back down · Back goes back to the selected game.
 - **← → in Music**: previous / next track · hold to seek.
 
-## File manager
+## File Manager
 
-*Settings → Power and USB → File manager* lets you manage files right on the PSP. Confirm opens a folder, □ marks
-files, Options (START) shows what you can do (copy, move, paste, rename, delete, new folder) and Back goes back.
+*Settings → Power and USB → File Manager* lets you manage files right on the PSP. Confirm opens a folder, □ marks
+files, Options (START) shows what you can do (copy, move, paste, rename, delete, new folder) and Back goes back (the first Back
+clears the marks, and at the top it cancels a waiting copy or move before it leaves).
 
 ## Updating
 

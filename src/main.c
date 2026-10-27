@@ -549,9 +549,12 @@ int main(int argc, char *argv[])
                 settings_commit();
                 if (run_action(action, &list, &ui)) {
                     app_start(&list, &ui, 0);
-                    in_settings = 0;
-                    if (action == SA_WIFI && s_wifi_failed)
-                        ui_toast(&ui, L(S_WIFI_FAILED));
+                    if (action == SA_WIFI) { /* the PSP's own screen was a visit: back in Settings, on the same row (not the main screen) */
+                        if (s_wifi_failed)
+                            settings_notice(L(S_WIFI_FAILED));
+                    } else {
+                        in_settings = 0;
+                    }
                 }
                 old = s_raw;
                 continue;

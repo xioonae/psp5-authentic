@@ -24,10 +24,10 @@
 
 /* the same layout as the settings */
 #define TITLE_Y     34.0f
-#define LEFT_X      32.0f
-#define LEFT_W      124.0f
-#define RIGHT_X     176.0f
-#define RIGHT_W     280.0f
+#define LEFT_X      24.0f  /* the same sides as the lists of the file manager and Manage Saved Data: 24 px from the edges of the screen */
+#define LEFT_W      136.0f
+#define RIGHT_X     172.0f /* 12 px after the left column */
+#define RIGHT_W     284.0f /* to 456 */
 #define ROW_H       26.0f
 #define LIST_TOP    58.0f
 #define LIST_BOTTOM 236.0f
@@ -423,7 +423,7 @@ int info_update(const UiInput *in, float dt)
 
 static void draw_left(float a, float slide)
 {
-    float x = LEFT_X + slide, y = LIST_TOP, w = LEFT_W, h = 69;
+    float x = LEFT_X + slide, y = LIST_TOP, w = LEFT_W, h = floorf(w * 80 / 144 + 0.5f); /* (the shape of a game's ICON0: 144 x 80) */
     IconSlot *slot = loader_icon(S.index);
     gfx_glow(x + 1, y + 3, w - 2, h - 2, 5, RGBA(0, 0, 0, (int)(130 * a)));
     if (slot && slot->state == SLOT_READY && slot->tex)
@@ -461,7 +461,7 @@ void info_draw(void)
     float a = S.open, slide = (1 - a) * 10;
     gfx_begin(RGBA(20, 20, 24, 255));
     theme_backdrop(theme_cur(), S.time, 1);
-    text_draw(LEFT_X - 4 + slide, TITLE_Y, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_INFO));
+    text_draw(LEFT_X + 4 + slide, TITLE_Y, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_INFO));
     draw_left(a, slide);
 
     float top = LIST_TOP - S.scroll;

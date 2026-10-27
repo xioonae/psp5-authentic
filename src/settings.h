@@ -13,6 +13,8 @@ enum {
 void settings_open(void);
 int settings_update(const UiInput *in, float dt);
 void settings_draw(void);
+/* A short message on top of Settings for a few seconds (the toast of the other screens): used when the PSP's own Wi-Fi screen could not start. */
+void settings_notice(const char *msg);
 /* Sparar ändrade filer. Returnerar 1 om CFW-inställningar ändrades (gäller efter omstart). */
 int settings_commit(void);
 

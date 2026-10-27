@@ -5,11 +5,39 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ## Unreleased
 
+- **Settings and Information have more room.** They use the same sides as the file manager and *Manage Saved Data* now: the list of categories starts 24 px from the left edge
+  of the screen (it was 32) and is wider (136 px, it was 124), the gap between the categories and their settings is 12 px (it was 20), and the settings go to 24 px from the
+  right edge as before (284 px wide, it was 280). The title sits where the file manager's does. *Information* (the screen of a game) has the same columns, so the game's picture is
+  wider there (136 px). (Seen in PC test frames only; not looked at on a PSP.)
+- **The PSP confirm button (Settings → Controls) is written to the XMB's registry now.** Before, psp5 only told the Impose service, which a running program asks and which is not
+  kept: the row could change back as soon as Settings was opened again, and the XMB did not follow. psp5 now also sets `button_assign` in `/CONFIG/SYSTEM/XMB` (0 = ○, 1 = ✕), the
+  way the XMB itself and the homebrew tools that swap the buttons do, tells the Impose service as before, and shows what the system says afterwards. **Not tried on a PSP**: it is
+  how the other tools do it, but psp5 has not done it on a real one; please try it and say what you see (does the row keep ○ / ✕, does the XMB follow, does it stay after a restart).
+- **○ cancels before it leaves.** In the **file manager** the first ○ clears the marks (□), and the next one goes up a folder as before; at the top (the last step out of the
+  screen) a waiting *Copy* or *Move* is cancelled first, and only the next ○ leaves. (With a *Copy* waiting and a folder above, ○ still goes up, so you can walk to where you
+  want to paste.) In **Manage Saved Data** the first ○ clears the marks and the next one leaves. (Seen in the PC tests; not looked at on a PSP.)
+- **Settings → Network: the PSP's Wi-Fi screen brings you back to Settings** (on *Wi-Fi connection*), not to the main screen. If the network could not be started, the message is shown in
+  Settings. (*USB mode*, *File manager* and *Clear image cache* still end on the main screen, as they scan the games again.)
+- **"File Manager" is written with a capital M.** The names of the screens and categories in the other languages follow the English capitals in their own way (title case in
+  French, Spanish, Italian, Portuguese, Russian, Czech, Swedish and Dutch, nouns in German): *Gestionnaire de Fichiers*, *Gestor de Archivos*, *Gestione File*, *Gestor de Ficheiros*,
+  *Файловый Менеджер*, *Správce Souborů*; *Display and Sound* is *Skärm och Ljud*, *Écran et Son*, *Pantalla y Sonido*, *Schermo e Audio*, *Scherm en Geluid*, *Ecrã e Som*,
+  *Экран и Звук*, *Displej a Zvuk*; Swedish *Ta Bort från Hem*. Translated by Claude, not by native speakers: please check them.
+- **The start-up screen shows the PlayStation logo, drawn by psp5.** The little grey "psp5" at the start is replaced by the PlayStation logo (the P with its two swooshes), a
+  quarter of the screen high (68 px, 88 px wide) in the middle, in the same matt grey, fading in and out as before. It is **not a picture**: the outline of its three shapes (142 points,
+  about 570 bytes, traced from the reference picture with `tools/trace_logo.py`) is turned into a small image once, with smooth edges from the exact area each pixel has
+  inside the outline, and after that it is one sprite a frame, so it costs the PSP next to nothing. (Seen in PC test frames only; not looked at on a PSP.) **Please note:** the
+  logo is Sony's trademark (see the README); the README no longer says that nothing from Sony is used.
+- **Settings → Display and Sound: Brightness and Volume added.** *Brightness* (the XMB's level; the list is 1 to 4 and the PSP's own level in its place when it is another one)
+  and *Volume* (0 to 30, a popup with all the numbers, as the volume buttons have it) join the backlight timer, the equalizer and AVLS; the screen ones come first, then the sound
+  ones. They are the PSP's own settings (the XMB follows, nothing is saved by psp5), read and written the way the equalizer and AVLS are. A row the PSP does not answer for is left out.
+  **Not tried on a PSP**: whether the calls take effect, and **how many brightness levels the PSP has and whether it counts from 0 or 1** (psp5 shows whatever level the PSP
+  says, and what it has afterwards): please check. The new words are translated into all 11 languages by Claude.
+- **Settings → psp5: the version and CFW rows are gone** (they were also in *About*, which now has them alone).
 - **Settings → Display and Sound (new): the PSP's own backlight timer, equalizer and AVLS.** Three of the XMB's own settings, so you do not have to go there
   to change them (they change in the XMB too, and nothing is saved by psp5): **Backlight auto-off** (30 s, 1, 2, 5, 10 and 15 min; when the PSP has another
   time it is shown in its place in the list, so the row never says anything else than what the PSP has), **Equalizer** (Off, Heavy, Pops, Jazz, Unique, the
   XMB's order) and **AVLS** (the volume limiter, on or off). A row the PSP does not have, or cannot be asked about, is left out; if there is none the
-  category says *Not available*. (The screen brightness is not here: the PSP has its own button for it.) **Not tried on a PSP**: the calls (the backlight
+  category says *Not available*. **Not tried on a PSP**: the calls (the backlight
   timer is a call any program may make; the equalizer and AVLS are parameters of the kernel's Impose service, reached the way the volume bar reads the
   volume), and above all **the numbers of the equalizer modes** (psp5 takes 0 = off and 1 to 4 in the XMB's order, which is a guess: please check
   that *Heavy*, *Pops*, *Jazz* and *Unique* in psp5 are the same ones as in the XMB). The new words are translated into all 11 languages by Claude.

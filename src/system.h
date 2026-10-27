@@ -36,6 +36,12 @@ void sys_about(SysAbout *out);
 
 int sys_backlight_off(void);
 int sys_set_backlight_off(int seconds);
+/* The volume, 0 to 30, and the brightness level (what the PSP counts: shown as it is). The setters answer with what the PSP says afterwards;
+ * all four answer -1 when there is no such call (no ARK, an emulator). */
+int sys_volume(void);
+int sys_set_volume(int level);
+int sys_brightness(void);
+int sys_set_brightness(int level);
 int sys_equalizer(void);
 int sys_set_equalizer(int mode);
 int sys_avls(void);
