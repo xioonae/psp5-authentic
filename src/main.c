@@ -21,6 +21,7 @@
 #include "sound.h"
 #include "lang.h"
 #include "config.h"
+#include "controls.h"
 #include "boot.h"
 #include "music.h"
 #include "umd.h"
@@ -108,14 +109,6 @@ static int has_non_ascii(const EntryList *list)
     return 0;
 }
 
-static int confirm_is_circle(void)
-{
-    int v = 1;
-    if (sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_BUTTON_SWAP, &v) < 0)
-        return 0;
-    return v == 0; /* 0 = ○ bekräftar (japansk inställning) */
-}
-
 /* The marker of a game that is running: it is there when psp5 is started again after a game, and then psp5 skips its start-up screen. */
 static int take_ingame_mark(void)
 {
@@ -192,7 +185,8 @@ static void app_start(EntryList *list, Ui *ui, int boot)
     loader_start(list);
     if (!s_safe)
         music_init(); /* läser in ms0:/MUSIC i bakgrunden */
-    ui_init(ui, list, confirm_is_circle(), launch_supported());
+    controls_psp_assignment(sys_confirm_is_circle()); /* what the PSP's own setting says; Settings > Controls may have other buttons do the jobs */
+    ui_init(ui, list, launch_supported());
 }
 
 /* Viloläge med sidoknappen: när PSP:n somnar ritas skärmen svart, så att det är
@@ -296,13 +290,19 @@ static void delete_finished(EntryList *list, Ui *ui, int index, int result)
     }
 }
 
+/* The pad as the screens see it: controls_map() turns the buttons that are pressed into the names the screens use (confirm, back, options, the
+ * power menu ...). `*old` and `s_raw` are the buttons as they are on the pad; the new presses are found there and mapped after, so a button that is
+ * held while Settings gives the buttons other jobs does not count as a new press. */
+static u32 s_raw;
+
 static void read_pad(UiInput *in, u32 *old)
 {
     SceCtrlData pad;
     sceCtrlPeekBufferPositive(&pad, 1);
     pad.Buttons = testrun_buttons(pad.Buttons); /* bara i testbyggen */
-    in->pressed = pad.Buttons & ~*old;
-    in->held = pad.Buttons;
+    in->pressed = controls_map(pad.Buttons & ~*old);
+    in->held = controls_map(pad.Buttons);
+    s_raw = pad.Buttons;
     in->lx = pad.Lx;
     in->ly = pad.Ly;
     *old = pad.Buttons;
@@ -318,12 +318,12 @@ static void usb_mode(void)
         font_term();
         return;
     }
-    u32 old = ~0u; /* ignore the button that started the mode, whichever it is (✕ or ○, the confirm button) */
+    u32 old = ~0u; /* ignore the button that started the mode, whichever it is (the confirm button) */
     float t = 0;
     while (s_running) {
         UiInput in;
         read_pad(&in, &old);
-        if (in.pressed & (PSP_CTRL_CIRCLE | PSP_CTRL_CROSS))
+        if (in.pressed & PSP_CTRL_CIRCLE) /* back */
             break;
         t += 1 / 60.0f;
         osd_update(1 / 60.0f);
@@ -340,10 +340,11 @@ static void usb_mode(void)
         text_draw(SCREEN_W / 2, 196, 0.56f, 0, RGBA(160, 162, 172, 255), ALIGN_CENTER,
                   L(S_USB_EJECT));
         { /* knapptips som i filhanteraren: en mörk kapsel nere till höger */
-            float w = 13 + 5 + ceilf(text_width(0.56f, 0, L(S_USB_EXIT))), x = SCREEN_W - 22 - w, y = 252; /* (whole pixels) */
+            int btn = controls_glyph(PSP_CTRL_CIRCLE);
+            float bw = gfx_button_width(btn), w = bw + 5 + ceilf(text_width(0.56f, 0, L(S_USB_EXIT))), x = SCREEN_W - 22 - w, y = 252; /* (whole pixels) */
             gfx_round_rect(x - 9, y - 10, w + 18, 20, 10, RGBA(0, 0, 0, 110));
-            gfx_button(x + 6.5f, y, 6.5f, BTN_CIRCLE, RGBA(236, 236, 240, 255), RGBA(20, 20, 26, 255));
-            text_draw(x + 18, y + 4.5f, 0.56f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, L(S_USB_EXIT));
+            gfx_button(x + bw / 2, y, 6.5f, btn, RGBA(236, 236, 240, 255), RGBA(20, 20, 26, 255));
+            text_draw(x + bw + 5, y + 4.5f, 0.56f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, L(S_USB_EXIT));
         }
         osd_draw();
         gfx_end();
@@ -361,7 +362,7 @@ static void files_mode(void)
     font_init(lang_needs_cjk());
     sound_init();
     files_open();
-    u32 old = ~0u; /* ignore the button that opened it, whichever it is (✕ or ○) */
+    u32 old = ~0u; /* ignore the button that opened it, whichever it is (the confirm button) */
     u64 last = sceKernelGetSystemTimeWide();
     while (s_running) {
         UiInput in;
@@ -534,7 +535,7 @@ int main(int argc, char *argv[])
                     app_start(&list, &ui, 0);
                     in_settings = 0;
                 }
-                old = in.held;
+                old = s_raw;
                 continue;
             }
             /* bilder och bakgrund fortsätter laddas i bakgrunden */
@@ -606,24 +607,23 @@ int main(int argc, char *argv[])
             /* the power popup of the SELECT button: the same four actions as in Settings (only sleep comes back) */
             run_action(action == UI_SLEEP ? SA_SUSPEND : action == UI_SHUTDOWN ? SA_SHUTDOWN : action == UI_RESTART ? SA_RESTART : SA_RECOVERY,
                        &list, &ui);
-            old = in.held;
+            old = s_raw;
             continue;
         }
         if (action == UI_INFO && ui_selected(&ui) >= 0) {
-            info_open(&list.items[ui_selected(&ui)], ui_selected(&ui), ui.confirm_circle);
+            info_open(&list.items[ui_selected(&ui)], ui_selected(&ui));
             in_info = 1;
             continue;
         }
         if (action == UI_SAVES) {
-            saves_open(&list, ui.confirm_circle);
+            saves_open(&list);
             in_saves = 1;
             continue;
         }
         if (action == UI_DELETE && ui_selected(&ui) >= 0) {
             int index = ui_selected(&ui);
             loader_stop(); /* inget annat får läsa filen som raderas */
-            u32 back = ui.confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE;
-            if (gameops_delete_start(&list.items[index], back, ui.confirm_circle)) {
+            if (gameops_delete_start(&list.items[index])) {
                 deleting = index;
             } else {
                 loader_start(&list);

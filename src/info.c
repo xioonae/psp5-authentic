@@ -57,7 +57,6 @@ static struct {
     int sel;
     int index;            /* in the game list */
     int measure_row;      /* row waiting for the folder count, or -1 */
-    u32 back;             /* buttons that close the screen */
     int repeat_dir;
     float repeat_timer;
     Entry e;
@@ -316,14 +315,13 @@ static void layout_row(Row *r)
 /* ---------------------------------------------------------------------- */
 /* opening, updating */
 
-void info_open(const Entry *e, int list_index, int confirm_circle)
+void info_open(const Entry *e, int list_index)
 {
     memset(&S, 0, sizeof(S));
     s_n = 0;
     S.e = *e;
     S.index = list_index;
     S.measure_row = -1;
-    S.back = (confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE) | PSP_CTRL_SQUARE | PSP_CTRL_TRIANGLE;
 
     if (e->type == ENTRY_ISO)
         iso_rows(e);
@@ -407,7 +405,7 @@ int info_update(const UiInput *in, float dt)
             sound_play(SND_MOVE);
         }
     }
-    if (in->pressed & S.back) {
+    if (in->pressed & PSP_CTRL_CIRCLE) {
         sound_play(SND_BACK);
         return 1;
     }

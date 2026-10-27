@@ -778,6 +778,11 @@ void gfx_folder_letter_at(const FolderPic *pic, float *x, float *y, float *size)
     *size = s;
 }
 
+float gfx_button_width(int kind)
+{
+    return kind == BTN_START ? 28.0f : kind == BTN_SELECT ? 34.0f : 13.0f;
+}
+
 void gfx_button(float cx, float cy, float r, int kind, u32 plate, u32 mark)
 {
     static const int symbol[] = { ICON_CROSS, ICON_CIRCLE, ICON_TRIANGLE, ICON_SQUARE }; /* BTN_* */
@@ -787,6 +792,14 @@ void gfx_button(float cx, float cy, float r, int kind, u32 plate, u32 mark)
      * the same wherever it is, and the straight edges of the symbols can be pixel exact. */
     cx = floorf(cx + 0.5f);
     cy = floorf(cy + 0.5f);
+    if (kind == BTN_START || kind == BTN_SELECT) { /* a pill with the word on it, the way the PSP prints them next to the button */
+        float w = gfx_button_width(kind);
+        const char *word = kind == BTN_START ? "START" : "SELECT";
+        gfx_round_rect(cx - w / 2, cy - 7, w, 14, 7, plate); /* (14 high: the top and bottom edges are on whole pixels when the centre is) */
+        float s = text_fit(0.34f, 0.2f, 1, w - 6, word);
+        text_draw(cx, floorf(cy + 6.45f * s + 0.5f), s, 1, mark, ALIGN_CENTER, word); /* (the baseline 6.45 x the size under the middle looks centred) */
+        return;
+    }
     icon_box(ICON_DISC, cx, cy, 0, 0, rq, &b); /* the symbols have the same box as the plate */
     const Texture *disc = icon_get(ICON_DISC, 0, 0, rq, &b);
     const Texture *sym = disc ? icon_get(symbol[kind], 0, 0, rq, &b) : NULL;

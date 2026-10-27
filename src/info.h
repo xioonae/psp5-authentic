@@ -9,9 +9,8 @@
  * matter: DISC_ID, DISC_VERSION, APP_VER and PSP_SYSTEM_VER.
  * Drawn like the settings: the picture and name on the left, the list on the right.
  *
- * `list_index` is the game's index in the game list (for its picture). `confirm_circle` is the user's
- * button setup: it decides which of circle/cross goes back. */
-void info_open(const Entry *e, int list_index, int confirm_circle);
+ * `list_index` is the game's index in the game list (for its picture). The back button (controls.h) closes it. */
+void info_open(const Entry *e, int list_index);
 /* Once per frame. 1 = close the screen. */
 int info_update(const UiInput *in, float dt);
 void info_draw(void);

@@ -402,11 +402,10 @@ static void fit_label(Ui *ui)
 
 /* --- livscykel --- */
 
-void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch)
+void ui_init(Ui *ui, const EntryList *list, int can_launch)
 {
     memset(ui, 0, sizeof(*ui));
     ui->list = list;
-    ui->confirm_circle = confirm_circle;
     ui->can_launch = can_launch;
     ui->launch = -1;
     ui->bg_index = -1;
@@ -890,8 +889,7 @@ static void update_music(Ui *ui, const UiInput *in, float dt, int top)
     }
     if ((in->pressed & PSP_CTRL_SQUARE) && playing)
         music_toggle_pause();
-    u32 confirm = ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS;
-    if (in->pressed & confirm) {
+    if (in->pressed & PSP_CTRL_CROSS) {
         if (playing && ui->music_sel == music_current())
             music_toggle_pause();
         else
@@ -1042,8 +1040,7 @@ static void enter_top_bar(Ui *ui, int which)
  * that is always the Sort button, the first stop on the way up) and ○ goes back to the selected game. */
 static int update_top_bar(Ui *ui, const UiInput *in, float dt)
 {
-    u32 ok = ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS;
-    u32 back = ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE;
+    const u32 ok = PSP_CTRL_CROSS, back = PSP_CTRL_CIRCLE; /* (the names of controls.h: whichever buttons the player has chosen) */
     UiInput sides = *in;
     if (fabsf((float)in->lx - 128) >= fabsf((float)in->ly - 128))
         sides.ly = 128; /* the stick is pushed sideways: that is along the bar, not down */
@@ -1099,8 +1096,8 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     ui->menu_anim = clampf(ui->menu_anim + (ui->menu_open ? 7 : -7) * dt, 0, 1);
     static const UiInput none = UI_NO_INPUT;
     if (ui->menu_open) {
-        u32 ok = ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS;
-        u32 back = (ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE) | PSP_CTRL_START | PSP_CTRL_TRIANGLE;
+        const u32 ok = PSP_CTRL_CROSS;
+        u32 back = PSP_CTRL_CIRCLE | PSP_CTRL_START; /* (the options button that opened a popup closes it again) */
         if (ui->menu_kind == MENU_POWER)
             back |= PSP_CTRL_SELECT; /* the button that opened it closes it, like START on the options popup */
         int dir = menu_dir_of(in);
@@ -1208,8 +1205,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     int on_sort = grid && ui->lib_focus == LIB_BTN_SORT; /* the Sort button is selected, not a card */
     int on_view = grid && ui->lib_focus == LIB_BTN_VIEW; /* ... or the view button */
     int on_top_btn = on_sort || on_view;
-    u32 ok = ui->confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS;
-    u32 back_btn = ui->confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE;
+    const u32 ok = PSP_CTRL_CROSS, back_btn = PSP_CTRL_CIRCLE;
     int on_btn = ui->btn_focus; /* Games: 1 = Start, 2 = Options (the card stays selected) */
     if (grid && !on_top_btn && (in->pressed & back_btn) && ui->intro >= 1) { /* ○ closes an open folder, else the Library, also an empty one (on a button at the top it only goes back to the cards) */
         if (ui->lib_open >= 0)

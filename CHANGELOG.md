@@ -5,6 +5,26 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ## Unreleased
 
+- **Controls: every button means one thing everywhere, and you can choose which buttons they are.** The screens now use the same few buttons for the
+  same things: the D-pad and the analog stick **navigate**, ✕ **confirms**, ○ goes **back**, START opens the **options**, SELECT opens the **power menu**,
+  L / R **switch tabs** (a page up / down in a long list), and □ △ are left for the few screens that have something extra (mark and select all in a list,
+  pause the music). Before, some screens had a second button for the same thing, and some ignored the PSP's own ✕ / ○ setting. What changed:
+  △ and □ no longer close a popup, *Information*, *Manage Saved Data*'s popups or Settings (△ closed all of Settings from any row; ○ goes back one step
+  now, and from the list of categories it closes Settings); in the **file manager** the options are on **START** now (△ was the button there; ✕ on a file
+  still opens them), and START closes them again; the USB screen is left with **back** only (✕ left it too); the game delete's panel and the
+  hints show the symbol of the button that does the job now (also START / SELECT: a small pill with the word in it). The file manager used ✕ / ○ as they are on the
+  pad and ignored the PSP's own setting before; it follows it now, like everything else.
+  - **Settings → Controls** (new category): *PSP confirm button* (✕ or ○; **this is the PSP's own setting and changes the XMB too**, the same one as
+    the XMB's *Button Assignment*), then **Confirm**, **Back**, **Options** and **Power menu**. Confirm and Back can be *as the PSP's setting* or any of ✕ ○ □ △;
+    when you give one the button that the other has, the two swap (so you never end up with one button for both). The two buttons that are left take
+    □ and △ (in the order □ △ ✕ ○), so every button always has a job and nothing is lost. Options and Power menu are START and SELECT, either way round
+    (it is one setting seen from both sides). The choices are kept in `psp5.cfg` (`confirm=`, `back=`, `options=`) and work at once, also in the popup that
+    you are choosing them in.
+  - The list of **categories in Settings scrolls** now (there are more than fit), with a small arrow when there are more above or below.
+  (Seen in PC test frames and measured on a PC only. **Not tried on a PSP: the call that sets the PSP's own confirm button** (`sceImposeSetLanguageMode`;
+  the SDK does not say which values it takes, so psp5 works that out by comparing it with the system setting first, and shows what the PSP says afterwards:
+  if the PSP does not take the change, the row keeps its old value). The new names are translated into all 11 languages by Claude, not by a native
+  speaker: please check them.)
 - **Settings: a choice is picked from a popup now.** The settings that used to be changed with ← → (`<  value  >`: language, CPU speed, extra memory, the
   regions ...) open a **popup with all their values** when you press ✕ on them, the one you have chosen at the moment framed, like the other popups. ↑ ↓ choose,
   ✕ takes the value, ○ closes the popup and keeps the old one. ← → no longer change anything, so a stray press while you move through the list can't change a

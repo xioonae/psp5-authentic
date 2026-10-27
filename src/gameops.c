@@ -10,7 +10,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <pspctrl.h>
 #include "gameops.h"
+#include "controls.h"
 #include "gfx.h"
 #include "lang.h"
 #include "popup.h"
@@ -299,8 +301,7 @@ static struct {
     SceUID thread;
     volatile int running, cancel, result;
     char path[MAX_PATH];
-    int is_dir, back_is_cross;
-    u32 back;
+    int is_dir;
     volatile u32 done, total;
     char current[128];
 } D = { .thread = -1, .result = DEL_OK };
@@ -407,7 +408,7 @@ static int delete_thread(SceSize args, void *argp)
     return 0;
 }
 
-int gameops_delete_start(const Entry *e, u32 back, int back_is_cross)
+int gameops_delete_start(const Entry *e)
 {
     if (D.thread >= 0 || D.running)
         return 0;
@@ -418,8 +419,6 @@ int gameops_delete_start(const Entry *e, u32 back, int back_is_cross)
     gameops_measure_stop(); /* nothing else works on the folder */
     snprintf(D.path, sizeof(D.path), "%s", path);
     D.is_dir = is_dir;
-    D.back = back;
-    D.back_is_cross = back_is_cross;
     D.done = D.total = 0;
     D.current[0] = 0;
     D.cancel = 0;
@@ -440,7 +439,7 @@ int gameops_delete_start(const Entry *e, u32 back, int back_is_cross)
 int gameops_delete_update(u32 pressed)
 {
     if (D.running) {
-        if (pressed & D.back)
+        if (pressed & PSP_CTRL_CIRCLE) /* back (controls.h) */
             D.cancel = 1;
         return DEL_RUNNING;
     }
@@ -463,5 +462,5 @@ void gameops_draw(void)
     if (D.thread < 0)
         return;
     float f = D.total ? (float)D.done / (float)D.total : 0;
-    popup_progress(L(S_F_DELETING), D.current, f, theme_cur()->accent, D.back_is_cross ? BTN_CROSS : BTN_CIRCLE, L(S_F_CANCEL));
+    popup_progress(L(S_F_DELETING), D.current, f, theme_cur()->accent, controls_glyph(PSP_CTRL_CIRCLE), L(S_F_CANCEL));
 }

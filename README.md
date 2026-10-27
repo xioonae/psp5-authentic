@@ -46,8 +46,9 @@ this fork does it the same way. This is version 1.1.0 (1.0.0 was the first relea
 - **Music.** Plays the MP3 files in `MUSIC` with title, artist and album art (from the file, or a `cover.jpg` / `folder.jpg`
   in the folder). It keeps playing while you browse your games.
 - **Settings** (the cog wheel). *psp5* (boot into psp5, sounds, startup animation, battery percentage, language), *Theme*,
+  *Controls* (the PSP's own confirm button, and which buttons confirm, go back, open the options and the power menu),
   *Performance* (CPU speed, extra memory, caches), *System*, *Plugins* and *Power and USB* (USB mode, file manager, XMB,
-  sleep, shut down, restart, recovery menu).
+  sleep, shut down, restart, recovery menu). A setting with several values opens a popup when you press ✕ on it.
 - **Themes.** The colours of the console covers, each with the console's scene behind your games (a beam of light, golden
   dust, haze), plus the classic looks of PS1 to PS4. Highlight a theme to preview it, ✕ to use it. You can turn the game art
   in the background off, so the theme is always visible.
@@ -72,18 +73,17 @@ Games and apps use their own icon and background automatically. If you want your
 
 | Button | What it does |
 |---|---|
-| ← → or the analog stick | Move between cards (hold to go faster) |
-| ↑ ↓ | Move between rows in the Library · in Games, ↓ selects Play / ⋯ and ↑ goes back |
-| ↑ from the first thing on a tab | Select the top bar (tabs, cog wheel): ← → move, ✕ opens, ↓ goes back down |
-| ✕ | Start a game · open the Library from its card · open a tab or Settings from the top bar |
-| ○ | Back · closes the Library |
-| START | Options of the selected card |
-| SELECT | Power popup |
-| L / R | Switch between Games and Music |
-| Music: ✕ or □ · ← → | Play / pause · previous / next track (hold to seek) |
+| D-pad or analog stick | **Navigate**: move between cards, rows, tabs and buttons (hold to go faster) |
+| ✕ | **Confirm**: start a game, open, choose, switch on or off |
+| ○ | **Back**: one step back, close a popup or a screen |
+| START | **Options** of the selected card or file (START again closes them) |
+| SELECT | **Power menu** |
+| L / R | **Switch tabs** (in a long list: a page up / down) |
+| □ △ | Only where a screen has something extra: mark and select all in a list, pause the music |
 | HOME | Quit to the XMB |
 
-More details and a few other buttons are in [INSTALL.md](INSTALL.md).
+That is what the buttons do by default (✕ and ○ swap when the PSP itself is set to confirm with ○). *Settings → Controls* gives
+confirm, back, options and the power menu to other buttons. The details of each screen are in [INSTALL.md](INSTALL.md).
 
 ## Install
 

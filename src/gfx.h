@@ -96,9 +96,12 @@ void gfx_clip(float x, float y, float w, float h);
 void gfx_clip_reset(void);
 void gfx_stroke(const float *xy, const u32 *colors, int n, float width);
 
-enum { BTN_CROSS, BTN_CIRCLE, BTN_TRIANGLE, BTN_SQUARE };
-/* Egenritad knappsymbol i en rund platta */
+enum { BTN_CROSS, BTN_CIRCLE, BTN_TRIANGLE, BTN_SQUARE, BTN_START, BTN_SELECT };
+/* Egenritad knappsymbol i en rund platta. START and SELECT are not round: a small pill with the word in it, 14 high (`r` is ignored for them,
+ * the width is gfx_button_width(kind), an even number of pixels, so the pill is on whole pixels when `cx` is). */
 void gfx_button(float cx, float cy, float r, int kind, u32 plate, u32 mark);
+/* How wide the symbol is: 13 for the four round ones (r = 6.5), more for START and SELECT. A row of hints takes this much room for it. */
+float gfx_button_width(int kind);
 
 Texture *tex_create(int w, int h, int psm);
 void tex_free(Texture *t);

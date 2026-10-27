@@ -11,8 +11,8 @@
  * be deleted. Drawn like the file manager (the list) and the information screen (the details).
  *
  * `games` is the game list (to find out which game a save belongs to); it has to stay as it is while the screen is
- * open. `confirm_circle` is the user's button setup: it decides which of circle/cross confirms and which goes back. */
-void saves_open(const EntryList *games, int confirm_circle);
+ * open. The buttons are the names of controls.h (confirm, back, □ mark, △ select all). */
+void saves_open(const EntryList *games);
 /* Once per frame. 1 = close the screen. */
 int saves_update(const UiInput *in, float dt);
 void saves_draw(void);
