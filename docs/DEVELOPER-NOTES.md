@@ -24,6 +24,19 @@ into psp5 instead of the XMB.
 
 All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`) until the next version is released.
 
+- **Settings → Display and Sound** (`settings.c`, `system.c` / `system.h`, `lang.c` / `lang.h`).
+  - *System* (`system.c`): `sys_backlight_off()` / `sys_set_backlight_off(secs)` are `sceImposeGetBacklightOffTime` / `sceImposeSetBacklightOffTime` (user calls in `libpspuser`: any program may
+    make them; "30 to a lot of seconds" in the SDK); `sys_equalizer` / `sys_avls` and their setters go through `impose_get` / `impose_set`: the kernel's `sceImposeGetParam` (NID 0x531C9778; 0xDC3BECFF in
+    6.60 / 6.61 as `osd.c` has it) and `sceImposeSetParam` (**0x810FB7FB**, read from the SDK's stub library `libpspkernel.a` with `objdump -s -j .rodata.sceNid`), found with `sctrlHENFindFunction("sceImpose_Driver",
+    "sceImpose_driver", nid)` and called with `kuKernelCall`, as the volume bar does; the parameters are `PSP_IMPOSE_EQUALIZER_MODE` (4) and `PSP_IMPOSE_AVLS` (0x10) of `pspimpose_driver.h`. Every setter
+    answers with what the PSP says afterwards, and -1 when there is no such call. **Nothing here has run on a PSP**; the values of the equalizer (0 = off, 1 .. 4 = Heavy, Pops, Jazz, Unique) are a guess.
+  - *The category* (`CAT_DISPLAY`, after Controls): rows only for what the PSP answers (`sys_backlight_off() >= 0`; equalizer 0 .. 4; AVLS 0 / 1; otherwise `S_UNAVAILABLE` as an info row). All three are `immediate`
+    (no file) and have a `set` hook: `set_backlight`, `set_eq`, `set_avls` (a toggle's ✕ calls `it->set(!value)` now). The time list (`bl_build`): 30, 60, 120, 300, 600, 900 s plus the PSP's own value in its
+    place when it is none of those (so a PSP that rounded or that was set in the XMB shows what it has); labels "30 s" / "1 min" (`S_UNIT_SEC`, `S_UNIT_MIN`), rebuilt after every change because the PSP may have kept
+    another value than asked for (`s_bl_item->nopts`).
+  - *Tests* (`settings/settings_test.c`; stubs `sys_backlight_off` ... with `s_sys_refuse` and `s_bl_round`): the rows and their order; eight PSP times and the list each gives; choosing through the popup; a PSP that refuses
+    and one that rounds; the equalizer's five values and modes; AVLS on and off and refused; rows left out (no timer, a mode that is not one of five, an AVLS value that is not 0 / 1, nothing at all); all three
+    rows and the popups in 11 languages on whole pixels.
 - **Controls: one name per button, chosen in Settings** (new `controls.c` / `controls.h`; `main.c`, `ui.c`, `saves.c`, `info.c`, `files.c`, `gameops.c`,
   `settings.c`, `config.c`, `gfx.c`, `system.c`, `lang.c`, `Makefile`).
   - *The idea*: the screens only know **names**: `PSP_CTRL_CROSS` = confirm, `PSP_CTRL_CIRCLE` = back, `PSP_CTRL_START` = options, `PSP_CTRL_SELECT` = the power menu,

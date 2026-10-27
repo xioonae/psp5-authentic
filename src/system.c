@@ -150,6 +150,89 @@ int sys_set_confirm_is_circle(int circle)
     return (same ? button2 : !button2) == 0;
 }
 
+/* --- the PSP's own sound and power settings (what the XMB's Sound Settings and Power Save Settings change) ---
+ *
+ * The backlight timer has a call of its own that any program may use (sceImposeGetBacklightOffTime, in seconds). The sound settings are
+ * parameters of the kernel's Impose service, which a program cannot call: ARK finds the function and kubridge calls it in kernel mode, the way
+ * the volume bar (osd.c) reads the volume. The numbers of the functions are the old ones (sceImposeGetParam 0x531C9778, sceImposeSetParam
+ * 0x810FB7FB, both in the SDK's stub library); ARK translates them for 6.60 / 6.61. The numbers of the parameters are in pspimpose_driver.h
+ * (found in the 3.52 kernel: PSP_IMPOSE_EQUALIZER_MODE 4, PSP_IMPOSE_AVLS 0x10). Nothing is known about the values they take beyond what is
+ * written at each function: **none of this has run on a PSP**. A call that does not work answers -1 and Settings leaves the row out. */
+#define NID_IMPOSE_GET_PARAM     0x531C9778
+#define NID_IMPOSE_GET_PARAM_660 0xDC3BECFF /* the same in 6.60 / 6.61, if ARK's translation is missing (as osd.c) */
+#define NID_IMPOSE_SET_PARAM     0x810FB7FB
+#define IMPOSE_EQUALIZER_MODE    0x4
+#define IMPOSE_AVLS              0x10
+
+static void *s_impose_get, *s_impose_set;
+static int s_impose_looked;
+
+static void impose_find(void)
+{
+    if (s_impose_looked)
+        return;
+    s_impose_looked = 1;
+    if (!s_has_ark)
+        return;
+    u32 g = sctrlHENFindFunction("sceImpose_Driver", "sceImpose_driver", NID_IMPOSE_GET_PARAM);
+    if (!g)
+        g = sctrlHENFindFunction("sceImpose_Driver", "sceImpose_driver", NID_IMPOSE_GET_PARAM_660);
+    s_impose_get = (void *)g;
+    s_impose_set = (void *)sctrlHENFindFunction("sceImpose_Driver", "sceImpose_driver", NID_IMPOSE_SET_PARAM);
+}
+
+static int impose_get(int param)
+{
+    impose_find();
+    if (!s_impose_get)
+        return -1;
+    KernelCallArg a = { 0 };
+    a.arg1 = param;
+    if (kuKernelCall(s_impose_get, &a) < 0)
+        return -1;
+    return (int)a.ret1;
+}
+
+static int impose_set(int param, int value)
+{
+    impose_find();
+    if (!s_impose_set)
+        return -1;
+    KernelCallArg a = { 0 };
+    a.arg1 = param;
+    a.arg2 = value;
+    if (kuKernelCall(s_impose_set, &a) < 0)
+        return -1;
+    return (int)a.ret1;
+}
+
+int sys_backlight_off(void) { return sceImposeGetBacklightOffTime(); }
+
+int sys_set_backlight_off(int seconds)
+{
+    if (sceImposeGetBacklightOffTime() >= 0)
+        sceImposeSetBacklightOffTime(seconds);
+    return sceImposeGetBacklightOffTime(); /* what the PSP says now */
+}
+
+int sys_equalizer(void) { return impose_get(IMPOSE_EQUALIZER_MODE); }
+
+int sys_set_equalizer(int mode)
+{
+    if (impose_get(IMPOSE_EQUALIZER_MODE) >= 0)
+        impose_set(IMPOSE_EQUALIZER_MODE, mode);
+    return impose_get(IMPOSE_EQUALIZER_MODE);
+}
+
+int sys_avls(void) { return impose_get(IMPOSE_AVLS); }
+
+int sys_set_avls(int on)
+{
+    if (impose_get(IMPOSE_AVLS) >= 0)
+        impose_set(IMPOSE_AVLS, on ? 1 : 0);
+    return impose_get(IMPOSE_AVLS);
+}
+
 int sys_has_ark(void) { return s_has_ark; }
 int sys_ark_version(void) { return s_ark; }
 int sys_model(void) { return s_model; }

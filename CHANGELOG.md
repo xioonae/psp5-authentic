@@ -5,6 +5,14 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ## Unreleased
 
+- **Settings → Display and Sound (new): the PSP's own backlight timer, equalizer and AVLS.** Three of the XMB's own settings, so you do not have to go there
+  to change them (they change in the XMB too, and nothing is saved by psp5): **Backlight auto-off** (30 s, 1, 2, 5, 10 and 15 min; when the PSP has another
+  time it is shown in its place in the list, so the row never says anything else than what the PSP has), **Equalizer** (Off, Heavy, Pops, Jazz, Unique, the
+  XMB's order) and **AVLS** (the volume limiter, on or off). A row the PSP does not have, or cannot be asked about, is left out; if there is none the
+  category says *Not available*. (The screen brightness is not here: the PSP has its own button for it.) **Not tried on a PSP**: the calls (the backlight
+  timer is a call any program may make; the equalizer and AVLS are parameters of the kernel's Impose service, reached the way the volume bar reads the
+  volume), and above all **the numbers of the equalizer modes** (psp5 takes 0 = off and 1 to 4 in the XMB's order, which is a guess: please look
+  that *Heavy*, *Pops*, *Jazz* and *Unique* in psp5 are the same ones as in the XMB). The new words are translated into all 11 languages by Claude.
 - **Controls: every button means one thing everywhere, and you can choose which buttons they are.** The screens now use the same few buttons for the
   same things: the D-pad and the analog stick **navigate**, ✕ **confirms**, ○ goes **back**, START opens the **options**, SELECT opens the **power menu**,
   L / R **switch tabs** (a page up / down in a long list), and □ △ are left for the few screens that have something extra (mark and select all in a list,

@@ -48,7 +48,7 @@ typedef struct {
     int own;                     /* psp5:s egen inställning (psp5.cfg) */
     int immediate;               /* the system has it, not a file of ours: nothing to save (the PSP's button assignment) */
     int (*glyph)(int opt);       /* CHOICE: a button symbol (BTN_*) to draw for value `opt`, or -1: the values that are buttons */
-    void (*set)(int opt);        /* CHOICE: how the value is set when it is more than storing it (the buttons that swap), else NULL */
+    void (*set)(int opt);        /* CHOICE / TOGGLE: how the value is set when it is more than storing it (the buttons that swap, the PSP's own settings), else NULL */
 } Item;
 
 typedef struct {
@@ -58,7 +58,7 @@ typedef struct {
     int count;
 } Category;
 
-enum { CAT_PSP5, CAT_THEME, CAT_CONTROLS, CAT_PERF, CAT_SYSTEM, CAT_PLUGINS, CAT_POWER, CAT_COUNT };
+enum { CAT_PSP5, CAT_THEME, CAT_CONTROLS, CAT_DISPLAY, CAT_PERF, CAT_SYSTEM, CAT_PLUGINS, CAT_POWER, CAT_COUNT };
 
 static Category s_cats[CAT_COUNT];
 static unsigned char s_plugin_on[MAX_PLUGINS];
@@ -89,6 +89,7 @@ static const char *const OPT_CLOCK[] = { "Auto", "133 MHz", "222 MHz", "333 MHz"
 static const char *OPT_HIGHMEM[5], *OPT_MSCACHE[4], *OPT_INFERNO[3], *OPT_LOGOS[4], *OPT_PICS[4];
 static const char *OPT_UMDREG[4], *OPT_VSHREG[14], *OPT_LANG[LANG_COUNT];
 static const char *OPT_BUTTON[CTL_COUNT];                                     /* the PSP's setting, then ✕ ○ □ △ (each is shown with its symbol, too) */
+static const char *OPT_EQ[5];                                                 /* the equalizer: off and the XMB's four */
 static const char *OPT_PSP_CONFIRM[2];                                       /* the PSP's own confirm button: Cross or Circle */
 static const char *const OPT_START_SELECT[] = { "START", "SELECT" };          /* the options button */
 static const char *const OPT_SELECT_START[] = { "SELECT", "START" };          /* the power menu button: the same setting, the other way round */
@@ -114,6 +115,11 @@ static void build_options(void)
     memcpy(OPT_VSHREG, vsh, sizeof(vsh));
     for (int i = 0; i < LANG_COUNT; i++)
         OPT_LANG[i] = lang_name(i);
+    OPT_EQ[0] = off;
+    OPT_EQ[1] = L(S_EQ_HEAVY);
+    OPT_EQ[2] = L(S_EQ_POPS);
+    OPT_EQ[3] = L(S_EQ_JAZZ);
+    OPT_EQ[4] = L(S_EQ_UNIQUE);
     OPT_BUTTON[CTL_PSP] = L(S_CTL_PSP_SETTING);
     OPT_BUTTON[CTL_CROSS] = OPT_PSP_CONFIRM[0] = L(S_BTN_CROSS);
     OPT_BUTTON[CTL_CIRCLE] = OPT_PSP_CONFIRM[1] = L(S_BTN_CIRCLE);
@@ -204,6 +210,68 @@ static void set_psp(int opt)
 static void set_confirm(int opt) { controls_set_confirm(opt); }
 static void set_back(int opt) { controls_set_back(opt); }
 
+/* --- Display and Sound: the PSP's own settings (the XMB's too), through the Impose service (system.c) --- */
+
+static unsigned char s_backlight, s_eq, s_avls; /* the row values: an index in the list of times, the equalizer's mode, 0 / 1 */
+static int s_bl_secs[8], s_bl_n;                /* the times in the list, in seconds */
+static char s_bl_text[8][20];
+static const char *s_bl_opts[8];
+static Item *s_bl_item;                         /* its row, whose list changes when the PSP has a time that is not in it */
+
+static void bl_label(int secs, char *out, int size)
+{
+    if (secs >= 60 && secs % 60 == 0)
+        snprintf(out, size, "%d %s", secs / 60, L(S_UNIT_MIN));
+    else
+        snprintf(out, size, "%d %s", secs, L(S_UNIT_SEC));
+}
+
+/* The list: 30 s, 1, 2, 5, 10 and 15 min, with the PSP's own value in it, in its place, when it is none of those: the row never says
+ * anything else than what the PSP has. `now` is what the PSP says (seconds). */
+static void bl_build(int now)
+{
+    static const int base[] = { 30, 60, 120, 300, 600, 900 };
+    int n = 0, have = 0;
+    for (int i = 0; i < 6; i++) {
+        if (!have && now < base[i])
+            s_bl_secs[n++] = now, have = 1;
+        if (now == base[i])
+            have = 1;
+        s_bl_secs[n++] = base[i];
+    }
+    if (!have)
+        s_bl_secs[n++] = now;
+    s_bl_n = n;
+    for (int i = 0; i < n; i++) {
+        bl_label(s_bl_secs[i], s_bl_text[i], sizeof(s_bl_text[i]));
+        s_bl_opts[i] = s_bl_text[i];
+        if (s_bl_secs[i] == now)
+            s_backlight = i;
+    }
+    if (s_bl_item) {
+        s_bl_item->opts = s_bl_opts;
+        s_bl_item->nopts = n;
+    }
+}
+
+static void set_backlight(int idx)
+{
+    int now = sys_set_backlight_off(s_bl_secs[idx]);
+    bl_build(now >= 0 ? now : s_bl_secs[s_backlight]);
+}
+static void set_eq(int mode)
+{
+    int now = sys_set_equalizer(mode);
+    if (now >= 0 && now <= 4)
+        s_eq = now;
+}
+static void set_avls(int on)
+{
+    int now = sys_set_avls(on);
+    if (now == 0 || now == 1)
+        s_avls = now;
+}
+
 /* "ARK-5 · PSP-2000" – vilken CFW och modell psp5 upptäckte */
 static const char *system_name(void)
 {
@@ -280,6 +348,36 @@ static void build(int rebuild)
         c->items[c->count - 1].own = 1;
         choice(c, L(S_CTL_POWER), &g_ctl_options, OPT_SELECT_START, 2);
         c->items[c->count - 1].own = 1;
+    }
+
+    c = &s_cats[CAT_DISPLAY];
+    c->name = L(S_CAT_DISPLAY_SOUND);
+    c->desc = L(S_DESC_DISPLAY_SOUND);
+    s_bl_item = NULL;
+    {
+        Item *it;
+        int bl = sys_backlight_off(), eq = sys_equalizer(), av = sys_avls();
+        if (bl >= 0) { /* a row is left out when the PSP does not have the setting or cannot be asked (a PC, an emulator) */
+            bl_build(bl);
+            choice(c, L(S_BACKLIGHT_OFF), &s_backlight, s_bl_opts, s_bl_n);
+            it = &c->items[c->count - 1];
+            it->set = set_backlight; it->immediate = 1;
+            s_bl_item = it;
+        }
+        if (eq >= 0 && eq <= 4) {
+            s_eq = eq;
+            choice(c, L(S_EQUALIZER), &s_eq, OPT_EQ, 5);
+            it = &c->items[c->count - 1];
+            it->set = set_eq; it->immediate = 1;
+        }
+        if (av == 0 || av == 1) {
+            s_avls = av;
+            toggle(c, L(S_AVLS), &s_avls);
+            it = &c->items[c->count - 1];
+            it->set = set_avls; it->immediate = 1;
+        }
+        if (!c->count)
+            info(c, L(S_UNAVAILABLE), "");
     }
 
     c = &s_cats[CAT_PERF];
@@ -560,7 +658,10 @@ int settings_update(const UiInput *in, float dt)
             }
             sound_play(SND_SELECT);
         } else if ((p & PSP_CTRL_CROSS) && it->type == IT_TOGGLE) {
-            *it->value = !*it->value;
+            if (it->set)
+                it->set(!*it->value);
+            else
+                *it->value = !*it->value;
             mark_dirty(it);
             sound_play(SND_SELECT);
         } else if ((p & PSP_CTRL_CROSS) && it->type == IT_ACTION) {
