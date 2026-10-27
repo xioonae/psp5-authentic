@@ -1,6 +1,6 @@
 /* psp5 – made by Mille Weber */
 /* Startskärm i samma stil och ordning som en PS5:s uppstart:
- *   1. en liten grå logga mitt på svart (psp5:s egen symbol – inte Sonys)
+ *   1. en liten grå logga mitt på svart (PlayStation-loggan, ritad här av sin kontur)
  *   2. svart, sedan en liten grå hälsovarning
  *   3. stora, mörkt marinblå bokeh-cirklar som glider långsamt
  *   4. små ljusa bokeh-cirklar och gyllene damm som virvlar upp
@@ -13,6 +13,7 @@
 #include <string.h>
 #include "boot.h"
 #include "gfx.h"
+#include "icons.h"
 #include "theme.h"
 #include "sound.h"
 #include "lang.h"
@@ -35,17 +36,12 @@
 #define SMALL_BOKEH 9
 #define DUST        110
 
-/* loggans mått (pixlar vid skala 1) */
-#define LOGO_W 137.0f
-#define LOGO_H 34.0f
-#define MAX_PTS 48
+/* the logo is a quarter of the screen high */
+#define LOGO_H (SCREEN_H / 4)
 
-typedef struct { float xy[MAX_PTS * 2]; int n; } Path;
 typedef struct { float x, y, r, vx, vy, a; } Bokeh;
 typedef struct { float x, y, size, warm, phase, speed, swirl; } Dust;
 
-static Path s_paths[8];
-static int s_path_count;
 static Bokeh s_big[BIG_BOKEH], s_small[SMALL_BOKEH];
 static Dust s_dust[DUST];
 
@@ -64,76 +60,14 @@ static float rnd(void)
     return (s_seed >> 8) / 16777216.0f;
 }
 
-/* --- psp5-symbolen: bokstäverna som linjer --- */
+/* --- the logo --- */
 
-static Path *new_path(void)
-{
-    Path *p = &s_paths[s_path_count++];
-    p->n = 0;
-    return p;
-}
-
-static void add_pt(Path *p, float x, float y)
-{
-    if (p->n < MAX_PTS) {
-        p->xy[p->n * 2] = x;
-        p->xy[p->n * 2 + 1] = y;
-        p->n++;
-    }
-}
-
-/* båge runt (cx, cy) från vinkel a0 till a1 (grader, y nedåt: -90 = upp) */
-static void add_arc(Path *p, float cx, float cy, float r, float a0, float a1, int steps)
-{
-    for (int i = 0; i <= steps; i++) {
-        float a = (a0 + (a1 - a0) * i / steps) * PI / 180;
-        add_pt(p, cx + r * cosf(a), cy + r * sinf(a));
-    }
-}
-
-static void build_p(float x)
-{
-    Path *stem = new_path();
-    add_pt(stem, x + 3, 0);
-    add_pt(stem, x + 3, 50);
-    add_arc(new_path(), x + 18, 17, 15, -180, 180, 40);
-}
-
-static void build_logo(void)
-{
-    s_path_count = 0;
-    build_p(0);
-    Path *s = new_path();
-    add_arc(s, 53, 8.5f, 8.5f, -30, -270, 22);
-    add_arc(s, 53, 25.5f, 8.5f, -90, 150, 22);
-    build_p(70);
-    Path *five = new_path();
-    add_pt(five, 135, 0);
-    add_pt(five, 116, 0);
-    add_pt(five, 115.5f, 17);
-    add_arc(five, 125, 22.5f, 11.5f, -150, 145, 30);
-}
-
-/* liten, matt grå och utan glöd – som konsolens egen startlogga */
+/* Small, matt grey and without glow – like the console's own start logo. It is drawn from the outline of its three shapes into one small image the
+ * first time (gfx_logo, icons.c) and is one sprite after that, so it costs next to nothing and is as smooth as the letters of the font. */
 static void draw_logo(float alpha)
 {
-    static u32 col[MAX_PTS];
-    const float scale = 0.36f, width = 10.5f * scale;
-    float ox = SCREEN_W / 2 - LOGO_W / 2 * scale, oy = SCREEN_H / 2 - (LOGO_H / 2 + 6) * scale;
-    for (int pass = 0; pass < 2; pass++) {
-        float w = pass ? width : width + 1.2f;
-        u32 c = RGBA(178, 178, 180, (int)(255 * alpha * (pass ? 1.0f : 0.35f)));
-        for (int k = 0; k < s_path_count; k++) {
-            Path *p = &s_paths[k];
-            float pts[MAX_PTS * 2];
-            for (int i = 0; i < p->n; i++) {
-                pts[i * 2] = ox + p->xy[i * 2] * scale;
-                pts[i * 2 + 1] = oy + p->xy[i * 2 + 1] * scale;
-                col[i] = c;
-            }
-            gfx_stroke(pts, col, p->n, w);
-        }
-    }
+    int h = LOGO_H, w = icon_logo_width(h);
+    gfx_logo((SCREEN_W - w) / 2, (SCREEN_H - h) / 2, h, RGBA(178, 178, 180, (int)(255 * alpha)));
 }
 
 /* --- hälsovarningen --- */
@@ -376,7 +310,6 @@ static void draw_frame(float t, float out)
 
 void boot_run(volatile int *running)
 {
-    build_logo();
     init_scene();
 
     u64 start = sceKernelGetSystemTimeWide();
