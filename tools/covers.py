@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 # psp5 – made by Mille Weber
-"""Förbereder omslagsbilder för psp5 på datorn.
+"""Prepares cover pictures for psp5 on a computer.
 
-Skannar minneskortet precis som launchern (ISO/ med iso/cso/zso, PSP/GAME/*/EBOOT.PBP)
-och skriver färdiga texturer till PSP5/covers/:
-    <nyckel>.ico  kortbild 144×80, RGBA8888, rundade hörn
-    <nyckel>.bg   bakgrund 320×182, RGB565
-Nyckeln är DISC_ID för ISO-spel och mappnamnet för EBOOT-appar.
+Scans the Memory Stick the way psp5 does (ISO/ with iso/cso/zso, PSP/GAME/*/EBOOT.PBP)
+and writes finished textures to PSP5/covers/:
+    <key>.ico  card picture 144x80, RGBA8888, rounded corners
+    <key>.bg   background 320x182, RGB565
+The key is the DISC_ID of an ISO game and the folder name of an EBOOT app.
 
-Bildkällor, i den här ordningen:
-    1. egna bilder i --src (standard: tools/covers-src), namngivna efter nyckel eller titel:
-         ULUS10041.jpg  /  "Aurora Drift.png"       → kortbild (beskärs till 16:9-ish)
-         ULUS10041_bg.jpg / "Aurora Drift_bg.png"   → bakgrund
-    2. spelets egen ICON0.PNG / PIC1.PNG
+Where the pictures come from, in this order:
+    1. your own pictures in --src (default: tools/covers-src), named after the key or the title:
+         ULUS10041.jpg  /  "Aurora Drift.png"       -> card picture (cut from the middle to about 16:9)
+         ULUS10041_bg.jpg / "Aurora Drift_bg.png"   -> background
+    2. the game's own ICON0.PNG / PIC1.PNG
 
-Exempel:
-    py tools\\covers.py E:\\              PSP:n inkopplad som E:
-    py tools\\covers.py E:\\ --force      skriv om alla
-    py tools\\covers.py E:\\ --clean      ta också bort omslag för spel som inte längre finns
-    py tools\\covers.py E:\\ --dry-run    visa bara vad som skulle göras
+Examples:
+    py tools\\covers.py E:\\              the PSP connected as E:
+    py tools\\covers.py E:\\ --force      write them all again
+    py tools\\covers.py E:\\ --clean      also remove covers of games that are gone
+    py tools\\covers.py E:\\ --dry-run    only show what would be done
 
-Skriptet skriver bara i PSP5/covers på minneskortet.
+The script only writes in PSP5/covers on the Memory Stick.
 """
 import argparse
 import io
@@ -34,7 +34,7 @@ try:
     import lz4.block
     from PIL import Image, ImageDraw, ImageFilter
 except ImportError:
-    sys.exit("Saknar paket – kör:  py -m pip install --user pillow lz4")
+    sys.exit("Missing packages – run:  py -m pip install --user pillow lz4")
 
 # måste stämma med src/art.h och src/image.c
 ICON_W, ICON_H = 144, 80
@@ -178,7 +178,7 @@ def scan_isos(root):
             finally:
                 r.close()
         except (OSError, struct.error, zlib.error, lz4.block.LZ4BlockError) as e:
-            print(f"  hoppar över {path.name}: {e}")
+            print(f"  skipping {path.name}: {e}")
 
 
 def scan_eboots(root):
@@ -283,22 +283,22 @@ def find_source(table, game, suffix=""):
 # --- huvudprogram ---
 
 def main():
-    ap = argparse.ArgumentParser(description="Förbereder omslagsbilder för psp5.")
-    ap.add_argument("root", type=Path, help="minneskortets rot, t.ex. E:\\")
+    ap = argparse.ArgumentParser(description="Prepares cover pictures for psp5.")
+    ap.add_argument("root", type=Path, help="the root of the Memory Stick, e.g. E:\\")
     ap.add_argument("--src", type=Path, default=Path(__file__).resolve().parent / "covers-src",
-                    help="mapp med egna omslag (standard: tools/covers-src)")
-    ap.add_argument("--force", action="store_true", help="skriv om befintliga omslag")
-    ap.add_argument("--clean", action="store_true", help="ta bort omslag för spel som inte finns kvar")
-    ap.add_argument("--dry-run", action="store_true", help="visa bara vad som skulle göras")
+                    help="folder with your own covers (default: tools/covers-src)")
+    ap.add_argument("--force", action="store_true", help="write the covers that are there again")
+    ap.add_argument("--clean", action="store_true", help="remove covers of games that are no longer there")
+    ap.add_argument("--dry-run", action="store_true", help="only show what would be done")
     args = ap.parse_args()
     sys.stdout.reconfigure(errors="replace")  # t.ex. japanska titlar i en Windows-konsol
 
     root = args.root
     if not (root / "PSP").is_dir():
-        sys.exit(f"Hittar ingen PSP-mapp i {root} – är det rätt enhet?")
+        sys.exit(f"No PSP folder in {root} – is that the right drive?")
     out_dir = root / "PSP5" / "covers"
     sources = index_sources(args.src)
-    print(f"Minneskort: {root}   egna bilder: {len(sources)} i {args.src}")
+    print(f"Memory Stick: {root}   own pictures: {len(sources)} in {args.src}")
 
     games = list(scan_isos(root)) + list(scan_eboots(root))
     written = skipped = 0
@@ -313,7 +313,7 @@ def main():
             img = Image.open(own).convert("RGBA") if own else open_png(g.icon)
             if img:
                 img = round_corners(cover_crop(img, ICON_W, ICON_H), ICON_RADIUS)
-                notes.append("kort: " + ("eget " + own.name if own else "ICON0"))
+                notes.append("card: " + ("own " + own.name if own else "ICON0"))
                 if not args.dry_run:
                     out_dir.mkdir(parents=True, exist_ok=True)
                     ico_path.write_bytes(ntx(img, PSM_8888))
@@ -324,18 +324,18 @@ def main():
         if args.force or not bg_path.exists():
             own = find_source(sources, g, "_bg")
             if own:
-                img, blur, what = Image.open(own), 0, "eget " + own.name
+                img, blur, what = Image.open(own), 0, "own " + own.name
             elif open_png(g.pic):
                 img, blur, what = open_png(g.pic), 0, "PIC1"
             elif open_png(g.icon):
-                img, blur, what = open_png(g.icon), 10, "suddig ICON0"
+                img, blur, what = open_png(g.icon), 10, "blurred ICON0"
             else:
                 img = None
             if img:
                 img = cover_crop(img.convert("RGB"), BG_W, BG_H)
                 if blur:
                     img = img.filter(ImageFilter.GaussianBlur(blur))
-                notes.append("bakgrund: " + what)
+                notes.append("background: " + what)
                 if not args.dry_run:
                     out_dir.mkdir(parents=True, exist_ok=True)
                     bg_path.write_bytes(ntx(img, PSM_5650))
@@ -346,23 +346,23 @@ def main():
         if notes:
             status = ", ".join(notes)
         elif ico_path.exists() or bg_path.exists():
-            status = "redan klart"
+            status = "already done"
         else:
-            status = "ingen bild (launchern visar ett kort med initial)"
+            status = "no picture (psp5 shows a card with the first letter)"
         print(f"  [{g.kind:<5}] {g.key:<15} {g.title[:40]:<40} {status}")
 
     removed = 0
     if args.clean and out_dir.is_dir():
         for p in out_dir.iterdir():
             if p.suffix in (".ico", ".bg") and p.stem not in keys:
-                print(f"  tar bort {p.name} (spelet finns inte kvar)")
+                print(f"  removing {p.name} (the game is gone)")
                 if not args.dry_run:
                     p.unlink()
                 removed += 1
 
-    print(f"\n{len(games)} spel/appar, {written} bilder skrivna, {skipped} fanns redan"
-          + (f", {removed} borttagna" if args.clean else "")
-          + (" (torrkörning – inget sparat)" if args.dry_run else ""))
+    print(f"\n{len(games)} games/apps, {written} pictures written, {skipped} were there already"
+          + (f", {removed} removed" if args.clean else "")
+          + (" (dry run – nothing saved)" if args.dry_run else ""))
 
 
 if __name__ == "__main__":

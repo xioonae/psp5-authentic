@@ -19,7 +19,7 @@ int sys_confirm_is_circle(void);
 int sys_set_confirm_is_circle(int circle);
 /* The PSP's own sound and power settings (the XMB's too). Each answers -1 when the PSP does not have it or the call does not work, and the
  * setters answer with what the PSP says afterwards. Backlight auto-off: seconds. Equalizer: 0 = off, 1 .. 4 = the XMB's list in its order.
- * AVLS (the volume limiter): 0 / 1. None of this has been run on a PSP. */
+ * AVLS (the volume limiter): 0 / 1. */
 /* What About shows (Settings -> About): everything the PSP can say about itself. Anything it cannot say is left empty / -1 / 0. Read when asked, so the
  * battery is as it is now. */
 typedef struct {
@@ -36,7 +36,7 @@ void sys_about(SysAbout *out);
 
 int sys_backlight_off(void);
 int sys_set_backlight_off(int seconds);
-/* The volume, 0 to 30, and the brightness level (what the PSP counts: shown as it is). The setters answer with what the PSP says afterwards;
+/* The volume, 0 to 30, and the brightness level (what the PSP counts: 0 to 3; Settings shows it plus one, like the XMB). The setters answer with what the PSP says afterwards;
  * all four answer -1 when there is no such call (no ARK, an emulator). */
 int sys_volume(void);
 int sys_set_volume(int level);
