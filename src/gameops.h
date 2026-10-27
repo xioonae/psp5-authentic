@@ -41,9 +41,9 @@ enum { DEL_RUNNING, DEL_OK, DEL_FAILED, DEL_CANCELLED };
  * non-zero. It decides nothing about what may be deleted: the caller has to have checked that. */
 int gameops_tree_delete(const char *folder, volatile int *cancel, volatile u32 *done, char *current, int current_size);
 
-/* Starts deleting the game. `back` is the button mask that cancels (circle or cross, as the user's confirm
- * button is set up). Returns 0 if it is not allowed or no thread could be started - nothing has changed then. */
-int gameops_delete_start(const Entry *e, u32 back, int back_is_cross);
+/* Starts deleting the game; the back button (PSP_CTRL_CIRCLE, controls.h) cancels it. Returns 0 if it is not allowed or no thread could
+ * be started - nothing has changed then. */
+int gameops_delete_start(const Entry *e);
 /* Once per frame while deleting: handles the cancel button. DEL_RUNNING, or how it ended. */
 int gameops_delete_update(u32 pressed);
 /* Waits for the thread and frees it. Call once after gameops_delete_update has returned something else

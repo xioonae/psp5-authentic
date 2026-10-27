@@ -12,6 +12,7 @@
 #include <string.h>
 #include <strings.h>
 #include "files.h"
+#include "controls.h"
 #include "gfx.h"
 #include "lang.h"
 #include "sound.h"
@@ -879,7 +880,7 @@ int files_update(const UiInput *in, float dt)
         }
         if (in->pressed & PSP_CTRL_CROSS)
             run_act(s_menu_act[s_menu_sel]);
-        else if (in->pressed & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) {
+        else if (in->pressed & (PSP_CTRL_CIRCLE | PSP_CTRL_START)) { /* back, or the options button that opened it */
             s_menu = M_NONE;
             sound_play(SND_BACK);
         }
@@ -918,7 +919,7 @@ int files_update(const UiInput *in, float dt)
         sound_play(SND_SELECT);
         if (s_sel < s_count - 1)
             s_sel++;
-    } else if ((in->pressed & PSP_CTRL_TRIANGLE) && s_path[0]) {
+    } else if ((in->pressed & PSP_CTRL_START) && s_path[0]) { /* the options button, as everywhere */
         open_menu(M_OPTIONS);
     } else if (in->pressed & PSP_CTRL_CIRCLE) {
         if (!go_up())
@@ -984,20 +985,21 @@ static void draw_hints(float a)
 {
     struct { int btn; StrId text; } h[4];
     int n = 0;
-    h[n++] = (typeof(h[0])){ BTN_CROSS, S_F_OPEN };
+    h[n++] = (typeof(h[0])){ controls_glyph(PSP_CTRL_CROSS), S_F_OPEN };
     if (s_path[0]) {
-        h[n++] = (typeof(h[0])){ BTN_SQUARE, S_F_MARK };
-        h[n++] = (typeof(h[0])){ BTN_TRIANGLE, S_OPTIONS };
+        h[n++] = (typeof(h[0])){ controls_glyph(PSP_CTRL_SQUARE), S_F_MARK };
+        h[n++] = (typeof(h[0])){ controls_glyph(PSP_CTRL_START), S_OPTIONS };
     }
-    h[n++] = (typeof(h[0])){ BTN_CIRCLE, S_BACK };
+    h[n++] = (typeof(h[0])){ controls_glyph(PSP_CTRL_CIRCLE), S_BACK };
     float w = -14;
     for (int i = 0; i < n; i++)
-        w += 18 + ceilf(text_width(0.56f, 0, L(h[i].text))) + 14; /* (whole pixels) */
+        w += gfx_button_width(h[i].btn) + 5 + ceilf(text_width(0.56f, 0, L(h[i].text))) + 14; /* (whole pixels) */
     float x = SCREEN_W - 22 - w, y = 252;
     gfx_round_rect(x - 9, y - 10, w + 18, 20, 10, RGBA(0, 0, 0, (int)(110 * a)));
     for (int i = 0; i < n; i++) {
-        gfx_button(x + 6.5f, y, 6.5f, h[i].btn, fade(LIGHT, a), fade(DARK, a));
-        x += 18;
+        float bw = gfx_button_width(h[i].btn);
+        gfx_button(x + bw / 2, y, 6.5f, h[i].btn, fade(LIGHT, a), fade(DARK, a));
+        x += bw + 5;
         text_draw(x, y + 4.5f, 0.56f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(h[i].text));
         x += ceilf(text_width(0.56f, 0, L(h[i].text))) + 14;
     }
@@ -1116,7 +1118,7 @@ static void draw_progress(void)
         return;
     StrId title = W.op == OP_COPY ? S_F_COPYING : W.op == OP_MOVE ? S_F_MOVING : S_F_DELETING;
     float f = W.total ? clampf((float)W.done / (float)W.total, 0, 1) : 0;
-    popup_progress(L(title), W.current, f, theme_cur()->accent, BTN_CIRCLE, L(S_F_CANCEL));
+    popup_progress(L(title), W.current, f, theme_cur()->accent, controls_glyph(PSP_CTRL_CIRCLE), L(S_F_CANCEL));
 }
 
 static void draw_scene(void)

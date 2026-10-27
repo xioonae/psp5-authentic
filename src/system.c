@@ -4,6 +4,8 @@
 #include <pspkernel.h>
 #include <pspusb.h>
 #include <pspusbstor.h>
+#include <pspimpose.h>
+#include <psputility.h>
 #include <psploadexec_kernel.h>
 #include <kubridge.h>
 #include <systemctrl.h>
@@ -114,6 +116,38 @@ void sys_init(const char *self_path)
     g_arkcfg_ark4 = s_ark == 4;
     snprintf(path, sizeof(path), "%sVBOOT.PBP", s_ark_dir);
     s_is_launcher = self_path && !strcasecmp(self_path, path);
+}
+
+/* The PSP's own button assignment (the XMB's Settings > Button Assignment): which of ○ and ✕ confirms. The system parameter says it
+ * (0 = ○ confirms, 1 = ✕, as psputility_sysparam.h says); the XMB keeps it in the registry and the Impose service has the same pair of
+ * values that Settings changes. */
+int sys_confirm_is_circle(void)
+{
+    int v = 1;
+    if (sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_BUTTON_SWAP, &v) < 0)
+        return 0;
+    return v == 0;
+}
+
+/* Gives the confirm button to ○ (circle = 1) or ✕. The SDK does not say what values sceImposeSetLanguageMode wants ("parameter values not
+ * known"), so it is calibrated first: the pair that sceImposeGetLanguageMode reports is compared with the system parameter, and when the
+ * button number is not the same one (the other way round) it is turned round before it is written. What the system says afterwards is the
+ * answer, so a PSP that does not take the change shows the old value. */
+int sys_set_confirm_is_circle(int circle)
+{
+    int lang = 0, button = 0;
+    if (sceImposeGetLanguageMode(&lang, &button) < 0)
+        return sys_confirm_is_circle();
+    int param = 1;
+    if (sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_BUTTON_SWAP, &param) < 0)
+        return sys_confirm_is_circle();
+    int same = button == param; /* both numbers mean the same thing */
+    int want = circle ? 0 : 1;  /* the system parameter's number for what is wanted */
+    sceImposeSetLanguageMode(lang, same ? want : !want);
+    int lang2 = 0, button2 = 0; /* ask the same service that was told: the system parameter may not follow until the next start */
+    if (sceImposeGetLanguageMode(&lang2, &button2) < 0)
+        return sys_confirm_is_circle();
+    return (same ? button2 : !button2) == 0;
 }
 
 int sys_has_ark(void) { return s_has_ark; }

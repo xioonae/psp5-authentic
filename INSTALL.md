@@ -73,25 +73,36 @@ recent ARK-4 when psp5 is started from the internal storage.)
 
 ## Buttons
 
+Every screen uses the same few buttons for the same things:
+
 | Button | What it does |
 |---|---|
-| ✕ | Start the game (in Music: play / pause) |
-| START | Games / Library: options of the selected game · on the Library card: pin / unpin |
-| SELECT | Power popup on every tab: Sleep, Shut down, Restart, Recovery menu (✕ does it at once, ○ or SELECT closes) |
-| ↓ in Games | Select the Start and ⋯ (options) buttons under the game · ← → move between them · ↑ or ○ goes back |
-| L / R | Switch between Games and Music (not in the Library: ○ closes it) |
-| ✕ on the Library card (the last card of Games) | Open the Library: everything in a grid; the top bar shows only *Library* there |
-| ↑ from any first-row card in the Library | Select the Sort button (always the first stop) · ✕ opens the sorting (the same in *Manage Saved Data*) · ↑ again goes to the cog wheel, ↓ from the cog wheel comes back to the Sort button |
-| ↑ from the first thing on a tab | Select the top bar: ← → between Games, Music and the cog wheel (in the Library only the cog wheel: the word *Library* is a title) · ✕ opens a tab, or the settings on the cog wheel · ↓ goes back down · ○ goes back to the selected game |
-| □ in Music | Pause / resume |
-| ← → in Music | Previous / next track · hold to seek |
-| ○ | Back · closes the Library |
+| D-pad or analog stick | **Navigate**: move between cards, rows, tabs and buttons · hold to go faster |
+| ✕ | **Confirm**: start the game, open, choose, switch on or off (in Music: play / pause) |
+| ○ | **Back**: one step back, close a popup or a screen (it closes the Library) |
+| START | **Options**: of the selected game, card or file · on the Library card: pin / unpin · START again closes the options |
+| SELECT | **Power menu** on every tab: Sleep, Shut down, Restart, Recovery menu (✕ does it at once, ○ or SELECT closes) |
+| L / R | **Switch tabs**: Games and Music (not in the Library: ○ closes it) · in a long list a page up / down |
+| □ △ | Extras on a few screens only: mark / select all in a list (*Manage Saved Data*, the file manager), □ pauses the music |
 | HOME | Back to the XMB (not as custom launcher)|
+
+By default ✕ confirms and ○ goes back (the other way round when the PSP itself is set to confirm with ○). **Settings → Controls** changes that:
+the PSP's own confirm button (this changes the XMB too), and which of ✕ ○ □ △ confirms and goes back in psp5, and whether START or SELECT
+opens the options and the power menu. If you ever forget what you chose: the hints at the bottom of the file manager and of *Manage Saved Data*
+show the buttons, and deleting the `confirm=`, `back=` and `options=` lines in `PSP5/psp5.cfg` gives you the usual ones again.
+
+Where to go from there:
+
+- **↓ in Games** selects the Play and ⋯ (options) buttons under the game · ← → move between them · ↑ or Back goes back.
+- **Confirm on the Library card** (the last card of Games) opens the Library: everything in a grid; the top bar shows only *Library* there.
+- **↑ from any first-row card in the Library** selects the Sort button (always the first stop) · Confirm opens the sorting (the same in *Manage Saved Data*) · ↑ again goes to the cog wheel, ↓ from the cog wheel comes back to the Sort button.
+- **↑ from the first thing on a tab** selects the top bar: ← → between Games, Music and the cog wheel (in the Library only the cog wheel: the word *Library* is a title) · Confirm opens a tab, or the settings on the cog wheel · ↓ goes back down · Back goes back to the selected game.
+- **← → in Music**: previous / next track · hold to seek.
 
 ## File manager
 
-*Settings → Power and USB → File manager* lets you manage files right on the PSP. ✕ opens a folder, □ marks
-files, △ shows what you can do (copy, move, paste, rename, delete, new folder) and ○ goes back.
+*Settings → Power and USB → File manager* lets you manage files right on the PSP. Confirm opens a folder, □ marks
+files, Options (START) shows what you can do (copy, move, paste, rename, delete, new folder) and Back goes back.
 
 ## Updating
 

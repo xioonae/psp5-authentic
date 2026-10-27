@@ -14,6 +14,9 @@ void sys_set_root(const char *self_path);
 /* Läser ARK:s konfiguration (om ARK finns). Anropas en gång vid start. */
 void sys_init(const char *self_path);
 int sys_has_ark(void);
+/* The PSP's own button assignment (the XMB's too): 1 = ○ confirms, 0 = ✕. sys_set_... changes it and returns what it is afterwards. */
+int sys_confirm_is_circle(void);
+int sys_set_confirm_is_circle(int circle);
 /* ARK:s huvudversion: 4 (ARK-4), 5 (ARK-5) eller 0 (ingen ARK, t.ex. PPSSPP) */
 int sys_ark_version(void);
 /* PSP-modell (kuKernelGetModel): 0 = PSP-1000, 1 = PSP-2000, 2/3/6/8 = PSP-3000,

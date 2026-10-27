@@ -23,6 +23,7 @@
 #include <string.h>
 #include <strings.h>
 #include "saves.h"
+#include "controls.h"
 #include "gameops.h"
 #include "image.h"
 #include "lang.h"
@@ -110,7 +111,6 @@ static struct {
     int menu, menu_sel;   /* the sorting popup: open, and the way chosen in it */
     float menu_anim;
     int seen;             /* entries checked for characters that need the CJK font */
-    u32 ok, back;         /* the confirm and back buttons */
     int repeat_dir;
     float repeat_timer;
     char toast[96];
@@ -543,7 +543,7 @@ static void start_delete(void)
 /* ---------------------------------------------------------------------- */
 /* opening, updating */
 
-void saves_open(const EntryList *games, int confirm_circle)
+void saves_open(const EntryList *games)
 {
     memset(&S, 0, sizeof(S));
     memset(&T, 0, sizeof(T));
@@ -551,8 +551,6 @@ void saves_open(const EntryList *games, int confirm_circle)
     T.thread = W.thread = -1;
     T.games = games;
     S.pic_sel = S.pan_for = -1;
-    S.ok = confirm_circle ? PSP_CTRL_CIRCLE : PSP_CTRL_CROSS;
-    S.back = confirm_circle ? PSP_CTRL_CROSS : PSP_CTRL_CIRCLE;
     refresh_space();
     T.thread = sceKernelCreateThread("psp5_saves", scan_thread, 0x30, 0x10000, PSP_THREAD_ATTR_USER, NULL);
     if (T.thread >= 0 && sceKernelStartThread(T.thread, 0, NULL) < 0) {
@@ -814,7 +812,7 @@ int saves_update(const UiInput *in, float dt)
     if (W.thread >= 0) { /* a delete is running: only the back button (cancel) */
         if (!W.running)
             finish_delete();
-        else if (in->pressed & S.back)
+        else if (in->pressed & PSP_CTRL_CIRCLE)
             W.cancel = 1;
         return 0;
     }
@@ -827,7 +825,7 @@ int saves_update(const UiInput *in, float dt)
                 sound_play(SND_MOVE);
             S.ask_sel = next;
         }
-        if (in->pressed & S.ok) {
+        if (in->pressed & PSP_CTRL_CROSS) {
             S.ask = 0;
             if (S.ask_sel == 0) {
                 sound_play(SND_SELECT);
@@ -835,7 +833,7 @@ int saves_update(const UiInput *in, float dt)
             } else {
                 sound_play(SND_BACK);
             }
-        } else if (in->pressed & (S.back | PSP_CTRL_SQUARE | PSP_CTRL_TRIANGLE)) {
+        } else if (in->pressed & PSP_CTRL_CIRCLE) {
             S.ask = 0;
             sound_play(SND_BACK);
         }
@@ -849,10 +847,10 @@ int saves_update(const UiInput *in, float dt)
                 sound_play(SND_MOVE);
             S.menu_sel = next;
         }
-        if (in->pressed & S.ok) {
+        if (in->pressed & PSP_CTRL_CROSS) {
             S.menu = 0;
             set_sort(S.menu_sel);
-        } else if (in->pressed & (S.back | PSP_CTRL_SQUARE | PSP_CTRL_TRIANGLE)) {
+        } else if (in->pressed & PSP_CTRL_CIRCLE) {
             S.menu = 0;
             sound_play(SND_BACK);
         }
@@ -863,7 +861,7 @@ int saves_update(const UiInput *in, float dt)
     if (S.sort_focus && (!T.done || n < 2))
         S.sort_focus = 0; /* nothing to sort (any more) */
     int on_sort = S.sort_focus;
-    if (in->pressed & S.back) {
+    if (in->pressed & PSP_CTRL_CIRCLE) {
         sound_play(SND_BACK);
         if (on_sort) { /* ○ on the Sort button goes back to the list */
             S.sort_focus = 0;
@@ -875,7 +873,7 @@ int saves_update(const UiInput *in, float dt)
         if (move > 0) {
             S.sort_focus = 0;
             sound_play(SND_MOVE);
-        } else if (in->pressed & S.ok) {
+        } else if (in->pressed & PSP_CTRL_CROSS) {
             S.menu = 1;
             S.menu_sel = S.sort;
             sound_play(SND_SELECT);
@@ -898,7 +896,7 @@ int saves_update(const UiInput *in, float dt)
             mark_highlighted();
         else if (in->pressed & PSP_CTRL_TRIANGLE)
             select_all();
-        else if (in->pressed & S.ok)
+        else if (in->pressed & PSP_CTRL_CROSS)
             open_ask();
     }
     n = T.listed ? T.count : 0; /* a sort or a mark moves the highlight */
@@ -1131,10 +1129,10 @@ static float hints_width(const Hint h[4], float size)
 
 static float hints_layout(Hint h[4], float *size)
 {
-    h[0] = (Hint){ S.ok == PSP_CTRL_CIRCLE ? BTN_CIRCLE : BTN_CROSS, L(S_F_DELETE) };
-    h[1] = (Hint){ BTN_SQUARE, L(S_F_MARK) };
-    h[2] = (Hint){ BTN_TRIANGLE, L(all_marked() ? S_SV_DESELECT_ALL : S_SV_SELECT_ALL) };
-    h[3] = (Hint){ S.back == PSP_CTRL_CIRCLE ? BTN_CIRCLE : BTN_CROSS, L(S_BACK) };
+    h[0] = (Hint){ controls_glyph(PSP_CTRL_CROSS), L(S_F_DELETE) };
+    h[1] = (Hint){ controls_glyph(PSP_CTRL_SQUARE), L(S_F_MARK) };
+    h[2] = (Hint){ controls_glyph(PSP_CTRL_TRIANGLE), L(all_marked() ? S_SV_DESELECT_ALL : S_SV_SELECT_ALL) };
+    h[3] = (Hint){ controls_glyph(PSP_CTRL_CIRCLE), L(S_BACK) };
     for (*size = 0.56f; hints_width(h, *size) > HINTS_MAX_W && *size > 0.44f;)
         *size -= 0.02f;
     for (int guard = 0; guard < 8 && hints_width(h, *size) > HINTS_MAX_W; guard++) {
@@ -1204,7 +1202,7 @@ static void draw_progress(void)
     if (W.thread < 0)
         return;
     float f = W.total ? clampf((float)W.done / (float)W.total, 0, 1) : 0;
-    popup_progress(L(S_F_DELETING), W.current, f, theme_cur()->accent, S.back == PSP_CTRL_CIRCLE ? BTN_CIRCLE : BTN_CROSS, L(S_F_CANCEL));
+    popup_progress(L(S_F_DELETING), W.current, f, theme_cur()->accent, controls_glyph(PSP_CTRL_CIRCLE), L(S_F_CANCEL));
 }
 
 void saves_draw(void)

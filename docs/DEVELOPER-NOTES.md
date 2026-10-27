@@ -24,6 +24,50 @@ into psp5 instead of the XMB.
 
 All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`) until the next version is released.
 
+- **Controls: one name per button, chosen in Settings** (new `controls.c` / `controls.h`; `main.c`, `ui.c`, `saves.c`, `info.c`, `files.c`, `gameops.c`,
+  `settings.c`, `config.c`, `gfx.c`, `system.c`, `lang.c`, `Makefile`).
+  - *The idea*: the screens only know **names**: `PSP_CTRL_CROSS` = confirm, `PSP_CTRL_CIRCLE` = back, `PSP_CTRL_START` = options, `PSP_CTRL_SELECT` = the power menu,
+    `PSP_CTRL_SQUARE` / `PSP_CTRL_TRIANGLE` = what a screen has besides (mark, select all, pause the music), L / R = tabs, the D-pad and the stick = navigate. The pad
+    is turned into them once, in `main.c`'s `read_pad`: `in->pressed = controls_map(raw & ~old)` and `in->held = controls_map(raw)`; `old` / `s_raw` stay raw
+    (so a button held while a setting changes does not count as a new press; `old = s_raw` replaces the old `old = in.held`). `ui.c`, `saves.c`, `info.c`, `settings.c`
+    and `files.c` therefore no longer know `confirm_circle` (the field, the `ui_init` / `info_open` / `saves_open` argument and `S.ok` / `S.back` are gone;
+    `gameops_delete_start(e)` lost its two button arguments): they test `PSP_CTRL_CROSS` and `PSP_CTRL_CIRCLE`. Only the symbols on the screen need the real buttons:
+    `controls_glyph(name)` gives the `BTN_*` of the physical button behind a name (hints in `saves.c` and `files.c`, the cancel hint of `popup_progress` in `saves.c`,
+    `files.c` and `gameops.c`, the USB screen in `main.c`). `ui.c` itself does not include `controls.h` (it needs nothing from it).
+  - *`controls.c`*: `g_ctl_confirm` / `g_ctl_back` (`CTL_PSP` = the PSP's own setting, or `CTL_CROSS .. CTL_TRIANGLE`), `g_ctl_options` (0 = START opens the options,
+    1 = SELECT does), `controls_psp_assignment(circle)` (the PSP's own ✕ / ○ setting, told at start by `app_start` and by Settings). `resolve()`: confirm and back
+    are the chosen button or the PSP's; if they are the same button (a damaged `psp5.cfg`) the one that follows the PSP gives way, else back does (`other_than`:
+    the first of ○ ✕ □ △ that is not the other); the two buttons that are free take SQUARE and TRIANGLE in the order □ △ ✕ ○ (so with the usual setup nothing moves). The
+    result is always one-to-one (tested for all 2 x 2 x 5 x 5 setups). `controls_set_confirm` / `controls_set_back` swap when one button would get two jobs (also when
+    confirm goes back to the PSP's setting while back sits on that button). `controls_code` / `controls_from_code`: the words in `psp5.cfg`.
+  - *The extra bindings that went* (so a meaning has one button): △ / □ as a second back in `saves.c` (the Sort popup and the question), `info.c` and the options
+    popup of the cards (`ui.c`: `back = CIRCLE | START` now; the options button closes what it opened, so does SELECT on the power popup), △ as a second close in `settings.c`
+    (from the list of options it closed all of Settings), ✕ as a second way out of the USB screen (`main.c`), the file manager's △ for the options (now START; its
+    menu closes with back or START), `files.c`'s direct ✕ / ○ (it ignored the PSP's own setting). Kept on purpose: □ pauses the music (it pauses without choosing
+    the track under the cursor, which ✕ does not), □ marks and △ selects all in the lists, L / R page in the file manager.
+  - *Settings* (`settings.c`): the category **Controls** (`CAT_CONTROLS`, after Theme): *PSP confirm button* (`IT_CHOICE` on `s_psp_circle`, `immediate`: no file; `set_psp` calls
+    `sys_set_confirm_is_circle`, takes the answer and tells `controls_psp_assignment`; it is read again at every `build`, so the XMB or a game having changed it is seen), *Confirm*
+    and *Back* (`set_confirm` / `set_back` = the swapping setters, `glyph_confirm` / `glyph_back`), *Options* and *Power menu* (both on `g_ctl_options`, the values START / SELECT either
+    way round). New `Item` fields: `glyph(opt)` (a `BTN_*` drawn with the value: at the end of the row, and before the word in the popup; the word is the PSP's name for it:
+    Cross / Circle / Square / Triangle, `S_BTN_*`), `set(opt)` (how a value is set when it is more than storing it) and `immediate`. The left column
+    now scrolls (`VIS_CATS` = 6 shown, `S.cat_top`, `S.cat_scroll`, rows fade at the ends, a chevron says there are more): the 7 categories do not fit above 236 px and
+    three more are planned.
+  - *System* (`system.c`): `sys_confirm_is_circle()` (moved from `main.c`: `sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_BUTTON_SWAP)`, 0 = ○ confirms) and
+    `sys_set_confirm_is_circle(circle)`: the SDK says of `sceImposeSetLanguageMode(lang, button)` that the values are not known, so it reads `sceImposeGetLanguageMode` and the system
+    parameter first and takes the two to mean the same when they are equal (else it writes the opposite number), writes, reads the same service again and answers with that.
+    **Never run on a PSP**; a PSP that ignores it just shows the old value. `sceImposeSetLanguageMode` is in `libpspuser` (no new library).
+  - *Hints with START / SELECT* (`gfx.c`): `BTN_START` / `BTN_SELECT` are pills (28 / 34 px wide, 14 high so the edges are whole pixels; the word in bold size 0.34, fitted) and
+    `gfx_button_width(kind)` is how much room a hint gives its symbol (13 for the round ones); `files.c`'s hint row uses it (width and the step to the word).
+  - *`psp5.cfg`* (`config.c`): `confirm=psp|cross|circle|square|triangle`, `back=` (the same), `options=start|select`; a file with the same button for both reads back
+    as back = the PSP's. The buffers are 384 bytes now (they were 256 / 192).
+  - *Tests* (`host-tests`, not in git): `units/controls_test.c` (new, 111 checks: the usual and the swapped PSP setup, all 12 pairs of buttons with what is left over, 100 setups one-to-one,
+    START / SELECT, the swaps in both directions and back to the PSP's setting, damaged pairs, the words); `units/config_test.c` (the three keys, 25 pairs, a damaged file);
+    `settings/settings_test.c` (the Controls category row by row, the swaps through the popups, what is written, the system refusing, the symbols drawn - `rec_button` records
+    `gfx_button` as `rec_round_rect` records the scroll bar -, the scrolling column, all 11 languages on whole pixels); `ui/popup_sig.h` records `gfx_button` too (`sig_btn`,
+    wrapped through `$WRAP`) so that `saves_test`, `files/popup_test.c` and `gameops/gameops_test.c` check which symbol each hint and each cancel hint shows, in four or five
+    button setups; `gfx/gfxtest.c` (the pills: width, height, whole pixels, the word in the middle); `ui/menu_test.c`, `saves/saves_test.c` send the physical buttons through
+    `controls_map` as `main.c` does (`press()`), so the swapped PSP setup is still tested end to end; `gameinfo/info_test.c` includes `info.c` without a path
+    (`../../psp5/src/info.c` only worked with a repository folder called `psp5`). `run_all.sh`: `controls.c` is linked wherever `gfx.c` is.
 - **Settings: a choice is picked from a popup** (`settings.c`). `IT_CHOICE` items used to change with ← → (and ✕ stepped to the next value); now ✕ calls
   `pop_open(cat, item)`, which sets `S.pop`, `S.pop_cat/item`, `S.pop_sel` (the current value) and `S.pop_top` (the first value shown: the current one in
   the middle, `clampf(sel - vis / 2, 0, n - vis)`, and `S.pop_scroll` = `S.pop_top` at once so nothing slides when it opens). While `S.pop` is set, `pop_update` gets the

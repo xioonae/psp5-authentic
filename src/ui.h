@@ -63,7 +63,6 @@ typedef struct {
     float time;
     float intro;         /* 0→1 vid start */
     float launch;        /* <0 = inaktiv, annars 0→1 */
-    int confirm_circle;  /* systeminställning: ○ bekräftar */
     int can_launch;      /* 0 = ARK saknas (t.ex. PPSSPP) */
 
     /* bakgrund: gammal + ny med övertoning */
@@ -143,7 +142,7 @@ typedef struct {
     float toast_time;
 } Ui;
 
-void ui_init(Ui *ui, const EntryList *list, int confirm_circle, int can_launch);
+void ui_init(Ui *ui, const EntryList *list, int can_launch);
 void ui_free(Ui *ui);
 /* Spellistan har ändrats först (UMD-skivan togs ut och/eller sattes i).
  * Bygger om flikarna och behåller markeringen. Laddaren ska redan vara omstartad. */

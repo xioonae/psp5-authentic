@@ -15,6 +15,7 @@
 #include "sound.h"
 #include "lang.h"
 #include "config.h"
+#include "controls.h"
 #include "theme.h"
 #include "osd.h"
 #include "popup.h"
@@ -45,6 +46,9 @@ typedef struct {
     char info[48];               /* INFO-värde / undertext */
     int plugin;                  /* >0: plugin nr (1-baserat) */
     int own;                     /* psp5:s egen inställning (psp5.cfg) */
+    int immediate;               /* the system has it, not a file of ours: nothing to save (the PSP's button assignment) */
+    int (*glyph)(int opt);       /* CHOICE: a button symbol (BTN_*) to draw for value `opt`, or -1: the values that are buttons */
+    void (*set)(int opt);        /* CHOICE: how the value is set when it is more than storing it (the buttons that swap), else NULL */
 } Item;
 
 typedef struct {
@@ -54,7 +58,7 @@ typedef struct {
     int count;
 } Category;
 
-enum { CAT_PSP5, CAT_THEME, CAT_PERF, CAT_SYSTEM, CAT_PLUGINS, CAT_POWER, CAT_COUNT };
+enum { CAT_PSP5, CAT_THEME, CAT_CONTROLS, CAT_PERF, CAT_SYSTEM, CAT_PLUGINS, CAT_POWER, CAT_COUNT };
 
 static Category s_cats[CAT_COUNT];
 static unsigned char s_plugin_on[MAX_PLUGINS];
@@ -64,6 +68,8 @@ static int s_wrapped_n;
 
 static struct {
     int cat, item[CAT_COUNT];
+    int cat_top;        /* the first category shown (more categories than fit: the list scrolls) */
+    float cat_scroll;
     int focus;          /* 0 = kategorier, 1 = alternativ */
     float scroll, open, time;
     int cfw_dirty, plugins_dirty, own_dirty;
@@ -75,12 +81,17 @@ static struct {
     float pop_anim, pop_scroll;
 } S;
 
+#define VIS_CATS 6 /* the categories shown at once in the left column */
 #define POP_ROWS 8 /* the most values a popup shows at once; a longer list scrolls (the 14 regions, the 11 languages) */
 
 /* valtexter byggs om när språket ändras */
 static const char *const OPT_CLOCK[] = { "Auto", "133 MHz", "222 MHz", "333 MHz", "383 MHz", "403 MHz", "423 MHz", "443 MHz" };
 static const char *OPT_HIGHMEM[5], *OPT_MSCACHE[4], *OPT_INFERNO[3], *OPT_LOGOS[4], *OPT_PICS[4];
 static const char *OPT_UMDREG[4], *OPT_VSHREG[14], *OPT_LANG[LANG_COUNT];
+static const char *OPT_BUTTON[CTL_COUNT];                                     /* the PSP's setting, then ✕ ○ □ △ (each is shown with its symbol, too) */
+static const char *OPT_PSP_CONFIRM[2];                                       /* the PSP's own confirm button: Cross or Circle */
+static const char *const OPT_START_SELECT[] = { "START", "SELECT" };          /* the options button */
+static const char *const OPT_SELECT_START[] = { "SELECT", "START" };          /* the power menu button: the same setting, the other way round */
 
 static void build_options(void)
 {
@@ -103,6 +114,11 @@ static void build_options(void)
     memcpy(OPT_VSHREG, vsh, sizeof(vsh));
     for (int i = 0; i < LANG_COUNT; i++)
         OPT_LANG[i] = lang_name(i);
+    OPT_BUTTON[CTL_PSP] = L(S_CTL_PSP_SETTING);
+    OPT_BUTTON[CTL_CROSS] = OPT_PSP_CONFIRM[0] = L(S_BTN_CROSS);
+    OPT_BUTTON[CTL_CIRCLE] = OPT_PSP_CONFIRM[1] = L(S_BTN_CIRCLE);
+    OPT_BUTTON[CTL_SQUARE] = L(S_BTN_SQUARE);
+    OPT_BUTTON[CTL_TRIANGLE] = L(S_BTN_TRIANGLE);
 }
 
 /* ARK:s runlevel i PLUGINS.TXT → läsbar text */
@@ -166,6 +182,28 @@ static void info(Category *c, const char *label, const char *value)
     snprintf(add(c, label, IT_INFO)->info, sizeof(((Item *)0)->info), "%s", value);
 }
 
+/* --- the Controls category: values that are buttons --- */
+
+static unsigned char s_psp_circle; /* the PSP's own setting as the system says it: 1 = ○ confirms (read when the menu is built) */
+
+static int glyph_of_ctl(int ctl)
+{
+    return ctl == CTL_CROSS ? BTN_CROSS : ctl == CTL_CIRCLE ? BTN_CIRCLE : ctl == CTL_SQUARE ? BTN_SQUARE : ctl == CTL_TRIANGLE ? BTN_TRIANGLE : -1;
+}
+/* the two values of "PSP button assignment": the symbol of the button that confirms */
+static int glyph_psp(int opt) { return opt ? BTN_CIRCLE : BTN_CROSS; }
+/* the values of Confirm and Back: the PSP's setting (shown with the symbol of the button it gives that job now), then ✕ ○ □ △ */
+static int glyph_confirm(int opt) { return opt == CTL_PSP ? (controls_psp_circle() ? BTN_CIRCLE : BTN_CROSS) : glyph_of_ctl(opt); }
+static int glyph_back(int opt) { return opt == CTL_PSP ? (controls_psp_circle() ? BTN_CROSS : BTN_CIRCLE) : glyph_of_ctl(opt); }
+/* The PSP's own setting is changed in the system (so the XMB follows) and what the system says afterwards is what counts. */
+static void set_psp(int opt)
+{
+    s_psp_circle = sys_set_confirm_is_circle(opt) ? 1 : 0;
+    controls_psp_assignment(s_psp_circle);
+}
+static void set_confirm(int opt) { controls_set_confirm(opt); }
+static void set_back(int opt) { controls_set_back(opt); }
+
 /* "ARK-5 · PSP-2000" – vilken CFW och modell psp5 upptäckte */
 static const char *system_name(void)
 {
@@ -219,6 +257,29 @@ static void build(int rebuild)
         Item *it = add(c, theme_get(i)->name, IT_THEME);
         it->action = i;
         it->own = 1;
+    }
+
+    c = &s_cats[CAT_CONTROLS];
+    c->name = L(S_CAT_CONTROLS);
+    c->desc = L(S_DESC_CONTROLS);
+    s_psp_circle = sys_confirm_is_circle() ? 1 : 0;
+    controls_psp_assignment(s_psp_circle); /* (what the PSP says may have changed since the start: the XMB, a game) */
+    {
+        Item *it;
+        choice(c, L(S_CTL_PSP_ASSIGN), &s_psp_circle, OPT_PSP_CONFIRM, 2);
+        it = &c->items[c->count - 1];
+        it->glyph = glyph_psp; it->set = set_psp; it->immediate = 1;
+        choice(c, L(S_CTL_CONFIRM), &g_ctl_confirm, OPT_BUTTON, CTL_COUNT);
+        it = &c->items[c->count - 1];
+        it->glyph = glyph_confirm; it->set = set_confirm; it->own = 1;
+        choice(c, L(S_BACK), &g_ctl_back, OPT_BUTTON, CTL_COUNT);
+        it = &c->items[c->count - 1];
+        it->glyph = glyph_back; it->set = set_back; it->own = 1;
+        /* Options and the power menu are one setting seen from both sides: START / SELECT, either way round */
+        choice(c, L(S_OPTIONS), &g_ctl_options, OPT_START_SELECT, 2);
+        c->items[c->count - 1].own = 1;
+        choice(c, L(S_CTL_POWER), &g_ctl_options, OPT_SELECT_START, 2);
+        c->items[c->count - 1].own = 1;
     }
 
     c = &s_cats[CAT_PERF];
@@ -371,6 +432,8 @@ static int vertical(const UiInput *in, int stick, float dt)
 
 static void mark_dirty(const Item *it)
 {
+    if (it->immediate)
+        return;
     if (it->own)
         S.own_dirty = 1;
     else if (it->plugin)
@@ -387,7 +450,10 @@ static float smooth(float t) { t = clampf(t, 0, 1); return t * t * (3 - 2 * t); 
 /* A new value for a choice. A new language changes every text, so the menu is built again. */
 static void choice_set(Item *it, int v)
 {
-    *it->value = v;
+    if (it->set)
+        it->set(v);
+    else
+        *it->value = v;
     mark_dirty(it);
     if (it->value == &g_lang_setting) {
         lang_apply();
@@ -471,7 +537,7 @@ int settings_update(const UiInput *in, float dt)
             S.focus = 1;
             sound_play(SND_SELECT);
         }
-        if (p & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) {
+        if (p & PSP_CTRL_CIRCLE) { /* back */
             sound_play(SND_BACK);
             return SA_CLOSE;
         }
@@ -504,9 +570,6 @@ int settings_update(const UiInput *in, float dt)
         } else if (p & (PSP_CTRL_CIRCLE | PSP_CTRL_LEFT)) {
             S.focus = 0;
             sound_play(SND_BACK);
-        } else if (p & PSP_CTRL_TRIANGLE) {
-            sound_play(SND_BACK);
-            return SA_CLOSE;
         }
     }
 
@@ -519,6 +582,11 @@ int settings_update(const UiInput *in, float dt)
             target = y - visible;
     }
     S.scroll = approach(S.scroll, target, 14.0f, dt);
+    if (S.cat < S.cat_top) /* the left column scrolls when there are more categories than fit */
+        S.cat_top = S.cat;
+    if (S.cat > S.cat_top + VIS_CATS - 1)
+        S.cat_top = S.cat - (VIS_CATS - 1);
+    S.cat_scroll = approach(S.cat_scroll, S.cat_top, 14.0f, dt);
     return SA_NONE;
 }
 
@@ -637,9 +705,16 @@ static void draw_item(const Item *it, float y, int selected, const Theme *shown,
         right -= 34;
         snprintf(value, sizeof(value), "%s", it->info); /* plugins: var den laddas */
         break;
-    case IT_CHOICE: /* just the value: ✕ opens a popup with the others */
+    case IT_CHOICE: { /* just the value: ✕ opens a popup with the others */
         snprintf(value, sizeof(value), "%s", it->opts[*it->value]);
+        int g = it->glyph ? it->glyph(*it->value) : -1; /* a button: its symbol at the end of the row, the words (if any) before it */
+        if (g >= 0) {
+            float bw = gfx_button_width(g);
+            gfx_button(right - ceilf(bw / 2), y + 13, 6.5f, g, fade(LIGHT, a), fade(RGBA(20, 20, 26, 255), a));
+            right -= ceilf(bw) + (value[0] ? 6 : 0);
+        }
         break;
+    }
     case IT_INFO:
         snprintf(value, sizeof(value), "%s", it->info);
         break;
@@ -680,8 +755,10 @@ static void draw_popup(void)
     const Item *it = &s_cats[S.pop_cat].items[S.pop_item];
     int n = it->nopts, vis = n < POP_ROWS ? n : POP_ROWS, bar = n > vis;
     float w = 200;
-    for (int k = 0; k < n; k++)
-        w = fmaxf(w, ceilf(text_width(0.62f, 0, it->opts[k])) + 32 + (bar ? 12 : 0));
+    for (int k = 0; k < n; k++) {
+        int g = it->glyph ? it->glyph(k) : -1;
+        w = fmaxf(w, ceilf(text_width(0.62f, 0, it->opts[k])) + 32 + (bar ? 12 : 0) + (g >= 0 ? ceilf(gfx_button_width(g)) + (it->opts[k][0] ? 8 : 0) : 0));
+    }
     w = 2 * ceilf(fminf(w, SCREEN_W - 40) / 2); /* (even, so that the panel sits on whole pixels) */
     float h = 2 * POPUP_EDGE + vis * POPUP_ITEM, x = (SCREEN_W - w) / 2, y = (SCREEN_H - h) / 2 + (1 - a) * 10;
     float inner = w - 2 * POPUP_EDGE - (bar ? 12 : 0);
@@ -697,7 +774,15 @@ static void draw_popup(void)
             popup_choice(x + POPUP_EDGE, ry, inner, POPUP_ITEM, a);
         else
             col = fade(col, 0.8f);
-        text_draw(x + 16, ry + 18, text_fit(0.62f, 0.45f, 0, inner - 22, it->opts[k]), 0, fade(col, a), ALIGN_LEFT, it->opts[k]);
+        float tx = x + 16;
+        int g = it->glyph ? it->glyph(k) : -1;
+        if (g >= 0) { /* a value that is a button: its symbol first, then the words, if there are any */
+            float bw = ceilf(gfx_button_width(g));
+            gfx_button(tx + bw / 2, ry + 14, 6.5f, g, fade(LIGHT, a), fade(RGBA(20, 20, 26, 255), a * (k == S.pop_sel ? 1.0f : 0.9f)));
+            tx += bw + 8;
+        }
+        if (it->opts[k][0])
+            text_draw(tx, ry + 18, text_fit(0.62f, 0.45f, 0, inner - 22 - (tx - (x + 16)), it->opts[k]), 0, fade(col, a), ALIGN_LEFT, it->opts[k]);
     }
     gfx_clip_reset();
     if (bar) { /* where the shown part is in the whole list */
@@ -720,17 +805,29 @@ void settings_draw(void)
     draw_background(shown);
     text_draw(LEFT_X - 4 + slide, TITLE_Y, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_SETTINGS));
 
-    /* kategorier */
+    /* kategorier (more than fit: the column scrolls, the rows at its ends fade, and a small arrow says there are more) */
     for (int i = 0; i < CAT_COUNT; i++) {
-        float y = LIST_TOP + i * 30;
+        float y = LIST_TOP + (i - S.cat_scroll) * 30;
+        float edge = clampf((y - (LIST_TOP - ROW_H)) / ROW_H, 0, 1) * clampf((LIST_TOP + VIS_CATS * 30 - y) / ROW_H, 0, 1);
+        if (edge <= 0)
+            continue;
+        float ca = a * edge;
         int selected = i == S.cat;
         float ta = selected ? 1.0f : S.focus ? 0.42f : 0.8f;
         if (selected && S.focus == 0) {
-            gfx_rect(LEFT_X, y, LEFT_W, ROW_H, RGBA(255, 255, 255, (int)(16 * a)));
-            gfx_frame(LEFT_X, y, LEFT_W, ROW_H, 1, fade(RGBA(232, 232, 236, 230), a));
+            gfx_rect(LEFT_X, y, LEFT_W, ROW_H, RGBA(255, 255, 255, (int)(16 * ca)));
+            gfx_frame(LEFT_X, y, LEFT_W, ROW_H, 1, fade(RGBA(232, 232, 236, 230), ca));
         }
         float cs = text_fit(0.66f, 0.5f, 0, LEFT_W - 16, s_cats[i].name);
-        text_draw(LEFT_X + 10 + slide, y + 17.5f, cs, 0, fade(TEXT_MAIN, a * ta), ALIGN_LEFT, s_cats[i].name);
+        text_draw(LEFT_X + 10 + slide, y + 17.5f, cs, 0, fade(TEXT_MAIN, ca * ta), ALIGN_LEFT, s_cats[i].name);
+    }
+    for (int dir = -1; dir <= 1; dir += 2) { /* ˄ above and ˅ below, when there are more categories that way */
+        if (dir < 0 ? S.cat_top <= 0 : S.cat_top + VIS_CATS >= CAT_COUNT)
+            continue;
+        float cx = LEFT_X + LEFT_W / 2, cy = dir < 0 ? LIST_TOP - 8 : LIST_TOP + VIS_CATS * 30 + 4;
+        float xy[6] = { cx - 5, cy - dir * 2, cx, cy + dir * 2, cx + 5, cy - dir * 2 };
+        u32 col[3] = { fade(TEXT_DIM, a), fade(TEXT_DIM, a), fade(TEXT_DIM, a) };
+        gfx_stroke(xy, col, 3, 1.6f);
     }
 
     /* alternativ */

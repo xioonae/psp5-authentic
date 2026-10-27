@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "config.h"
+#include "controls.h"
 #include "sound.h"
 #include "lang.h"
 #include "theme.h"
@@ -14,7 +15,7 @@ unsigned char g_lib_view = 0;    /* the Library's view button: 0 = all, 1 = only
 
 void config_load(const char *data_dir)
 {
-    char path[200], buf[256] = "";
+    char path[200], buf[384] = "";
     snprintf(path, sizeof(path), "%s/psp5.cfg", data_dir);
     SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
     if (fd >= 0) {
@@ -38,17 +39,26 @@ void config_load(const char *data_dir)
             g_lib_sort = p[8] == '1';
         if ((p = strstr(buf, "libview=")) && p[8] >= '0' && p[8] <= '3')
             g_lib_view = p[8] - '0';
+        if ((p = strstr(buf, "confirm=")))
+            g_ctl_confirm = controls_from_code(p + 8);
+        if ((p = strstr(buf, "back=")))
+            g_ctl_back = controls_from_code(p + 5);
+        if ((p = strstr(buf, "options=")))
+            g_ctl_options = !strncmp(p + 8, "select", 6);
+        if (g_ctl_confirm == g_ctl_back && g_ctl_confirm != CTL_PSP) /* a file with the same button twice: back goes to the PSP's */
+            g_ctl_back = CTL_PSP;
     }
     lang_apply();
 }
 
 void config_save(const char *data_dir)
 {
-    char path[200], buf[192];
+    char path[200], buf[384];
     snprintf(path, sizeof(path), "%s/psp5.cfg", data_dir);
-    int n = snprintf(buf, sizeof(buf), "sound=%d\nbootanim=%d\nlang=%s\ntheme=%s\nthemeart=%d\nbatterypct=%d\nlibsort=%d\nlibview=%d\n",
+    int n = snprintf(buf, sizeof(buf), "sound=%d\nbootanim=%d\nlang=%s\ntheme=%s\nthemeart=%d\nbatterypct=%d\nlibsort=%d\nlibview=%d\nconfirm=%s\nback=%s\noptions=%s\n",
                      g_sound_on ? 1 : 0, g_boot_anim ? 1 : 0, lang_code(g_lang_setting), theme_cur()->code,
-                     g_theme_art ? 1 : 0, g_battery_pct ? 1 : 0, g_lib_sort ? 1 : 0, g_lib_view <= 3 ? g_lib_view : 0);
+                     g_theme_art ? 1 : 0, g_battery_pct ? 1 : 0, g_lib_sort ? 1 : 0, g_lib_view <= 3 ? g_lib_view : 0,
+                     controls_code(g_ctl_confirm), controls_code(g_ctl_back), g_ctl_options ? "select" : "start");
     SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (fd >= 0) {
         sceIoWrite(fd, buf, n);
