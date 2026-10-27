@@ -39,8 +39,8 @@ The changes after 1.1.0 are noted here; the list for users is under *1.2.0* in `
     all caught but one that changes nothing (`sys_set_brightness(idx)` instead of `levels[idx]`: the level after the four is always the PSP's current one, which the popup never sends again); one hole was closed (an answer of exactly 100).
   - *Docs*: the "not tried on a PSP" notes are gone from the README, INSTALL, CHANGELOG and these notes; they say instead that an issue is welcome. `INSTALL.md` has the *Covers* section the README pointed to (it was missing), and the messages of
     `tools/covers.py` are in English.
-- **New screenshots for 1.2.0** (`docs/screenshots/`: 14 PNGs of 960 x 544, ~3 MB in all; `README.md`; `boot.c`). They replace the eight of 1.1.0 (`settings.png` and `startup.png` are gone, `settings-controls`, `settings-display`, `settings-about` and
-  `settings-theme` are new, as are `library-folders`, `information`, `file-manager` and `power-menu`). **There is no picture of the start-up screen on purpose:** it shows Sony's PlayStation logo, so the maintainer decided to keep it out of the README (the logo is still drawn by the app). The pictures are the 480 x 272 frames of PPSSPP's software renderer (`PPSSPPHeadless`, v1.20.4, built from source), enlarged 2 x with
+- **New screenshots for 1.2.0** (`docs/screenshots/`: 14 PNGs of 960 x 544, ~3 MB in all; `README.md`; `boot.c`). They replace the eight of 1.1.0 (`settings.png` is gone; `settings-controls`, `settings-display`, `settings-about` and
+  `settings-theme` are new, as are `library-folders`, `information`, `file-manager` and `power-menu`). The pictures are the 480 x 272 frames of PPSSPP's software renderer (`PPSSPPHeadless`, v1.20.4, built from source), enlarged 2 x with
   Lanczos. The app is a `-DPSP5_TEST` build run over an invented memory stick (14 games and apps with drawn pictures, in folders too, ten saves, six MP3 files with album art, played times); the buttons come from `ms0:/PSP5/test.txt` as always
   (`battery 82`, `charging 1`, `wifi 1`, `shot NAME` ...), and `psp5.cfg` sets `batterypct=1`, `theme=` / `themeart=` and `libview=`. Things the test build fakes are on the pictures: the clock is the time of the capture, the battery, the volume (18) and the
   brightness (3) are test values, and the model in *About* is the one from `fake.txt`. The PPSSPP side (a few lines in its `Headless.cpp` that write the displayed frame to `NAME.ppm` when `NAME.req` appears, and one line in its flash0 reader, which
@@ -500,8 +500,7 @@ The entries below were written between 1.0.0 and 1.1.0.
     been tested", "About this fork", Building, Thanks, License. The covers section is one sentence that points to `INSTALL.md`.
     Nothing about "PS5" (the theme list in the app shows that name, so no screenshot of the Theme page is used).
   - The screenshot table is HTML (`<table>`, two columns, a caption under each picture) because a Markdown table can't have
-    captions under the images without a duplicated header row. Eight PNGs in `docs/screenshots/` at the time (`games`, `options`, `library`,
-    `saved-data`, `music`, `settings`, `theme`, `startup`); 1.2.0 replaced them with fourteen (none of the start-up screen), see *New screenshots for 1.2.0* at the top.
+    captions under the images without a duplicated header row. Eight PNGs in `docs/screenshots/` at the time; 1.2.0 replaced them with fourteen, see *New screenshots for 1.2.0* at the top.
   - CHANGELOG: same facts, shorter bullets. *Unreleased* is grouped into Library / Top bar / Docs, 1.0.0 keeps its groups.
     Some 1.0.0 details that only matter to developers were dropped from there (they are in these notes): the popup look "lives
     in `popup.c`", the faint light fill of the popup panel, the 60 % beam is kept.
