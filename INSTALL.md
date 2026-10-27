@@ -29,7 +29,7 @@ replaces an installed psp5 and keeps its settings and covers (the image cache is
    computer (for example `E:`).
 2. Copy the **`PSP` and `PSP5` folders** from the zip onto that drive. If your computer asks, say yes to merging
    folders. (`PSP5` holds psp5's sounds; without it psp5 plays its built-in ones.)
-3. Eject the drive, unplug the cable and press ○ on the PSP.
+3. Eject the drive, unplug the cable and press Back (○) on the PSP.
 
 ## 3. Start psp5
 
@@ -45,7 +45,7 @@ Then *Custom Launcher* in the XMB opens psp5, and your PSP can start straight in
 1. Connect the PSP with USB and open `PSP/SAVEDATA/ARK_01234/`.
 2. Rename the `VBOOT.PBP` that's there to `VBOOT_ARKMENU.PBP`. That keeps ARK's own menu as a backup.
 3. Copy `VBOOT.PBP` from the zip's `ARK_LAUNCHER` folder into `ARK_01234`.
-4. In psp5, open the settings (↑ to the top bar, → to the cog wheel, ✕) → *psp5* → turn on *Boot into psp5*, then restart the PSP.
+4. In psp5, open the settings (↑ to the top bar, → to the cog wheel, then Confirm) → *psp5* → turn on *Boot into psp5*, then restart the PSP.
 
 To get to the XMB from there: settings → *Power and USB* → *Exit to XMB*.
 
@@ -81,7 +81,7 @@ Every screen uses the same few buttons for the same things:
 | ✕ | **Confirm**: start the game, open, choose, switch on or off (in Music: play / pause) |
 | ○ | **Back**: one step back, close a popup or a screen (it closes the Library) |
 | START | **Options**: of the selected game, card or file · on the Library card: pin / unpin · START again closes the options |
-| SELECT | **Power menu** on every tab: Sleep, Shut down, Restart, Recovery menu (✕ does it at once, ○ or SELECT closes) |
+| SELECT | **Power menu** on every tab: Sleep, Shut down, Restart, Recovery menu (Confirm does it at once, Back or SELECT closes) |
 | L / R | **Switch tabs**: Games and Music (not in the Library: ○ closes it) · in a long list a page up / down |
 | □ △ | Extras on a few screens only: mark / select all in a list (*Manage Saved Data*, the file manager), □ pauses the music |
 | HOME | Back to the XMB (not as custom launcher)|
