@@ -9,10 +9,6 @@ wherever it can, but it doesn't copy the console in everything.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/startup-logo.png" alt="Startup logo"><br><sub><b>Startup</b> – the PlayStation logo, drawn by psp5 itself (no picture)</sub></td>
-    <td width="50%"><img src="docs/screenshots/startup.png" alt="Startup screen"><br><sub><b>Startup</b> – soft circles and golden dust in the colours of your theme (here Cosmic Red)</sub></td>
-  </tr>
-  <tr>
     <td width="50%"><img src="docs/screenshots/games.png" alt="Games"><br><sub><b>Games</b> – the games you played last and the ones you pinned, with the Library as the last card</sub></td>
     <td width="50%"><img src="docs/screenshots/options.png" alt="Options of a game"><br><sub><b>Options</b> (START) – saved data, information, pin to or remove from Home, delete</sub></td>
   </tr>
