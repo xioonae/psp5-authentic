@@ -33,7 +33,7 @@ Optional - use psp5 as ARK's launcher:
   ARK_LAUNCHER/VBOOT.PBP from this zip into PSP/SAVEDATA/ARK_01234/.
 
 Music: put .mp3 files in the MUSIC folder.
-Made with Claude, an AI assistant. Tested on a PSP-1000 only - please report problems in the repository.
+Made with Claude, an AI assistant. Something not working? Please open an issue in the project's repository and say which PSP and ARK you have.
 Stuck? Hold SELECT while turning on the PSP - ARK then starts the normal XMB.
 Full guide: INSTALL.md in the project's repository.
 """
@@ -58,7 +58,7 @@ Optional - use psp5 as ARK's launcher:
   ARK_LAUNCHER/VBOOT.PBP from this zip into PSP/SAVEDATA/ARK_01234/
   (on the internal storage).
 
-Made with Claude, an AI assistant. Tested on a PSP-1000 only - please report problems in the repository.
+Made with Claude, an AI assistant. Something not working? Please open an issue in the project's repository and say which PSP and ARK you have.
 Stuck? Hold SELECT while turning on the PSP - ARK then starts the normal XMB.
 Full guide: INSTALL.md in the project's repository.
 """
