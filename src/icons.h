@@ -28,7 +28,8 @@ enum {
     ICON_RFRAME_S, /* the same with the thinner ICON_FRAME_T_S - the ring around the selected card of the library grid */
     ICON_LIBRARY,  /* the picture of the Library card: 3 x 2 squares with a game controller in front, w * h whole pixels (see icon_library_width) */
     ICON_FOLDER,   /* the picture of a folder card: a tab and a body in one piece, w * h whole pixels (see icon_folder_pic), every edge on a pixel line */
-    ICON_WIFI      /* the Wi-Fi sign: a small square with three quarter circle arcs round it, soft edged, in a square of side 2 r (r = 7 for the usual size) */
+    ICON_WIFI,     /* the Wi-Fi sign: a small square with three quarter circle arcs round it, soft edged, in a square of side 2 r (r = 7 for the usual size) */
+    ICON_LOGO      /* the logo of the boot screen: three solid shapes drawn from their outline, w * h pixels (see icon_logo_width), in one image */
 };
 
 #define ICON_FRAME_T   2.5f /* thickness of ICON_RFRAME in pixels (about what the big card's ring always had) */
@@ -68,6 +69,18 @@ typedef struct {
     int tab_rl, tab_rr; /* radius of the tab's top left corner (it is also the corner of the whole folder) and of its top right corner */
 } FolderPic;
 void icon_folder_pic(int l, int t, int w, int h, FolderPic *p);
+
+/* The logo of the boot screen (the PlayStation logo, drawn from the outline of its three shapes: the P with its stem and the two swooshes, no
+ * picture) is `h` pixels high; this is how wide it is. icon_render(ICON_LOGO, w, h, 0, cx, cy, tw, th, out) gives its image with w = icon_logo_width(h)
+ * and the middle of the logo at (cx, cy): the edges are anti-aliased from the exact area each pixel has inside the outline. Images up to
+ * ICON_LOGO_MAX_W wide can be made (a wider one comes out empty). */
+#define ICON_LOGO_MAX_W 128
+int icon_logo_width(int h);
+
+/* The corners of the logo's shapes, for drawing the outline when there is no room for the image: shape `i` (0 to 2) is put at xy[2n] in the box
+ * of w * h pixels whose top left corner is (x, y); returns n (at most ICON_LOGO_MAX_PTS), or 0 when there is no shape i. */
+#define ICON_LOGO_MAX_PTS 64
+int icon_logo_outline(int i, float x, float y, float w, float h, float *xy);
 
 /* The box for a shape centred on (cx, cy) on the screen. `w`, `h` are only used by ICON_RRECT and
  * the triangles (where they are the size of the triangle). */

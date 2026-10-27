@@ -761,6 +761,30 @@ void gfx_folder_icon(int l, int t, int w, int h, u32 color, FolderPic *pic)
     gfx_round_rect(p.x, p.y + p.tab_h, p.w, p.h - p.tab_h, p.r, color);
 }
 
+/* The logo of the boot screen: one image with a transparent pixel round it, made once. If there is no room for it in the cache (it never is, at the
+ * start, when the boot screen runs) the outline of the three shapes is stroked, which is plain but still the logo. */
+void gfx_logo(int x, int y, int h, u32 color)
+{
+    int w = icon_logo_width(h), tw = w + 2, th = h + 2;
+    IconBox b = { tw, th, x - 1, y - 1, tw / 2.0f, th / 2.0f, 0, 0 };
+    const Texture *tex = cache_get(ICON_LOGO, w * 4, h * 4, 0, 0, 0, tw, th, tw / 2.0f, th / 2.0f);
+    if (tex) {
+        icon_blit(tex, &b, color);
+        return;
+    }
+    for (int i = 0; i < 3; i++) {
+        float xy[2 * (ICON_LOGO_MAX_PTS + 1)];
+        u32 col[ICON_LOGO_MAX_PTS + 1];
+        int n = icon_logo_outline(i, (float)x, (float)y, (float)w, (float)h, xy);
+        if (!n)
+            continue;
+        xy[2 * n] = xy[0], xy[2 * n + 1] = xy[1]; /* round to where it began */
+        for (int k = 0; k <= n; k++)
+            col[k] = color;
+        gfx_stroke(xy, col, n + 1, 2.0f);
+    }
+}
+
 /* The height of a capital letter of the system font is 13.7 px at size 1.0 (measured on the README screenshots, which PPSSPP made with the
  * real font: the A of the Library title at size 0.66 is 9 px high, the clock's digits at 0.8 are 11 px). */
 #define CAP_HEIGHT 13.7f

@@ -364,8 +364,140 @@ static float shape_distance(const Shape *p, float px, float py)
     }
 }
 
+/* --- the logo of the boot screen ---
+ *
+ * The outline of the PlayStation logo, as three closed shapes (the P with its stem, the left swoosh, the right swoosh) whose corners are in
+ * half pixels of a 2000 x 1544 picture of it (4000 x 3088 units). The corners were traced from a reference picture of the logo (along the edge
+ * where it is half transparent, simplified until no corner is more than one pixel of that picture off; tools/trace_logo.py does it): 142 points,
+ * about 570 bytes, where the picture itself would be hundreds of kilobytes. Every corner is on the edge of the logo and the edge between two corners is straight,
+ * so at the size it is drawn (about 90 px wide) the outline is smooth to the eye. No shape touches another, and each one goes round the same way. */
+#define LOGO_UNITS_W 4000
+#define LOGO_UNITS_H 3088
+#define LOGO_SHAPES 3
+static const unsigned char logo_len[LOGO_SHAPES] = { 49, 45, 48 };
+static const unsigned short logo_pts[] = {
+    1498, 1, 1615, 24, 1835, 78, 2203, 184, 2505, 286, 2621, 336,
+    2717, 386, 2803, 440, 2875, 496, 2930, 549, 2980, 609, 3024, 677,
+    3050, 727, 3084, 817, 3106, 903, 3124, 1017, 3132, 1121, 3132, 1247,
+    3126, 1331, 3114, 1407, 3090, 1493, 3062, 1561, 3024, 1627, 2984, 1677,
+    2947, 1712, 2923, 1730, 2871, 1760, 2809, 1782, 2741, 1794, 2649, 1794,
+    2575, 1782, 2497, 1760, 2415, 1726, 2406, 1717, 2406, 711, 2402, 671,
+    2392, 627, 2382, 599, 2358, 559, 2321, 526, 2277, 508, 2241, 504,
+    2217, 510, 2189, 531, 2168, 561, 2154, 601, 2148, 649, 2147, 3088,
+    1498, 2881, 1361, 1745, 1368, 1745, 1368, 2119, 1365, 2122, 689, 2364,
+    621, 2400, 598, 2427, 594, 2447, 600, 2461, 629, 2484, 655, 2496,
+    693, 2506, 769, 2514, 847, 2514, 895, 2510, 967, 2498, 1023, 2484,
+    1367, 2360, 1368, 2695, 1365, 2698, 1287, 2712, 1195, 2724, 1013, 2736,
+    923, 2736, 781, 2728, 677, 2716, 569, 2698, 477, 2678, 363, 2648,
+    233, 2606, 193, 2590, 131, 2558, 87, 2528, 42, 2485, 20, 2453,
+    8, 2427, 0, 2395, 0, 2361, 16, 2313, 38, 2281, 65, 2255,
+    111, 2222, 179, 2182, 279, 2134, 377, 2094, 2942, 1907, 3067, 1906,
+    3147, 1910, 3257, 1920, 3381, 1938, 3479, 1958, 3581, 1984, 3663, 2010,
+    3803, 2062, 3859, 2090, 3903, 2118, 3935, 2144, 3958, 2167, 3976, 2191,
+    3992, 2223, 4000, 2255, 3998, 2297, 3978, 2345, 3964, 2365, 3939, 2392,
+    3881, 2438, 3819, 2476, 3737, 2516, 3655, 2548, 2273, 3043, 2273, 2666,
+    3323, 2292, 3381, 2264, 3393, 2256, 3416, 2231, 3422, 2217, 3422, 2207,
+    3414, 2191, 3383, 2168, 3341, 2152, 3293, 2144, 3239, 2140, 3147, 2142,
+    3069, 2152, 3009, 2166, 2947, 2186, 2273, 2424, 2273, 2032, 2345, 2008,
+    2429, 1984, 2611, 1944, 2779, 1918, 2867, 1910,
+};
+
+int icon_logo_width(int h)
+{
+    return (int)((float)h * LOGO_UNITS_W / LOGO_UNITS_H + 0.5f);
+}
+
+int icon_logo_outline(int i, float x, float y, float w, float h, float *xy)
+{
+    if (i < 0 || i >= LOGO_SHAPES)
+        return 0;
+    const unsigned short *p = logo_pts;
+    for (int k = 0; k < i; k++)
+        p += 2 * logo_len[k];
+    for (int k = 0; k < logo_len[i]; k++) {
+        xy[2 * k] = x + p[2 * k] * w / LOGO_UNITS_W;
+        xy[2 * k + 1] = y + p[2 * k + 1] * h / LOGO_UNITS_H;
+    }
+    return logo_len[i];
+}
+
+/* One pixel row of the coverage, by the exact area of each pixel inside the outline: every edge that crosses the row adds how much of a pixel
+ * is covered to the right of it to `acc` (the method of font-rs), and the running sum along the row is the coverage. `acc` has tw + 2 entries.
+ * (x0, y0) - (x1, y1) is in pixels of the image; the row is y .. y + 1. */
+static void logo_edge(float *acc, int tw, int y, float x0, float y0, float x1, float y1)
+{
+    if (y0 == y1)
+        return;
+    float dir = 1;
+    if (y0 > y1) {
+        float t;
+        dir = -1;
+        t = x0, x0 = x1, x1 = t;
+        t = y0, y0 = y1, y1 = t;
+    }
+    if (y1 <= (float)y || y0 >= (float)(y + 1))
+        return;
+    float dxdy = (x1 - x0) / (y1 - y0);
+    float ya = fmaxf(y0, (float)y), yb = fminf(y1, (float)(y + 1));
+    float xa = clampf(x0 + (ya - y0) * dxdy, 0, (float)tw), xb = clampf(x0 + (yb - y0) * dxdy, 0, (float)tw);
+    float d = (yb - ya) * dir;
+    float xl = fminf(xa, xb), xr = fmaxf(xa, xb);
+    float xlf = floorf(xl);
+    int il = (int)xlf, ir = (int)ceilf(xr);
+    if (ir <= il + 1) { /* inside one pixel (or on the line between two) */
+        float xm = 0.5f * (xa + xb) - xlf;
+        acc[il] += d - d * xm;
+        acc[il + 1] += d * xm;
+        return;
+    }
+    float s = 1.0f / (xr - xl);
+    float fl = xl - xlf;
+    float a0 = 0.5f * s * (1 - fl) * (1 - fl);
+    float fr = xr - (float)ir + 1;
+    float am = 0.5f * s * fr * fr;
+    acc[il] += d * a0;
+    if (ir == il + 2) {
+        acc[il + 1] += d * (1 - a0 - am);
+    } else {
+        float a1 = s * (1.5f - fl);
+        acc[il + 1] += d * (a1 - a0);
+        for (int x = il + 2; x < ir - 1; x++)
+            acc[x] += d * s;
+        float a2 = a1 + (float)(ir - il - 3) * s;
+        acc[ir - 1] += d * (1 - a2 - am);
+    }
+    acc[ir] += d * am;
+}
+
+static void logo_render(float w, float h, float cx, float cy, int tw, int th, unsigned char *out)
+{
+    memset(out, 0, (size_t)tw * th);
+    if (tw > ICON_LOGO_MAX_W)
+        return;
+    float acc[ICON_LOGO_MAX_W + 2];
+    float px[LOGO_SHAPES][2 * ICON_LOGO_MAX_PTS];
+    int n[LOGO_SHAPES];
+    for (int i = 0; i < LOGO_SHAPES; i++)
+        n[i] = icon_logo_outline(i, cx - w / 2, cy - h / 2, w, h, px[i]);
+    for (int y = 0; y < th; y++) {
+        memset(acc, 0, sizeof(float) * (tw + 2));
+        for (int i = 0; i < LOGO_SHAPES; i++)
+            for (int k = 0, j = n[i] - 1; k < n[i]; j = k++)
+                logo_edge(acc, tw, y, px[i][2 * j], px[i][2 * j + 1], px[i][2 * k], px[i][2 * k + 1]);
+        float sum = 0;
+        for (int x = 0; x < tw; x++) {
+            sum += acc[x];
+            out[y * tw + x] = (unsigned char)(clampf(fabsf(sum), 0, 1) * 255.0f + 0.5f);
+        }
+    }
+}
+
 void icon_render(int kind, float w, float h, float r, float cx, float cy, int tw, int th, unsigned char *out)
 {
+    if (kind == ICON_LOGO) {
+        logo_render(w, h, cx, cy, tw, th, out);
+        return;
+    }
     Shape sh = { .kind = kind, .w = w, .h = h, .r = r };
     sh.sw = fmaxf(1.5f, 0.23f * r); /* line width of the symbols */
     sh.s = 0.45f * r;               /* half size of the symbols */
