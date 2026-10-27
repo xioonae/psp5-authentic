@@ -24,6 +24,23 @@ into psp5 instead of the XMB.
 
 All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`) until the next version is released.
 
+- **Settings: a choice is picked from a popup** (`settings.c`). `IT_CHOICE` items used to change with ← → (and ✕ stepped to the next value); now ✕ calls
+  `pop_open(cat, item)`, which sets `S.pop`, `S.pop_cat/item`, `S.pop_sel` (the current value) and `S.pop_top` (the first value shown: the current one in
+  the middle, `clampf(sel - vis / 2, 0, n - vis)`, and `S.pop_scroll` = `S.pop_top` at once so nothing slides when it opens). While `S.pop` is set, `pop_update` gets the
+  buttons (↑ ↓ with the same repeat as the lists, ✕ takes the value through `choice_set`, ○ closes it; nothing else does anything, not even △). `choice_set` is the code that
+  used to be in the ← → branch (`mark_dirty`, and a new language: `lang_apply`, the CJK font, `build(1)`); choosing the value the setting has is no change and marks nothing.
+  ← is "back to the categories" on every kind of row now (it changed the value of a choice before). `S.pop_anim` fades the popup in and out (the list behind it keeps
+  scrolling into place: the "keep the chosen row in view" code at the end of `settings_update` runs while the popup is open too; an early `return` there left the rows
+  half way between two pixels).
+  *Drawing* (`draw_popup`): `popup_dim`, `popup_panel` (`POPUP_DARK`) and `popup_choice` like `draw_menu` in `ui.c`; in the middle of the screen, rising into place like the power popup;
+  `w` = the widest value + 32 (at least 200, at most the screen less 40, rounded up to an even number so the panel is on whole pixels), `POPUP_ITEM` per row; at most `POP_ROWS` = 8
+  rows (the clock list has 8, the regions 14, the languages 12); a longer list is clipped (`gfx_clip`) to the rows area and has a 3 px bar 6 px from the right edge
+  (track and thumb rounded to whole pixels; the thumb is at least 12 px).
+  *Tests* (`host-tests/settings/settings_test.c`, not in git): opening with the current value chosen and in the middle (four choices, three start values each), ← → and the stick sideways doing
+  nothing, ↑ ↓ to both ends (the list follows, one step per press, no wrapping), the stick, ○ keeping the value, ✕ taking it (ARK vs psp5's own flag, the saved file), the same value marking
+  nothing, △ / START doing nothing, the fade, a held direction repeating, the list scrolling on while the popup is open, the language (texts change at once), and the whole-pixel audit of the popup
+  of every choice at every value (`rec_round_rect` reads the bar, which the audit does not see).
+
 - **Top bar: new battery, Wi-Fi sign, the cog wheel at the end** (`ui.c`, `icons.c/.h`, `gfx.c/.h`, `testrun.c/.h`, `Makefile`).
   - *Layout* (`draw_top_bar`): from the right edge to the left, `TOP_GAP` = 12 px between the things. The cog wheel (`COG_R` 7:
     `gx = SCREEN_W - MARGIN - 7`, so its right edge is on the margin, where the clock's used to be; its frame is `popup_choice(gx - 15, ..., 30, ...)`

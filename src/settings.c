@@ -17,6 +17,7 @@
 #include "config.h"
 #include "theme.h"
 #include "osd.h"
+#include "popup.h"
 
 #define TITLE_Y     34.0f
 #define LEFT_X      32.0f
@@ -69,7 +70,12 @@ static struct {
     int repeat_dir;
     float repeat_timer;
     int stick_x;        /* the analog stick sideways as it was last time: -1, 0 or 1 */
+    /* the popup of a choice (✕ on it): the list of values, the one chosen, and the first one shown when there are more than fit */
+    int pop, pop_cat, pop_item, pop_sel, pop_top;
+    float pop_anim, pop_scroll;
 } S;
+
+#define POP_ROWS 8 /* the most values a popup shows at once; a longer list scrolls (the 14 regions, the 11 languages) */
 
 /* valtexter byggs om när språket ändras */
 static const char *const OPT_CLOCK[] = { "Auto", "133 MHz", "222 MHz", "333 MHz", "383 MHz", "403 MHz", "423 MHz", "443 MHz" };
@@ -376,6 +382,61 @@ static void mark_dirty(const Item *it)
 /* Övre kanten för rad i i den högra listan (innan scroll). */
 static float row_y(const Category *c, int i);
 
+static float smooth(float t) { t = clampf(t, 0, 1); return t * t * (3 - 2 * t); }
+
+/* A new value for a choice. A new language changes every text, so the menu is built again. */
+static void choice_set(Item *it, int v)
+{
+    *it->value = v;
+    mark_dirty(it);
+    if (it->value == &g_lang_setting) {
+        lang_apply();
+        if (lang_needs_cjk())
+            font_ensure_cjk();
+        build(1);
+    }
+}
+
+/* ✕ on a choice opens a popup with all its values (the way the other popups work), the current one chosen. No arrow changes a value
+ * any more, so a stray press while moving through the list can't change a setting. */
+static void pop_open(int cat, int item)
+{
+    const Item *it = &s_cats[cat].items[item];
+    int vis = it->nopts < POP_ROWS ? it->nopts : POP_ROWS;
+    S.pop = 1;
+    S.pop_cat = cat;
+    S.pop_item = item;
+    S.pop_sel = *it->value;
+    S.pop_top = (int)clampf(S.pop_sel - vis / 2, 0, it->nopts - vis);
+    S.pop_scroll = S.pop_top;
+}
+
+/* The popup: ↑ ↓ choose (a held direction repeats), ✕ takes the value, ○ closes it and keeps the old one. */
+static void pop_update(int move, u32 p)
+{
+    Item *it = &s_cats[S.pop_cat].items[S.pop_item];
+    int vis = it->nopts < POP_ROWS ? it->nopts : POP_ROWS;
+    if (move) {
+        int next = (int)clampf(S.pop_sel + move, 0, it->nopts - 1);
+        if (next != S.pop_sel)
+            sound_play(SND_MOVE);
+        S.pop_sel = next;
+    }
+    if (S.pop_sel < S.pop_top)
+        S.pop_top = S.pop_sel;
+    if (S.pop_sel > S.pop_top + vis - 1)
+        S.pop_top = S.pop_sel - (vis - 1);
+    if (p & PSP_CTRL_CROSS) {
+        S.pop = 0;
+        sound_play(SND_SELECT);
+        if (S.pop_sel != *it->value)
+            choice_set(it, S.pop_sel);
+    } else if (p & PSP_CTRL_CIRCLE) {
+        S.pop = 0;
+        sound_play(SND_BACK);
+    }
+}
+
 int settings_update(const UiInput *in, float dt)
 {
     S.open = clampf(S.open + dt * 5.0f, 0, 1);
@@ -395,7 +456,11 @@ int settings_update(const UiInput *in, float dt)
     }
     int move = vertical(in, sy, dt);
 
-    if (S.focus == 0) {
+    S.pop_anim = clampf(S.pop_anim + (S.pop ? 7 : -7) * dt, 0, 1);
+    if (S.pop) { /* a choice's popup is open: it gets all the buttons (the list behind it goes on scrolling into place) */
+        pop_update(move, p);
+        S.pop_scroll = approach(S.pop_scroll, S.pop_top, 14.0f, dt);
+    } else if (S.focus == 0) {
         if (move) {
             int cat = (int)clampf(S.cat + move, 0, CAT_COUNT - 1);
             if (cat != S.cat)
@@ -419,21 +484,9 @@ int settings_update(const UiInput *in, float dt)
             *sel = next;
             it = &c->items[*sel];
         }
-        int change = 0;
-        if (it->type == IT_CHOICE) {
-            if (p & (PSP_CTRL_RIGHT | PSP_CTRL_CROSS)) change = 1;
-            if (p & PSP_CTRL_LEFT) change = -1;
-        }
-        if (change) {
-            *it->value = (*it->value + change + it->nopts) % it->nopts;
-            mark_dirty(it);
+        if ((p & PSP_CTRL_CROSS) && it->type == IT_CHOICE) {
+            pop_open(S.cat, *sel);
             sound_play(SND_SELECT);
-            if (it->value == &g_lang_setting) {
-                lang_apply();
-                if (lang_needs_cjk())
-                    font_ensure_cjk();
-                build(1);
-            }
         } else if ((p & PSP_CTRL_CROSS) && it->type == IT_THEME) {
             if (g_theme != it->action) {
                 g_theme = it->action;
@@ -448,7 +501,7 @@ int settings_update(const UiInput *in, float dt)
             sound_play(SND_SELECT);
             sound_wait(400); /* låt ljudet höras innan något stängs */
             return it->action;
-        } else if ((p & PSP_CTRL_CIRCLE) || ((p & PSP_CTRL_LEFT) && it->type != IT_CHOICE)) {
+        } else if (p & (PSP_CTRL_CIRCLE | PSP_CTRL_LEFT)) {
             S.focus = 0;
             sound_play(SND_BACK);
         } else if (p & PSP_CTRL_TRIANGLE) {
@@ -584,11 +637,8 @@ static void draw_item(const Item *it, float y, int selected, const Theme *shown,
         right -= 34;
         snprintf(value, sizeof(value), "%s", it->info); /* plugins: var den laddas */
         break;
-    case IT_CHOICE:
-        if (selected)
-            snprintf(value, sizeof(value), "<   %s   >", it->opts[*it->value]);
-        else
-            snprintf(value, sizeof(value), "%s", it->opts[*it->value]);
+    case IT_CHOICE: /* just the value: ✕ opens a popup with the others */
+        snprintf(value, sizeof(value), "%s", it->opts[*it->value]);
         break;
     case IT_INFO:
         snprintf(value, sizeof(value), "%s", it->info);
@@ -618,6 +668,45 @@ static void draw_item(const Item *it, float y, int selected, const Theme *shown,
     /* långa etiketter (t.ex. tyska, japanska) krymper i stället för att krocka med värdet */
     float ls = text_fit(0.62f, 0.48f, 0, right - value_w - (RIGHT_X + 8), it->label);
     text_draw(RIGHT_X + 8, y + 17, ls, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, it->label);
+}
+
+/* The popup of a choice, in the middle of the screen and rising into place like the power popup: the values one under the other, the
+ * chosen one framed, and a thin bar at the right when there are more than POP_ROWS. */
+static void draw_popup(void)
+{
+    float a = smooth(S.pop_anim);
+    if (a <= 0)
+        return;
+    const Item *it = &s_cats[S.pop_cat].items[S.pop_item];
+    int n = it->nopts, vis = n < POP_ROWS ? n : POP_ROWS, bar = n > vis;
+    float w = 200;
+    for (int k = 0; k < n; k++)
+        w = fmaxf(w, ceilf(text_width(0.62f, 0, it->opts[k])) + 32 + (bar ? 12 : 0));
+    w = 2 * ceilf(fminf(w, SCREEN_W - 40) / 2); /* (even, so that the panel sits on whole pixels) */
+    float h = 2 * POPUP_EDGE + vis * POPUP_ITEM, x = (SCREEN_W - w) / 2, y = (SCREEN_H - h) / 2 + (1 - a) * 10;
+    float inner = w - 2 * POPUP_EDGE - (bar ? 12 : 0);
+    popup_dim(a);
+    popup_panel(x, y, w, h, POPUP_DARK, a);
+    gfx_clip(x, y + POPUP_EDGE, w, vis * POPUP_ITEM);
+    for (int k = 0; k < n; k++) {
+        float ry = y + POPUP_EDGE + (k - S.pop_scroll) * POPUP_ITEM;
+        if (ry < y - POPUP_ITEM || ry > y + h)
+            continue;
+        u32 col = POPUP_TEXT;
+        if (k == S.pop_sel)
+            popup_choice(x + POPUP_EDGE, ry, inner, POPUP_ITEM, a);
+        else
+            col = fade(col, 0.8f);
+        text_draw(x + 16, ry + 18, text_fit(0.62f, 0.45f, 0, inner - 22, it->opts[k]), 0, fade(col, a), ALIGN_LEFT, it->opts[k]);
+    }
+    gfx_clip_reset();
+    if (bar) { /* where the shown part is in the whole list */
+        float track_y = y + POPUP_EDGE + 4, track_h = vis * POPUP_ITEM - 8, bx = x + w - POPUP_EDGE - 6;
+        float thumb_h = floorf(fmaxf(12.0f, track_h * vis / n) + 0.5f);
+        float thumb_y = track_y + floorf((track_h - thumb_h) * clampf(S.pop_scroll / (n - vis), 0, 1) + 0.5f);
+        gfx_round_rect(bx, track_y, 3, track_h, 1.5f, RGBA(255, 255, 255, (int)(28 * a)));
+        gfx_round_rect(bx, thumb_y, 3, thumb_h, 1.5f, RGBA(255, 255, 255, (int)(150 * a)));
+    }
 }
 
 void settings_draw(void)
@@ -672,6 +761,7 @@ void settings_draw(void)
         draw_item(&c->items[i], y, selected, shown, ra);
     }
 
+    draw_popup();
     osd_draw();
     /* in-toning */
     if (a < 1)
