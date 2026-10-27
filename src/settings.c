@@ -29,6 +29,7 @@
 #define LIST_TOP    58.0f
 #define LIST_BOTTOM 236.0f
 #define MAX_ITEMS   (MAX_PLUGINS + 4)
+#define PSP5_VERSION "1.1.0"
 
 #define TEXT_MAIN RGBA(238, 238, 242, 255)
 #define TEXT_DIM  RGBA(160, 162, 172, 255)
@@ -58,7 +59,7 @@ typedef struct {
     int count;
 } Category;
 
-enum { CAT_PSP5, CAT_THEME, CAT_CONTROLS, CAT_DISPLAY, CAT_PERF, CAT_SYSTEM, CAT_PLUGINS, CAT_POWER, CAT_COUNT };
+enum { CAT_PSP5, CAT_THEME, CAT_CONTROLS, CAT_DISPLAY, CAT_NETWORK, CAT_PERF, CAT_SYSTEM, CAT_PLUGINS, CAT_POWER, CAT_ABOUT, CAT_COUNT };
 
 static Category s_cats[CAT_COUNT];
 static unsigned char s_plugin_on[MAX_PLUGINS];
@@ -272,14 +273,84 @@ static void set_avls(int on)
         s_avls = now;
 }
 
+static const char *model_name(void)
+{
+    int m = sys_model();
+    return m == 0 ? "PSP-1000" : m == 1 ? "PSP-2000" : (m == 2 || m == 3 || m == 5 || m == 6 || m == 7 || m == 8) ? "PSP-3000"
+         : m == 4 ? "PSP Go" : m == 10 ? "PSP E1000" : "PSP";
+}
+
+/* --- About: what the PSP says about itself (nothing here can be changed) --- */
+
+static void fmt_bytes(char *out, int size, unsigned long long b)
+{
+    if (b >= 1024ull * 1024 * 1024)
+        snprintf(out, size, "%.1f GB", (float)(b / (1024.0f * 1024.0f)) / 1024.0f);
+    else if (b >= 1024 * 1024)
+        snprintf(out, size, "%.1f MB", (float)b / (1024.0f * 1024.0f));
+    else
+        snprintf(out, size, "%u KB", (unsigned)(b / 1024));
+}
+
+static void about_space(Category *c, const char *label, unsigned long long free_b, unsigned long long total_b)
+{
+    char f[24], t[24], v[48];
+    fmt_bytes(f, sizeof(f), free_b);
+    fmt_bytes(t, sizeof(t), total_b);
+    snprintf(v, sizeof(v), L(S_ABOUT_FREE_OF), f, t);
+    info(c, label, v);
+}
+
+/* The rows of About, asked of the PSP now (the battery changes): called when the menu is built and every time About comes into view. */
+static void fill_about(Category *c)
+{
+    SysAbout a;
+    char v[48];
+    c->count = 0;
+    sys_about(&a);
+    if (a.nickname[0])
+        info(c, L(S_ABOUT_NICKNAME), a.nickname);
+    info(c, L(S_ABOUT_MODEL), model_name());
+    snprintf(v, sizeof(v), "%u.%u%u", a.devkit >> 24, (a.devkit >> 16) & 0xFF, (a.devkit >> 8) & 0xFF); /* 0x06060110 is 6.61 */
+    info(c, L(S_ABOUT_SYSTEM), v);
+    if (sys_ark_version()) {
+        snprintf(v, sizeof(v), "ARK-%d", sys_ark_version());
+        info(c, "CFW", v);
+    }
+    info(c, "psp5", PSP5_VERSION);
+    if (a.has_mac) {
+        snprintf(v, sizeof(v), "%02X:%02X:%02X:%02X:%02X:%02X", a.mac[0], a.mac[1], a.mac[2], a.mac[3], a.mac[4], a.mac[5]);
+        info(c, L(S_ABOUT_MAC), v);
+    }
+    if (a.has_ms)
+        about_space(c, L(S_F_MS), a.ms_free, a.ms_total);
+    if (a.has_ef)
+        about_space(c, L(S_F_INTERNAL), a.ef_free, a.ef_total);
+    if (a.battery) {
+        if (a.percent >= 0) {
+            snprintf(v, sizeof(v), a.charging ? "%d %%, %s" : "%d %%", a.percent, L(S_ABOUT_CHARGING));
+            info(c, L(S_ABOUT_BATTERY), v);
+        }
+        if (a.mv > 0) {
+            snprintf(v, sizeof(v), "%d.%02d V", a.mv / 1000, (a.mv % 1000) / 10);
+            info(c, L(S_ABOUT_VOLTAGE), v);
+        }
+        if (a.celsius >= 0) {
+            snprintf(v, sizeof(v), "%d °C", a.celsius);
+            info(c, L(S_ABOUT_TEMP), v);
+        }
+        if (a.mah_full > 0 && a.mah_left >= 0) {
+            snprintf(v, sizeof(v), "%d / %d mAh", a.mah_left, a.mah_full);
+            info(c, L(S_ABOUT_CAPACITY), v);
+        }
+    }
+}
+
 /* "ARK-5 · PSP-2000" – vilken CFW och modell psp5 upptäckte */
 static const char *system_name(void)
 {
     static char buf[40];
-    int m = sys_model();
-    const char *model = m == 0 ? "PSP-1000" : m == 1 ? "PSP-2000"
-                      : (m == 2 || m == 3 || m == 5 || m == 6 || m == 7 || m == 8) ? "PSP-3000"
-                      : m == 4 ? "PSP Go" : m == 10 ? "PSP E1000" : "PSP";
+    const char *model = model_name();
     if (sys_ark_version())
         snprintf(buf, sizeof(buf), "ARK-%d  ·  %s", sys_ark_version(), model);
     else
@@ -310,9 +381,9 @@ static void build(int rebuild)
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE);
 #ifdef PSP5_ARK4
-    info(c, L(S_VERSION), "1.1.0 (ARK-4)");
+    info(c, L(S_VERSION), PSP5_VERSION " (ARK-4)");
 #else
-    info(c, L(S_VERSION), "1.1.0 (ARK-5)");
+    info(c, L(S_VERSION), PSP5_VERSION " (ARK-5)");
 #endif
     info(c, "CFW", system_name());
 
@@ -379,6 +450,11 @@ static void build(int rebuild)
         if (!c->count)
             info(c, L(S_UNAVAILABLE), "");
     }
+
+    c = &s_cats[CAT_NETWORK];
+    c->name = L(S_CAT_NETWORK);
+    c->desc = L(S_DESC_NETWORK);
+    action(c, L(S_WIFI_CONNECTION), SA_WIFI);
 
     c = &s_cats[CAT_PERF];
     c->name = L(S_CAT_PERF);
@@ -456,6 +532,11 @@ static void build(int rebuild)
     action(c, L(S_SHUTDOWN), SA_SHUTDOWN);
     action(c, L(S_RESTART), SA_RESTART);
     action(c, L(S_RECOVERY), SA_RECOVERY);
+
+    c = &s_cats[CAT_ABOUT];
+    c->name = L(S_CAT_ABOUT);
+    c->desc = L(S_DESC_ABOUT);
+    fill_about(c);
 }
 
 void settings_open(void)
@@ -627,8 +708,14 @@ int settings_update(const UiInput *in, float dt)
     } else if (S.focus == 0) {
         if (move) {
             int cat = (int)clampf(S.cat + move, 0, CAT_COUNT - 1);
-            if (cat != S.cat)
+            if (cat != S.cat) {
                 sound_play(SND_MOVE);
+                if (cat == CAT_ABOUT) { /* what it shows is asked of the PSP when it comes into view (the battery changes) */
+                    fill_about(&s_cats[CAT_ABOUT]);
+                    if (S.item[CAT_ABOUT] >= s_cats[CAT_ABOUT].count)
+                        S.item[CAT_ABOUT] = s_cats[CAT_ABOUT].count - 1;
+                }
+            }
             S.cat = cat;
         }
         if ((p & (PSP_CTRL_CROSS | PSP_CTRL_RIGHT)) && c->count) {

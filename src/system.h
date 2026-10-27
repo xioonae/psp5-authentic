@@ -20,6 +20,20 @@ int sys_set_confirm_is_circle(int circle);
 /* The PSP's own sound and power settings (the XMB's too). Each answers -1 when the PSP does not have it or the call does not work, and the
  * setters answer with what the PSP says afterwards. Backlight auto-off: seconds. Equalizer: 0 = off, 1 .. 4 = the XMB's list in its order.
  * AVLS (the volume limiter): 0 / 1. None of this has been run on a PSP. */
+/* What About shows (Settings -> About): everything the PSP can say about itself. Anything it cannot say is left empty / -1 / 0. Read when asked, so the
+ * battery is as it is now. */
+typedef struct {
+    char nickname[40];        /* the name the PSP has for itself in the XMB ("" if none) */
+    unsigned devkit;          /* sceKernelDevkitVersion(): 0x06060110 is 6.61 */
+    int has_mac;
+    unsigned char mac[6];     /* the Wi-Fi address */
+    int battery;              /* a battery is in the PSP */
+    int percent, charging, mv, celsius, mah_left, mah_full; /* -1 = the PSP does not say */
+    int has_ms, has_ef;       /* the Memory Stick (ms0:) / the internal storage of a PSP Go (ef0:) can be read */
+    unsigned long long ms_free, ms_total, ef_free, ef_total;
+} SysAbout;
+void sys_about(SysAbout *out);
+
 int sys_backlight_off(void);
 int sys_set_backlight_off(int seconds);
 int sys_equalizer(void);

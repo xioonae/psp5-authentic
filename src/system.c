@@ -7,6 +7,8 @@
 #include <pspimpose.h>
 #include <psputility.h>
 #include <psploadexec_kernel.h>
+#include <psppower.h>
+#include <pspwlan.h>
 #include <kubridge.h>
 #include <systemctrl.h>
 #include <systemctrl_ark.h>
@@ -231,6 +233,41 @@ int sys_set_avls(int on)
     if (impose_get(IMPOSE_AVLS) >= 0)
         impose_set(IMPOSE_AVLS, on ? 1 : 0);
     return impose_get(IMPOSE_AVLS);
+}
+
+/* free and total space of a drive (ms0:, ef0:): the same call the file manager makes */
+static int device_space(const char *dev, unsigned long long *free_b, unsigned long long *total_b)
+{
+    struct { u32 max_clusters, free_clusters, max_sectors, sector_size, sectors_per_cluster; } info;
+    void *p = &info;
+    if (sceIoDevctl(dev, 0x02425818, &p, sizeof(p), NULL, 0) < 0)
+        return 0;
+    unsigned long long cluster = (unsigned long long)info.sector_size * info.sectors_per_cluster;
+    *free_b = (unsigned long long)info.free_clusters * cluster;
+    *total_b = (unsigned long long)info.max_clusters * cluster;
+    return 1;
+}
+
+void sys_about(SysAbout *a)
+{
+    memset(a, 0, sizeof(*a));
+    a->percent = a->mv = a->celsius = a->mah_left = a->mah_full = -1;
+    if (sceUtilityGetSystemParamString(PSP_SYSTEMPARAM_ID_STRING_NICKNAME, a->nickname, sizeof(a->nickname)) < 0)
+        a->nickname[0] = 0;
+    a->nickname[sizeof(a->nickname) - 1] = 0;
+    a->devkit = sceKernelDevkitVersion();
+    a->has_mac = sceWlanGetEtherAddr(a->mac) >= 0;
+    a->battery = scePowerIsBatteryExist() > 0;
+    if (a->battery) {
+        a->percent = scePowerGetBatteryLifePercent();
+        a->charging = scePowerIsBatteryCharging() > 0;
+        a->mv = scePowerGetBatteryVolt();
+        a->celsius = scePowerGetBatteryTemp();
+        a->mah_left = scePowerGetBatteryRemainCapacity();
+        a->mah_full = scePowerGetBatteryFullCapacity();
+    }
+    a->has_ms = device_space("ms0:", &a->ms_free, &a->ms_total);
+    a->has_ef = s_model == 4 && device_space("ef0:", &a->ef_free, &a->ef_total); /* only a PSP Go has an internal storage */
 }
 
 int sys_has_ark(void) { return s_has_ark; }

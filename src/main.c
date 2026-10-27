@@ -28,6 +28,7 @@
 #include "theme.h"
 #include "osd.h"
 #include "files.h"
+#include "wifi.h"
 #include "info.h"
 #include "gameops.h"
 #include "saves.h"
@@ -355,6 +356,17 @@ static void usb_mode(void)
     gfx_term();
 }
 
+/* The PSP's own screen for choosing a Wi-Fi connection (wifi.c). Everything else is closed, as in the other modes. s_wifi_failed: the network could not be started. */
+static int s_wifi_failed;
+
+static void wifi_mode(void)
+{
+    gfx_init();
+    s_wifi_failed = wifi_dialog(&s_running) < 0;
+    s_sleeping = s_resumed = 0;
+    gfx_term();
+}
+
 /* Filhanteraren: allt annat är stängt, så inget annat läser eller skriver filer under tiden. */
 static void files_mode(void)
 {
@@ -422,6 +434,10 @@ static int run_action(int action, EntryList *list, Ui *ui)
     case SA_FILES:
         app_stop(list, ui);
         files_mode();
+        return 1;
+    case SA_WIFI:
+        app_stop(list, ui);
+        wifi_mode();
         return 1;
     case SA_CLEAR_CACHE:
         app_stop(list, ui);
@@ -534,6 +550,8 @@ int main(int argc, char *argv[])
                 if (run_action(action, &list, &ui)) {
                     app_start(&list, &ui, 0);
                     in_settings = 0;
+                    if (action == SA_WIFI && s_wifi_failed)
+                        ui_toast(&ui, L(S_WIFI_FAILED));
                 }
                 old = s_raw;
                 continue;
