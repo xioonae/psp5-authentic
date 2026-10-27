@@ -20,6 +20,12 @@ into psp5 instead of the XMB.
 - **Back to arkMenu:** copy `ARK_01234/VBOOT_ARKMENU.PBP` to `VBOOT.PBP` (a copy is also in `backup/`).
 - An ARK update can overwrite `VBOOT.PBP` – then copy `dist/PSP/GAME/PSP5/EBOOT.PBP` in as `VBOOT.PBP` again.
 
+## Unreleased (changes after 1.2.0)
+
+The changes after 1.2.0 are noted here; the list for users is under *Unreleased* in `CHANGELOG.md`. When the next version is released, this section becomes *Version x.y.z* and a new *Unreleased* one is put above it.
+
+Nothing yet.
+
 ## Version 1.2.0 (changes after 1.1.0)
 
 The changes after 1.1.0 are noted here; the list for users is under *1.2.0* in `CHANGELOG.md`. Changes after 1.2.0 go in a new section above this one.

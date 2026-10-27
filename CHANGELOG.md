@@ -3,6 +3,10 @@
 All notable changes of **psp5-authentic**, a fork of [psp5](https://github.com/08Weber/psp5) by Mille Weber (08Weber).
 Newest first. Changes that are not in a release yet are under *Unreleased*.
 
+## Unreleased
+
+Nothing yet.
+
 ## 1.2.0 – Controls, new Settings pages, folders in the Library and time played
 
 ### Controls
