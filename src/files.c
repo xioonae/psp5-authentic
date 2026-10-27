@@ -507,15 +507,21 @@ static void enter(const char *path, const char *select)
     load(select, 0);
 }
 
-/* ○: en nivå upp. 0 = redan överst (stäng). */
-static int go_up(void)
+/* 1 when there is a folder or a list of drives above the one that is shown (go_up does something) */
+static int can_go_up(void)
 {
     if (!s_path[0])
         return 0;
+    return !(s_path[strlen(s_path) - 1] == '/' && s_ndev < 2);
+}
+
+/* ○: en nivå upp. 0 = redan överst (stäng). */
+static int go_up(void)
+{
+    if (!can_go_up())
+        return 0;
     int at_root = s_path[strlen(s_path) - 1] == '/';
     if (at_root) {
-        if (s_ndev < 2)
-            return 0;
         char dev[8];
         snprintf(dev, sizeof(dev), "%s", s_path);
         enter("", dev);
@@ -922,9 +928,20 @@ int files_update(const UiInput *in, float dt)
     } else if ((in->pressed & PSP_CTRL_START) && s_path[0]) { /* the options button, as everywhere */
         open_menu(M_OPTIONS);
     } else if (in->pressed & PSP_CTRL_CIRCLE) {
-        if (!go_up())
-            return 1;
-        sound_play(SND_BACK);
+        /* ○ cancels before it leaves: the marks first, then (when this is the last step out of the screen) what was copied or cut and is
+         * waiting to be pasted, and only then the way up and out */
+        if (marked_count() > 0) {
+            for (int i = 0; i < s_count; i++)
+                s_items[i].marked = 0;
+            sound_play(SND_BACK);
+        } else if (!can_go_up() && s_clip_n) {
+            clear_clip();
+            sound_play(SND_BACK);
+        } else {
+            if (!go_up())
+                return 1;
+            sound_play(SND_BACK);
+        }
     }
     return 0;
 }

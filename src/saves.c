@@ -867,6 +867,11 @@ int saves_update(const UiInput *in, float dt)
             S.sort_focus = 0;
             return 0;
         }
+        if (marked_count() > 0) { /* ○ cancels the marks first, and leaves the screen the next time */
+            for (int i = 0; i < T.count; i++)
+                T.items[i].marked = 0;
+            return 0;
+        }
         return 1;
     }
     if (on_sort) { /* ↓ back to the list, ✕ opens the popup */

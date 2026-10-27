@@ -9,6 +9,7 @@
 #include <psploadexec_kernel.h>
 #include <psppower.h>
 #include <pspwlan.h>
+#include <pspreg.h>
 #include <kubridge.h>
 #include <systemctrl.h>
 #include <systemctrl_ark.h>
@@ -131,21 +132,56 @@ int sys_confirm_is_circle(void)
     return v == 0;
 }
 
-/* Gives the confirm button to ○ (circle = 1) or ✕. The SDK does not say what values sceImposeSetLanguageMode wants ("parameter values not
- * known"), so it is calibrated first: the pair that sceImposeGetLanguageMode reports is compared with the system parameter, and when the
- * button number is not the same one (the other way round) it is turned round before it is written. What the system says afterwards is the
- * answer, so a PSP that does not take the change shows the old value. */
+/* One number in the system's registry, where the XMB keeps its own settings (the registry is the same place the system parameter above is read
+ * from): `category`/`key` is set to `value`, opened for writing, written and flushed, the way the XMB and the homebrew tools that swap the buttons do
+ * it. 1 when it was written, 0 when any step said no. */
+static int reg_set_int(const char *category, const char *key, int value)
+{
+    struct RegParam reg;
+    REGHANDLE h = 0, hd = 0;
+    int ok = 0;
+    memset(&reg, 0, sizeof(reg));
+    reg.regtype = 1;
+    reg.namelen = strlen(SYSTEM_REGISTRY);
+    reg.unk2 = 1;
+    reg.unk3 = 1;
+    strcpy(reg.name, SYSTEM_REGISTRY);
+    if (sceRegOpenRegistry(&reg, 2, &h) < 0)
+        return 0;
+    if (sceRegOpenCategory(h, category, 2, &hd) >= 0) {
+        if (sceRegSetKeyValue(hd, key, &value, sizeof(value)) >= 0) {
+            sceRegFlushCategory(hd);
+            ok = 1;
+        }
+        sceRegCloseCategory(hd);
+    }
+    sceRegFlushRegistry(h);
+    sceRegCloseRegistry(h);
+    return ok;
+}
+
+/* Gives the confirm button to ○ (circle = 1) or ✕. It is saved the way the XMB saves it, in the registry (/CONFIG/SYSTEM/XMB, button_assign: 0 = ○,
+ * 1 = ✕, the same numbers as the system parameter), so it stays when psp5 is closed and the XMB follows; the Impose service, which the programs that
+ * are running ask, is told as well. The SDK does not say what values sceImposeSetLanguageMode wants ("parameter values not known"), so it is
+ * calibrated first: the pair that sceImposeGetLanguageMode reports is compared with the system parameter, and when the button number is not the same
+ * one (the other way round) it is turned round before it is written. What the system says afterwards is the answer, so a PSP that does not take the
+ * change shows the old value. **Not tried on a PSP.** */
 int sys_set_confirm_is_circle(int circle)
 {
-    int lang = 0, button = 0;
-    if (sceImposeGetLanguageMode(&lang, &button) < 0)
-        return sys_confirm_is_circle();
-    int param = 1;
+    int lang = 0, button = 0, param = 1;
+    int have_impose = sceImposeGetLanguageMode(&lang, &button) >= 0;
     if (sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_BUTTON_SWAP, &param) < 0)
         return sys_confirm_is_circle();
     int same = button == param; /* both numbers mean the same thing */
     int want = circle ? 0 : 1;  /* the system parameter's number for what is wanted */
-    sceImposeSetLanguageMode(lang, same ? want : !want);
+    reg_set_int("/CONFIG/SYSTEM/XMB", "button_assign", want);
+    if (have_impose)
+        sceImposeSetLanguageMode(lang, same ? want : !want);
+    int now = 1;
+    if (sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_BUTTON_SWAP, &now) >= 0 && now == want)
+        return circle ? 1 : 0; /* the system says it: that is the answer */
+    if (!have_impose)
+        return sys_confirm_is_circle();
     int lang2 = 0, button2 = 0; /* ask the same service that was told: the system parameter may not follow until the next start */
     if (sceImposeGetLanguageMode(&lang2, &button2) < 0)
         return sys_confirm_is_circle();
@@ -158,11 +194,14 @@ int sys_set_confirm_is_circle(int circle)
  * parameters of the kernel's Impose service, which a program cannot call: ARK finds the function and kubridge calls it in kernel mode, the way
  * the volume bar (osd.c) reads the volume. The numbers of the functions are the old ones (sceImposeGetParam 0x531C9778, sceImposeSetParam
  * 0x810FB7FB, both in the SDK's stub library); ARK translates them for 6.60 / 6.61. The numbers of the parameters are in pspimpose_driver.h
- * (found in the 3.52 kernel: PSP_IMPOSE_EQUALIZER_MODE 4, PSP_IMPOSE_AVLS 0x10). Nothing is known about the values they take beyond what is
- * written at each function: **none of this has run on a PSP**. A call that does not work answers -1 and Settings leaves the row out. */
+ * (found in the 3.52 kernel: PSP_IMPOSE_MAIN_VOLUME 1, PSP_IMPOSE_BACKLIGHT_BRIGHTNESS 2, PSP_IMPOSE_EQUALIZER_MODE 4, PSP_IMPOSE_AVLS 0x10).
+ * Nothing is known about the values they take beyond what is written at each function (the volume is 0 to 30, as the volume bar reads it):
+ * **none of this has run on a PSP**. A call that does not work answers -1 and Settings leaves the row out. */
 #define NID_IMPOSE_GET_PARAM     0x531C9778
 #define NID_IMPOSE_GET_PARAM_660 0xDC3BECFF /* the same in 6.60 / 6.61, if ARK's translation is missing (as osd.c) */
 #define NID_IMPOSE_SET_PARAM     0x810FB7FB
+#define IMPOSE_MAIN_VOLUME       0x1
+#define IMPOSE_BRIGHTNESS        0x2
 #define IMPOSE_EQUALIZER_MODE    0x4
 #define IMPOSE_AVLS              0x10
 
@@ -215,6 +254,26 @@ int sys_set_backlight_off(int seconds)
     if (sceImposeGetBacklightOffTime() >= 0)
         sceImposeSetBacklightOffTime(seconds);
     return sceImposeGetBacklightOffTime(); /* what the PSP says now */
+}
+
+/* The volume (0 to 30, what the volume buttons and the volume bar have) and the brightness (the XMB's levels; how many there are and from
+ * which number they count is not known, so the caller shows whatever the PSP says). */
+int sys_volume(void) { return impose_get(IMPOSE_MAIN_VOLUME); }
+
+int sys_set_volume(int level)
+{
+    if (impose_get(IMPOSE_MAIN_VOLUME) >= 0)
+        impose_set(IMPOSE_MAIN_VOLUME, level);
+    return impose_get(IMPOSE_MAIN_VOLUME);
+}
+
+int sys_brightness(void) { return impose_get(IMPOSE_BRIGHTNESS); }
+
+int sys_set_brightness(int level)
+{
+    if (impose_get(IMPOSE_BRIGHTNESS) >= 0)
+        impose_set(IMPOSE_BRIGHTNESS, level);
+    return impose_get(IMPOSE_BRIGHTNESS);
 }
 
 int sys_equalizer(void) { return impose_get(IMPOSE_EQUALIZER_MODE); }

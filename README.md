@@ -47,9 +47,9 @@ this fork does it the same way. This is version 1.1.0 (1.0.0 was the first relea
   in the folder). It keeps playing while you browse your games.
 - **Settings** (the cog wheel). *psp5* (boot into psp5, sounds, startup animation, battery percentage, language), *Theme*,
   *Controls* (the PSP's own confirm button, and which buttons confirm, go back, open the options and the power menu),
-  *Display and Sound* (the PSP's own backlight timer, equalizer and AVLS), *Network* (the PSP's own Wi-Fi screen), *About* (nickname, model, system software, MAC address, storage,
+  *Display and Sound* (the PSP's own brightness, backlight timer, volume, equalizer and AVLS), *Network* (the PSP's own Wi-Fi screen), *About* (nickname, model, system software, MAC address, storage,
   battery),
-  *Performance* (CPU speed, extra memory, caches), *System*, *Plugins* and *Power and USB* (USB mode, file manager, XMB,
+  *Performance* (CPU speed, extra memory, caches), *System*, *Plugins* and *Power and USB* (USB mode, File Manager, XMB,
   sleep, shut down, restart, recovery menu). A setting with several values opens a popup when you press Confirm on it.
 - **Themes.** The colours of the console covers, each with the console's scene behind your games (a beam of light, golden
   dust, haze), plus the classic looks of PS1 to PS4. Highlight a theme to preview it, Confirm to use it. You can turn the game art
@@ -61,7 +61,7 @@ this fork does it the same way. This is version 1.1.0 (1.0.0 was the first relea
   from the right (one for each quarter); while the PSP charges, a bolt is shown left of the battery and the bars above the level come on
   one after the other. You can also show the battery percentage (*Settings → psp5*). A Wi-Fi sign is shown while the PSP's Wi-Fi switch is
   on. At the very end of the top bar is the cog wheel.
-- **File manager** (*Settings → Power and USB*). Browse the Memory Stick (and the internal storage on a PSP Go) and copy,
+- **File Manager** (*Settings → Power and USB*). Browse the Memory Stick (and the internal storage on a PSP Go) and copy,
   move, rename, delete or make folders.
 - **Sounds and languages.** Menu sounds (you can turn them off). 11 languages: psp5 follows the PSP's language; Swedish and
   Czech are picked under *Settings → psp5 → Language*.
@@ -114,8 +114,8 @@ The person who runs the fork has almost no coding experience. They test every up
 they see, and the two of them work out the solutions together. So there will be bugs, and reports are what makes the project
 better.
 
-Everything you see is drawn by psp5 itself. No logos, icons, sounds or other assets from Sony are used – it's an own take on
-that style.
+Everything you see is drawn by psp5 itself – no pictures of the interface are used. The start-up screen shows the PlayStation logo, drawn from its outline by
+psp5 (not a picture); it is Sony's trademark (see the notice at the end), and everything else is an own take on that style.
 
 ## Building it yourself
 

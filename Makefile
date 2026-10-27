@@ -17,7 +17,7 @@ ARKCTRL = -larkctrl
 endif
 
 LIBS = -lintrafont -lpng -ljpeg -lcisoread -llz4 -lz -lm \
-       -lpspmp3 -lpspgu -lpspumd -lpsprtc -lpsppower -lpsputility -lpspusb -lpspusbstor -lpspaudio -lpspwlan \
+       -lpspmp3 -lpspgu -lpspumd -lpsprtc -lpsppower -lpsputility -lpspusb -lpspusbstor -lpspaudio -lpspwlan -lpspreg \
        -lpspsystemctrl_user $(ARKCTRL) -lpspkubridge
 
 BUILD_PRX = 1

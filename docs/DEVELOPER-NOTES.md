@@ -24,9 +24,42 @@ into psp5 instead of the XMB.
 
 All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`) until the next version is released.
 
+- **The start-up logo** (`icons.c` / `icons.h`: `ICON_LOGO`, `icon_logo_width`, `icon_logo_outline`; `gfx.c` / `gfx.h`: `gfx_logo`; `boot.c`; `tools/trace_logo.py`). The grey "psp5" made of strokes is replaced by the PlayStation logo, drawn from code.
+  - *The outline*: three solid shapes (the P with its stem, the left swoosh, the right swoosh), 49 + 45 + 48 corners in half pixels of a 2000 x 1544 picture (`LOGO_UNITS_W` 4000 x `LOGO_UNITS_H` 3088; `logo_len`, `logo_pts`,
+    570 bytes). `tools/trace_logo.py picture.png [eps]` made them: marching squares on the alpha channel (threshold 0.5, a 2 px empty margin so that a logo that touches the edge of the picture still gives closed outlines),
+    Douglas-Peucker with 1.0 px of the picture (142 points), coordinates rounded to half pixels, every shape the same way round (the script refuses a picture with a hole in a shape). It reproduces the table in `icons.c` exactly.
+    The picture is not in the repository and nothing reads it at run time.
+  - *The image* (`logo_render`, `ICON_LOGO` in `icon_render`): the exact area of every pixel inside the outline, by the method of font-rs: each edge that crosses the pixel row adds the share of a pixel that is covered right of it to
+    `acc`, and the running sum along the row is the coverage (`logo_edge`; `acc` has `tw + 2` floats on the stack, so the image can be up to `ICON_LOGO_MAX_W` = 128 wide; a wider one comes out empty). Edges are
+    anti-aliased exactly (no sampling), so a straight edge moves evenly when the logo is put at a fraction of a pixel. It costs one pass over 142 edges and 90 x 70 pixels, once.
+  - *`gfx_logo(x, y, h, color)`* draws it: `icon_logo_width(h)` wide (88 at 68), one transparent pixel round it (image 90 x 70, the top left corner on the whole pixel x - 1, y - 1), cached like the other icons (`cache_get(ICON_LOGO, ...)`
+    and `icon_blit`: one sprite), so it is one draw call a frame. With no room in the cache, or an image over 96 px (a logo over 74 high), the outline of the three shapes is stroked (2 px, `gfx_stroke`).
+  - *`boot.c`*: `LOGO_H` is `SCREEN_H / 4` = 68, the logo is centred (196, 102), colour RGBA(178, 178, 180, alpha) with the same fade as before (`T_LOGO_IN` .. `T_LOGO_OUT`). `build_logo`, the stroke paths and
+    `Path` are gone.
+  - *Tests* (private, not in git): `icons/logotest.py` (252 checks: the box and the width at every height, the outline (counts, the corners fill the box, the same way round, the shapes apart), the image against the exact
+    area of every pixel (Sutherland-Hodgman, worst pixel 0.006) at four sizes and offsets and against the reference picture shrunk to the same size (worst 0.09), three shapes, a ramp of coverage values, a straight
+    edge at nine offsets, the same area at every offset and size, the 128-wide limit, nothing written after the image); `gfx/logodraw_test.c` (the outline fallback with a full cache and at 100 high, one sprite, the colour and the
+    alpha, pixel for pixel the image of `icon_render`, whole pixels at 40 places, 600 frames of every size and place); `gfx/boot_test.c` (the logo is 88 x 68 at 196, 102, grey, one draw call, fades in and out steadily).
+    31 mutation runs on the logo code: all caught, except one that changes nothing (an edge that ends exactly on a pixel row adds an area of 0) and one hole that was found and closed (the outline in the
+    fallback could be drawn with half the alpha).
+  - *The logo is Sony's trademark*: the README no longer says that nothing from Sony is used.
+- **Settings and Information: the same sides as the file manager** (`settings.c`, `info.c`). `LEFT_X` 24 (was 32), `LEFT_W` 136 (124), `RIGHT_X` 172 (176), `RIGHT_W` 284 (280): 24 px from the left edge, 12 px between the columns
+  (20 before), the settings to 456 as before (the list of `files.c` and `saves.c` is 24 .. 456 too). The title is at `LEFT_X + 4` = 28, where the title of the file manager is; the category names start 8 px inside the frame. In
+  `info.c` the game's picture is `LEFT_W` wide and `floorf(w * 80 / 144 + 0.5f)` high (76: the shape of an ICON0, 144 x 80). Tests (private): the constants and where the frames, the title and the first category name
+  are drawn (`settings_test.c`), the picture and the title (`info_test.c`).
+- **○ cancels before it leaves** (`files.c`, `saves.c`). `files_update`: ○ clears the marks if there are any (`marked_count`), else, when `can_go_up()` is false (the top: a single drive's root, or the list of drives) and
+  a copy / move is waiting (`s_clip_n`), clears that (`clear_clip`), else goes up or, at the top, leaves (`go_up`, which asks `can_go_up` now). `saves_update`: ○ on the Sort button goes to the list, then clears the marks
+  (`marked_count`), then leaves. The back sound plays for the first two. (Tests, private: `files/popup_test.c` and `saves/saves_test.c`: marks alone, in a folder, a waiting copy at the top and in a folder, both, the options popup open,
+  two drives, the Sort button, the delete question.) 12 mutation runs on these, all caught.
+- **Capitals** (`lang.c`). `S_FILES` is "File Manager". The names that are in title case in English are in title case in every language, each with its own small words (the test lists them): `S_CAT_DISPLAY_SOUND` ("Skärm och
+  Ljud", "Écran et Son", "Pantalla y Sonido", ...), `S_FILES` ("Gestionnaire de Fichiers", "Gestor de Archivos", "Gestione File", "Gestor de Ficheiros", "Файловый Менеджер", "Správce Souborů"), `S_HOME_REMOVE` in Swedish ("Ta Bort från
+  Hem"). `units/caps_test.c` (private) checks a list of names in all languages (title case with the language's small words; German's participles are small) and the exact words; it was found by comparing every short name
+  with its translations (8 mutation runs, all caught). Language names of regions that keep their own rule (*Amérique latine*, *Spojené království*) are left as the language writes them.
 - **Settings → Network** (new `wifi.c` / `wifi.h`, `netstub.S`; `settings.c`, `settings.h`, `main.c`, `Makefile`, `lang.c`).
   - *What it is*: `CAT_NETWORK` has one action row, *Wi-Fi connection* (`SA_WIFI`). `main.c`'s `run_action` stops everything (`app_stop`), runs `wifi_mode()` (`gfx_init`, `wifi_dialog(&s_running)`,
-    `gfx_term`) and rebuilds the app, like the USB and file-manager modes (so Settings is left, as it is by those); a result of -1 shows `S_WIFI_FAILED` as a toast.
+    `gfx_term`) and rebuilds the app, like the USB and file-manager modes. Unlike those it **returns to Settings**: `in_settings` stays 1 and `settings_open` is not called, so the category and the row are
+    where they were (`S` is not reset; the USB, file-manager and clear-cache actions still end on the main screen). A result of -1 shows `S_WIFI_FAILED` through the new `settings_notice(msg)`: `S.toast` /
+    `S.toast_time` (2.8 s), drawn by `settings_draw` with `popup_toast` and the same fade as the toast of `ui.c`.
   - *`wifi_dialog`*: `sceUtilityLoadNetModule(PSP_NET_MODULE_COMMON)` and `_INET` (an "already loaded" answer, 0x80111102, counts as loaded and is not unloaded), `sceNetInit(0x20000, 0x20, 0x1000, 0x20, 0x1000)`,
     `sceNetInetInit()`, `sceNetApctlInit(0x1600, 42)` (the numbers games use), then `sceUtilityNetconfInitStart` with `PSP_NETCONF_ACTION_CONNECTAP`, `hotspot` and `wifisp` = 1 (all saved kinds can be chosen),
     `buttonSwap` and `language` from the system (the dialog is the system's: it does not follow psp5's own Controls), and the thread priorities 17 / 19 / 18 / 16 that the on-screen keyboard
@@ -53,6 +86,15 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
     menu is built and every time the category *comes into view* in the left column (`settings_update`, with the chosen row kept inside the list if it got shorter).
   - *Tests* (`settings/settings_test.c`; `sys_about` is a stand-in): every row and value in order, four devkit numbers, what is left out (no nickname, MAC, ARK, battery, charging; a battery that only says its level), a PSP
     Go's internal storage, MB / GB, the list scrolling to the last row, being asked again when it comes into view, the chosen row kept in range, and Network / About in all 11 languages on whole pixels.
+- **Settings → Display and Sound: Brightness and Volume** (`settings.c`, `system.c` / `system.h`, `lang.c` / `lang.h`: `S_VOLUME`, `S_BRIGHTNESS`; `S_VERSION` is gone).
+  - *System*: `sys_volume` / `sys_set_volume` (`PSP_IMPOSE_MAIN_VOLUME`, 1; 0 to 30 as `osd.c` reads it) and `sys_brightness` / `sys_set_brightness` (`PSP_IMPOSE_BACKLIGHT_BRIGHTNESS`, 2) are two more
+    `impose_get` / `impose_set` pairs, answering with what the PSP says afterwards. **Never run on a PSP**; the range of the brightness is not known (the XMB has levels, probably 1 to 4).
+  - *Rows* (`CAT_DISPLAY`, in this order: Brightness, Backlight auto-off, Volume, Equalizer, AVLS): Volume is `IT_CHOICE` on `s_volume` with the 31 numbers 0 to 30 (`s_vol_text`), shown when the PSP says 0 to 30;
+    its popup (more than `POP_ROWS`) scrolls with the bar. Brightness (`br_build`): the list is 1 to 4 plus the PSP's own level in its place when it is lower than 1 or above 4 (`s_br_levels`, `s_br_item->nopts`), shown
+    when the PSP says 0 to `BRIGHT_MAX` (100); after a change the list is rebuilt from what the PSP says (a PSP that keeps less than asked, or answers -1 or a number out of range, leaves the row as it was).
+  - *The psp5 category lost its Version and CFW rows* (about the version in two places): the version and the CFW are in *About* only; `system_name()` and `S_VERSION` are removed.
+  - *Tests* (private, not in git): the rows and their order, eleven brightness readings and the lists they give, choosing, a PSP that refuses / keeps less / answers -1 or 250, the volume's 31 values, 0 and 30, volume 31
+    refused. 24 mutation runs on the new code: two holes found and closed (a brightness list edge, and a volume row that stayed in the list by coincidence because the next row also had the value 0).
 - **Settings → Display and Sound** (`settings.c`, `system.c` / `system.h`, `lang.c` / `lang.h`).
   - *System* (`system.c`): `sys_backlight_off()` / `sys_set_backlight_off(secs)` are `sceImposeGetBacklightOffTime` / `sceImposeSetBacklightOffTime` (user calls in `libpspuser`: any program may
     make them; "30 to a lot of seconds" in the SDK); `sys_equalizer` / `sys_avls` and their setters go through `impose_get` / `impose_set`: the kernel's `sceImposeGetParam` (NID 0x531C9778; 0xDC3BECFF in
@@ -97,7 +139,12 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
   - *System* (`system.c`): `sys_confirm_is_circle()` (moved from `main.c`: `sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_BUTTON_SWAP)`, 0 = ○ confirms) and
     `sys_set_confirm_is_circle(circle)`: the SDK says of `sceImposeSetLanguageMode(lang, button)` that the values are not known, so it reads `sceImposeGetLanguageMode` and the system
     parameter first and takes the two to mean the same when they are equal (else it writes the opposite number), writes, reads the same service again and answers with that.
-    **Never run on a PSP**; a PSP that ignores it just shows the old value. `sceImposeSetLanguageMode` is in `libpspuser` (no new library).
+    **Never run on a PSP**; a PSP that ignores it just shows the old value. `sceImposeSetLanguageMode` is in `libpspuser` (no new library). *Changed later:* the Impose service alone did not
+    last (it is what running programs ask; the XMB's setting is in the registry), so `sys_set_confirm_is_circle` now also writes the registry (`reg_set_int("/CONFIG/SYSTEM/XMB", "button_assign", 0 = ○ / 1 = ✕)`:
+    `sceRegOpenRegistry` with a `RegParam` for "/system" (`regtype` 1, `unk2` / `unk3` 1, mode 2), `sceRegOpenCategory`, `sceRegSetKeyValue` (4 bytes), `sceRegFlushCategory`, `sceRegCloseCategory`,
+    `sceRegFlushRegistry`, `sceRegCloseRegistry`: the calls the XMB and the homebrew button swappers make; `-lpspreg` is new in the `Makefile`), then tells Impose as before (calibrated), and answers with the system
+    parameter if it now says what was wanted, else with Impose's answer, else with the old value. **Never run on a PSP.** Tested against a stand-in system (the function is cut out of `system.c` by the test script,
+    42 checks: the order and the arguments of the registry calls, both buttons, an inverted Impose service, a parameter that only follows after a restart, each registry step refusing, no Impose, nothing working; 25 mutation runs, all caught).
   - *Hints with START / SELECT* (`gfx.c`): `BTN_START` / `BTN_SELECT` are pills (28 / 34 px wide, 14 high so the edges are whole pixels; the word in bold size 0.34, fitted) and
     `gfx_button_width(kind)` is how much room a hint gives its symbol (13 for the round ones); `files.c`'s hint row uses it (width and the step to the word).
   - *`psp5.cfg`* (`config.c`): `confirm=psp|cross|circle|square|triangle`, `back=` (the same), `options=start|select`; a file with the same button for both reads back
