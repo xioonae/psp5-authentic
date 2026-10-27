@@ -28,7 +28,7 @@ enum {
     ICON_RFRAME_S, /* the same with the thinner ICON_FRAME_T_S - the ring around the selected card of the library grid */
     ICON_LIBRARY,  /* the picture of the Library card: 3 x 2 squares with a game controller in front, w * h whole pixels (see icon_library_width) */
     ICON_FOLDER,   /* the picture of a folder card: a tab and a body in one piece, w * h whole pixels (see icon_folder_pic), every edge on a pixel line */
-    ICON_WIFI      /* the Wi-Fi sign: a small square with three quarter circle arcs round it, in a square of side 2 r (r = 6 for the usual size) */
+    ICON_WIFI      /* the Wi-Fi sign: a small square with three quarter circle arcs round it, soft edged, in a square of side 2 r (r = 7 for the usual size) */
 };
 
 #define ICON_FRAME_T   2.5f /* thickness of ICON_RFRAME in pixels (about what the big card's ring always had) */

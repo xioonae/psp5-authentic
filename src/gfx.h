@@ -63,7 +63,7 @@ void gfx_gear(float cx, float cy, float r, u32 color, u32 hole);
 void gfx_edge_ring(float x, float y, float w, float h, float r, int thin, u32 color);
 /* Laddningsblixt, 2·r hög och centrerad i (cx, cy), med mjuka kanter */
 void gfx_bolt(float cx, float cy, float r, u32 color);
-/* The Wi-Fi sign in a box of side 2 r centred on (cx, cy): a small square with three quarter circle arcs round it */
+/* The Wi-Fi sign in a box of side 2 r centred on (cx, cy): a small square with three soft quarter circle arcs round it (r = 7 is 14 px) */
 void gfx_wifi(float cx, float cy, float r, u32 color);
 /* Mjukkantad triangel i rutan x, y, w, h: dir > 0 pekar åt höger (spetsen mitt på högra sidan), dir < 0 åt vänster */
 void gfx_triangle(float x, float y, float w, float h, int dir, u32 color);

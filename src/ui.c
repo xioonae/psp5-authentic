@@ -1373,19 +1373,19 @@ static void draw_background(Ui *ui)
 /* The battery on whole pixels, as on the PS5: a terminal 2 x 4 on the LEFT, then a body 21 x 12 with a 1 px outline and 2 px between
  * the outline and the bars. There are four bars 3 x 6 with 1 px between them; they are lit from the right, so the charge runs
  * out from the left. While it charges, the bars above the level are switched on one after the other (in half the strength of
- * the real ones) and then start again from the level. */
+ * the real ones) and then start again from the level, and the charging bolt is left of the battery (draw_top_bar puts it there). */
 #define BAT_BARS   4
 #define BAT_TERM_W 2.0f
 #define BAT_BODY_W 21.0f
 #define BAT_H      12.0f
 #define BAT_W      (BAT_TERM_W + BAT_BODY_W) /* the whole battery */
 
-/* How many of the four bars a level lights: one for anything above 0 up to 37 %, then two (38-62), three (63-87) and four (88-100) */
+/* How many of the four bars a level lights: one for anything above 0 up to 25 %, then two (26-50), three (51-75) and four (76-100) */
 static int battery_bars(int percent)
 {
     if (percent <= 0)
         return 0;
-    int n = (percent + 12) / 25;
+    int n = (percent + 24) / 25;
     return n < 1 ? 1 : n > BAT_BARS ? BAT_BARS : n;
 }
 
@@ -1417,8 +1417,11 @@ static void format_time(char *out, int size, float sec)
 #define TOP_MID     20.0f /* the middle of the clock row, where the wheel, the battery and the Wi-Fi sign are centred: the cog wheel's frame goes round it */
 #define TOP_FRAME_H 24.0f /* (a tab's frame is centred on its text) */
 #define TOP_GAP     12.0f /* between the things on the right: Wi-Fi sign, battery (with its number), clock, cog wheel; the tabs keep it from the first of them, too */
-#define BAT_GAP      6.0f /* between the battery and its number, which belong together */
-#define WIFI_R       6.0f /* the Wi-Fi sign is a square of 2 R = 12 px, as high as the battery */
+#define BAT_GAP      5.0f /* between the battery and its number, which belong together (the number's own left edge adds a pixel to it) */
+#define BOLT_R       6.0f /* the charging bolt is 2 R = 12 px high, as high as the battery ... */
+#define BOLT_W       6.0f /* ... and R = 6 px wide, from its left tip to its right one (see bolt_polygon in icons.c) */
+#define BOLT_GAP     3.0f /* between the bolt and the battery, which belong together (the bolt is slanted: it looks further from the battery than this) */
+#define WIFI_R       7.0f /* the Wi-Fi sign is a square of 2 R = 14 px (a little higher than the battery: three soft arcs need that much room) */
 #define COG_R        7.0f /* the cog wheel is a square of 2 R, and its right edge is on the margin like the clock's used to be */
 
 static void draw_top_bar(Ui *ui)
@@ -1446,10 +1449,10 @@ static void draw_top_bar(Ui *ui)
     int present = testrun_battery() >= 0 || sys_present;
     int wifi = testrun_wifi() >= 0 ? testrun_wifi() : sys_wifi;
 
-    /* From the right edge to the left, with TOP_GAP between the things: the cog wheel, the clock, the battery and its number, the
-     * Wi-Fi sign. Only what exists is there: no battery in the PSP means no battery and no number, Wi-Fi switched off no sign, and
-     * everything on the left moves to the right to close the gap. The battery and the sign are on whole pixels, so they look the
-     * same whatever the clock says. */
+    /* From the right edge to the left, with TOP_GAP between the things: the cog wheel, the clock, the battery with its number and,
+     * while it charges, its bolt (these three are close together: BAT_GAP and BOLT_GAP), the Wi-Fi sign. Only what exists is there: no
+     * battery in the PSP means no battery, number or bolt, Wi-Fi switched off no sign, and everything on the left moves to the right
+     * to close the gap. The battery, the bolt and the sign are on whole pixels, so they look the same whatever the clock says. */
     float gx = SCREEN_W - MARGIN - COG_R, cog = smooth(ui->top_anim[TOP_COG]);
     float clock_right = gx - COG_R - TOP_GAP;
     text_draw(clock_right, 25, 0.8f, 0, with_alpha(TEXT_MAIN, a), ALIGN_RIGHT, clock_text);
@@ -1466,6 +1469,11 @@ static void draw_top_bar(Ui *ui)
         if (pct[0])
             text_draw(bx + BAT_W + BAT_GAP, 25, 0.8f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, pct);
         bar_left = bx;
+        if (charging) { /* the bolt is left of the battery and belongs to it: the battery stays where it is, everything left of it moves */
+            float bolt_right = bx - BOLT_GAP;
+            gfx_bolt(bolt_right - BOLT_W / 2, TOP_MID, BOLT_R, with_alpha(LIGHT, a));
+            bar_left = bolt_right - BOLT_W;
+        }
     }
     if (wifi) {
         float wx = floorf(bar_left - TOP_GAP - 2 * WIFI_R + 0.5f);
