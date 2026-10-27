@@ -600,6 +600,30 @@ void gfx_bolt(float cx, float cy, float r, u32 color)
     gfx_fan(cx, cy, xy, 6, color);
 }
 
+/* The Wi-Fi sign in a box of side 2 r centred on (cx, cy): one image like the cog wheel (see sd_wifi in icons.c). */
+void gfx_wifi(float cx, float cy, float r, u32 color)
+{
+    IconBox b;
+    float rq = quarter(r);
+    icon_box(ICON_WIFI, cx, cy, 0, 0, rq, &b);
+    const Texture *tex = icon_get(ICON_WIFI, 0, 0, rq, &b);
+    if (tex) {
+        icon_blit(tex, &b, color);
+        return;
+    }
+    const float u = r / 6, px = cx - 4.5f * u, py = cy + 4.5f * u; /* the old way: the square, and each arc as 8 flat pieces */
+    gfx_rect(px - 1.5f * u, py - 1.5f * u, 3 * u, 3 * u, color);
+    for (int i = 0; i < 3; i++) {
+        float r0 = (3 + 3 * i) * u, r1 = (5 + 3 * i) * u;
+        for (int k = 0; k < 8; k++) {
+            float a0 = k * 3.14159265f / 16, a1 = (k + 1) * 3.14159265f / 16;
+            const float q[8] = { px + sinf(a0) * r0, py - cosf(a0) * r0, px + sinf(a0) * r1, py - cosf(a0) * r1,
+                                 px + sinf(a1) * r1, py - cosf(a1) * r1, px + sinf(a1) * r0, py - cosf(a1) * r0 };
+            gfx_fan((q[0] + q[2] + q[4] + q[6]) / 4, (q[1] + q[3] + q[5] + q[7]) / 4, q, 4, color);
+        }
+    }
+}
+
 /* The straight back edge is put on a whole pixel line (it moves by half a pixel at most, and the width is
  * a whole number of pixels), so only the two slanted sides need smoothing. */
 void gfx_triangle(float x, float y, float w, float h, int dir, u32 color)

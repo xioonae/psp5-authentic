@@ -5,6 +5,19 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ## Unreleased
 
+- **Top bar: a battery like the PS5's, a Wi-Fi sign, and the cog wheel at the end.**
+  - **Battery:** the little terminal is on the **left** now and the battery has **four bars** that are lit **from the right**, so the
+    charge runs out from the left (one bar up to 37 %, two up to 62 %, three up to 87 %, four above). At 15 % or less the bars are red.
+  - **Charging:** the bars above the level come on one after the other (half a second each, a little dimmer than the real ones) and then it
+    starts again from the level. The bolt next to the battery is gone.
+  - **Wi-Fi:** a Wi-Fi sign (three arcs and a square, like the one on the PS5) is shown left of the battery while the PSP's **Wi-Fi switch
+    is on**. It shows the switch, not whether the PSP is connected to a network.
+  - **No Bluetooth sign on the PSP Go.** I found no way for a program to read the Bluetooth state (not in the PSP SDK and not in ARK), so
+    I did not add one that could only guess.
+  - **The cog wheel is at the very end of the top bar** now (its right edge where the clock's used to end), then the clock, then the battery
+    (with its percentage if you have it on), then the Wi-Fi sign. There are **12 px between all of them**; a sign or the battery that is not
+    there (Wi-Fi off, no battery in the PSP) leaves no gap. The percentage is 6 px right of the battery and 12 px before the clock, whatever its width.
+  (Seen in the PC test frames only; not looked at on a PSP. Reading the Wi-Fi switch is untested on a real PSP and a PSP Go.)
 - **Library: the number of cards is level with the text before it.** In the row at the top (*All: 15*) the number was drawn on the baseline of
   the Sort button, one pixel higher than *All:*, which sits a little lower so that it is centred with the button. It is on the baseline of the text now.
   (Seen in the PC test frames; not looked at on a PSP.)

@@ -6,6 +6,7 @@
 #include <pspkernel.h>
 #include <pspctrl.h>
 #include <psppower.h>
+#include <pspwlan.h>
 #include <psprtc.h>
 #include <math.h>
 #include <stdio.h>
@@ -1369,28 +1370,42 @@ static void draw_background(Ui *ui)
     }
 }
 
-/* The battery on whole pixels: a body 20 x 10 with a 1 px outline, 2 px between the outline and the fill (14 px wide at
- * full, 4 high) and a terminal 2 x 4. Laddas batteriet sveper fyllningen från nivån upp till fullt om och om igen,
- * och en liten blixt syns till vänster om batteriet. */
+/* The battery on whole pixels, as on the PS5: a terminal 2 x 4 on the LEFT, then a body 21 x 12 with a 1 px outline and 2 px between
+ * the outline and the bars. There are four bars 3 x 6 with 1 px between them; they are lit from the right, so the charge runs
+ * out from the left. While it charges, the bars above the level are switched on one after the other (in half the strength of
+ * the real ones) and then start again from the level. */
+#define BAT_BARS   4
+#define BAT_TERM_W 2.0f
+#define BAT_BODY_W 21.0f
+#define BAT_H      12.0f
+#define BAT_W      (BAT_TERM_W + BAT_BODY_W) /* the whole battery */
+
+/* How many of the four bars a level lights: one for anything above 0 up to 37 %, then two (38-62), three (63-87) and four (88-100) */
+static int battery_bars(int percent)
+{
+    if (percent <= 0)
+        return 0;
+    int n = (percent + 12) / 25;
+    return n < 1 ? 1 : n > BAT_BARS ? BAT_BARS : n;
+}
+
 static void draw_battery(float x, float y, int percent, int charging, float time, float a)
 {
-    gfx_round_rect(x, y, 20, 10, 2.5f, with_alpha(LIGHT, 0.85f * a));
-    gfx_round_rect(x + 1, y + 1, 18, 8, 1.5f, with_alpha(DARK, a));
-    gfx_rect(x + 20, y + 3, 2, 4, with_alpha(LIGHT, 0.85f * a));
-    if (percent >= 0) {
-        const float full = 14;
-        float w = floorf(full * percent / 100.0f + 0.5f);
-        if (charging) {
-            float p = fmodf(time, 1.8f) / 1.8f;
-            float sweep = floorf(w + (full - w) * smooth(p / 0.8f) + 0.5f);
-            float fade = 1 - smooth((p - 0.75f) / 0.25f);
-            gfx_round_rect(x + 3, y + 3, sweep, 4, 1, with_alpha(LIGHT, 0.5f * fade * a));
-        }
-        u32 c = percent <= 15 && !charging ? RGBA(255, 95, 85, 255) : LIGHT;
-        gfx_round_rect(x + 3, y + 3, w, 4, 1, with_alpha(c, a));
+    float body = x + BAT_TERM_W;
+    gfx_rect(x, y + 4, BAT_TERM_W, 4, with_alpha(LIGHT, 0.85f * a));
+    gfx_round_rect(body, y, BAT_BODY_W, BAT_H, 2.5f, with_alpha(LIGHT, 0.85f * a));
+    gfx_round_rect(body + 1, y + 1, BAT_BODY_W - 2, BAT_H - 2, 1.5f, with_alpha(DARK, a));
+    if (percent < 0)
+        return;
+    int lit = battery_bars(percent);
+    int step = 0; /* how many bars above the level the charging shows right now */
+    if (charging && lit < BAT_BARS) {
+        int cycle = BAT_BARS - lit + 1, n = (int)floorf(time / 0.5f);
+        step = ((n % cycle) + cycle) % cycle;
     }
-    if (charging)
-        gfx_bolt(x - 6, y + 5, 5, with_alpha(LIGHT, 0.9f * a));
+    u32 c = percent <= 15 && !charging ? RGBA(255, 95, 85, 255) : LIGHT;
+    for (int i = 0; i < lit + step; i++) /* bar 0 is the right one */
+        gfx_rect(body + 3 + (BAT_BARS - 1 - i) * 4, y + 3, 3, 6, with_alpha(c, (i < lit ? 1.0f : 0.5f) * a));
 }
 
 static void format_time(char *out, int size, float sec)
@@ -1399,21 +1414,21 @@ static void format_time(char *out, int size, float sec)
     snprintf(out, size, "%d:%02d", t / 60, t % 60);
 }
 
-#define TOP_MID     20.0f /* the middle of the clock row, where the wheel and the battery are centred: the cog wheel's frame goes round it */
+#define TOP_MID     20.0f /* the middle of the clock row, where the wheel, the battery and the Wi-Fi sign are centred: the cog wheel's frame goes round it */
 #define TOP_FRAME_H 24.0f /* (a tab's frame is centred on its text) */
-#define TOP_GAP     10.0f /* between the clock and what is left of it: the battery percentage, or the battery when there is no percentage */
-#define BAT_W       22.0f /* the battery: the body (20) and its terminal (2) */
-#define BAT_GAP      5.0f /* between the battery and the percentage next to it */
-#define COG_GAP     27.0f /* from the battery's left edge to the middle of the cog wheel; the charging bolt, which is left of the battery, fits between */
+#define TOP_GAP     12.0f /* between the things on the right: Wi-Fi sign, battery (with its number), clock, cog wheel; the tabs keep it from the first of them, too */
+#define BAT_GAP      6.0f /* between the battery and its number, which belong together */
+#define WIFI_R       6.0f /* the Wi-Fi sign is a square of 2 R = 12 px, as high as the battery */
+#define COG_R        7.0f /* the cog wheel is a square of 2 R, and its right edge is on the margin like the clock's used to be */
 
 static void draw_top_bar(Ui *ui)
 {
     float a = ui->intro;
 
-    /* klockan och batteriet ändras sakta – systemet frågas en gång i sekunden, inte varje bild */
+    /* klockan, batteriet och Wi-Fi ändras sakta – systemet frågas en gång i sekunden, inte varje bild */
     static float polled_at = -10;
     static char clock_text[8];
-    static int sys_present, sys_charging, sys_level = -1;
+    static int sys_present, sys_charging, sys_level = -1, sys_wifi;
     if (fabsf(ui->time - polled_at) >= 1.0f) { /* även om tiden har nollställts */
         polled_at = ui->time;
         ScePspDateTime now;
@@ -1424,40 +1439,53 @@ static void draw_top_bar(Ui *ui)
         sys_present = battery ? 1 : 0;
         sys_charging = battery && scePowerIsBatteryCharging() > 0;
         sys_level = battery ? scePowerGetBatteryLifePercent() : -1;
+        sys_wifi = sceWlanGetSwitchState() > 0; /* the Wi-Fi switch (the PSP has no call for Bluetooth, so the PSP Go shows none) */
     }
-    text_draw(SCREEN_W - MARGIN, 25, 0.8f, 0, with_alpha(TEXT_MAIN, a), ALIGN_RIGHT, clock_text);
-    float cw = text_width(0.8f, 0, clock_text);
     int charging = testrun_charging() >= 0 ? testrun_charging() : sys_charging;
     int level = testrun_battery() >= 0 ? testrun_battery() : sys_level;
     int present = testrun_battery() >= 0 || sys_present;
-    /* No battery in the PSP: no icon and no number, and the cog wheel stays where it is without the number. With a battery the icon
-     * is drawn. "Show battery percentage" then keeps room for the widest number ("100%") all the time, so the battery and the cog
-     * wheel stay where they are while the level changes; the number is always BAT_GAP right of the battery, so with fewer digits it
-     * ends a little further from the clock. */
-    float shift = present && g_battery_pct ? ceilf(text_width(0.8f, 0, "100%")) + BAT_GAP : 0;
-    float bx = floorf(SCREEN_W - MARGIN - cw - TOP_GAP - BAT_W - shift + 0.5f); /* on a whole pixel, so the battery looks the same whatever the clock says */
+    int wifi = testrun_wifi() >= 0 ? testrun_wifi() : sys_wifi;
+
+    /* From the right edge to the left, with TOP_GAP between the things: the cog wheel, the clock, the battery and its number, the
+     * Wi-Fi sign. Only what exists is there: no battery in the PSP means no battery and no number, Wi-Fi switched off no sign, and
+     * everything on the left moves to the right to close the gap. The battery and the sign are on whole pixels, so they look the
+     * same whatever the clock says. */
+    float gx = SCREEN_W - MARGIN - COG_R, cog = smooth(ui->top_anim[TOP_COG]);
+    float clock_right = gx - COG_R - TOP_GAP;
+    text_draw(clock_right, 25, 0.8f, 0, with_alpha(TEXT_MAIN, a), ALIGN_RIGHT, clock_text);
+    float bar_left = clock_right - text_width(0.8f, 0, clock_text); /* the left end of everything on the right so far */
     if (present) {
-        draw_battery(bx, 15, level, charging, ui->time, a);
-        if (g_battery_pct && level >= 0) {
-            char pct[8];
+        char pct[8] = "";
+        if (g_battery_pct && level >= 0)
             snprintf(pct, sizeof(pct), "%d%%", level > 100 ? 100 : level);
+        float next = bar_left - TOP_GAP; /* where the battery (or its number) ends */
+        if (pct[0])
+            next -= text_width(0.8f, 0, pct) + BAT_GAP;
+        float bx = floorf(next - BAT_W + 0.5f);
+        draw_battery(bx, TOP_MID - BAT_H / 2, level, charging, ui->time, a);
+        if (pct[0])
             text_draw(bx + BAT_W + BAT_GAP, 25, 0.8f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, pct);
-        }
+        bar_left = bx;
     }
+    if (wifi) {
+        float wx = floorf(bar_left - TOP_GAP - 2 * WIFI_R + 0.5f);
+        gfx_wifi(wx + WIFI_R, TOP_MID, WIFI_R, with_alpha(LIGHT, a));
+        bar_left = wx;
+    }
+
     /* the cog wheel is a button too: selected (↑ from the first thing of a tab) it gets the frame of a chosen entry, like Sort */
-    float gx = bx - COG_GAP, cog = smooth(ui->top_anim[TOP_COG]);
     if (cog * a > 0.01f) {
         float fy, fh;
         popup_frame_around(TOP_MID, TOP_FRAME_H, &fy, &fh);
         popup_choice(gx - 15, fy, 30, fh, cog * a);
     }
-    gfx_gear(gx, TOP_MID, 7, with_alpha(LIGHT, (0.9f + 0.1f * cog) * a), RGBA(14, 14, 18, (int)(255 * a)));
+    gfx_gear(gx, TOP_MID, COG_R, with_alpha(LIGHT, (0.9f + 0.1f * cog) * a), RGBA(14, 14, 18, (int)(255 * a)));
 
     /* flikarna krymper om de inte får plats (t.ex. långa ryska ord) – mäts bara om när något ändras */
     static float size = 0.8f, gap = 20, sized_room = -1;
     static int sized_tab = -1;
     static const char *sized_lang;
-    float room = bx - COG_GAP - 21 - MARGIN; /* the last tab's frame ends 3 px before the cog wheel's */
+    float room = bar_left - TOP_GAP - MARGIN; /* the last tab's frame (9 px wider than its text) ends 3 px before the first thing on the right */
     int tabs[2], nt = top_tabs(ui, tabs); /* Games and Music, or only Library inside the Library */
     if (room != sized_room || ui->tab != sized_tab || L(TAB_NAMES[0]) != sized_lang) {
         size = 0.8f;
@@ -1492,7 +1520,7 @@ static void draw_top_bar(Ui *ui)
     /* musik som spelas syns som en liten not med titeln i de andra flikarna */
     int cur = music_current();
     if (ui->tab != TAB_MUSIC && cur >= 0 && music_state() != MUSIC_STOPPED) {
-        float right = bx - 40, left = x + 4;
+        float right = bar_left - 40, left = x + 4;
         if (right - left > 40) {
             static char line[100];
             static int line_for = -2, line_gen = -1;

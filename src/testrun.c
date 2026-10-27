@@ -23,7 +23,7 @@ static Step s_steps[MAX_STEPS];
 static int s_count, s_pos, s_wait, s_hold;
 static int s_active;
 static int s_resume, s_sleep;
-static int s_volume = -1, s_charging = -1, s_battery = -1; /* låtsade värden, -1 = riktiga */
+static int s_volume = -1, s_charging = -1, s_battery = -1, s_wifi = -1; /* låtsade värden, -1 = riktiga */
 
 static u32 button_by_name(const char *n)
 {
@@ -81,6 +81,9 @@ void testrun_init(void)
         } else if (!strcmp(op, "charging")) {
             s->op = 'c';
             s->frames = atoi(arg);
+        } else if (!strcmp(op, "wifi")) { /* wifi 0/1 – Wi-Fi-reglaget är av/på */
+            s->op = 'f';
+            s->frames = atoi(arg);
         } else if (!strcmp(op, "sleep")) {
             s->op = 'z';
         } else if (!strcmp(op, "resume")) {
@@ -120,12 +123,14 @@ u32 testrun_buttons(u32 real)
             s_hold = s->op == 'h' && s->frames > 1 ? s->frames - 1 : 1;
             return s->button;
         }
-        if (s->op == 'v' || s->op == 'c' || s->op == 'b') {
+        if (s->op == 'v' || s->op == 'c' || s->op == 'b' || s->op == 'f') {
             s_pos++;
             if (s->op == 'v')
                 s_volume = s->frames;
             else if (s->op == 'c')
                 s_charging = s->frames;
+            else if (s->op == 'f')
+                s_wifi = s->frames;
             else
                 s_battery = s->frames;
             continue;
@@ -146,6 +151,7 @@ u32 testrun_buttons(u32 real)
 int testrun_volume(void) { return s_volume; }
 int testrun_charging(void) { return s_charging; }
 int testrun_battery(void) { return s_battery; }
+int testrun_wifi(void) { return s_wifi; }
 
 int testrun_take_sleep(void)
 {

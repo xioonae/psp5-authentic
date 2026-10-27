@@ -14,6 +14,7 @@
  *   volume N       låtsas att systemvolymen är N (0–30, +256 = ljudet av)
  *   charging 0/1   låtsas att batteriet laddas
  *   battery N      låtsas att batteriet har N %
+ *   wifi 0/1       låtsas att Wi-Fi-reglaget är av/på
  */
 #ifdef PSP5_TEST
 void testrun_init(void);
@@ -24,6 +25,7 @@ int testrun_take_sleep(void);             /* 1 en gång efter "sleep" i skriptet
 int testrun_volume(void);                /* låtsad volym (se ovan), -1 = riktig */
 int testrun_charging(void);              /* låtsad laddning 0/1, -1 = riktig */
 int testrun_battery(void);               /* låtsad batterinivå i %, -1 = riktig */
+int testrun_wifi(void);                  /* låtsat Wi-Fi-reglage 0/1, -1 = riktigt */
 #else
 static inline void testrun_init(void) {}
 static inline u32 testrun_buttons(u32 real) { return real; }
@@ -33,6 +35,7 @@ static inline int testrun_take_sleep(void) { return 0; }
 static inline int testrun_volume(void) { return -1; }
 static inline int testrun_charging(void) { return -1; }
 static inline int testrun_battery(void) { return -1; }
+static inline int testrun_wifi(void) { return -1; }
 #endif
 
 #endif
