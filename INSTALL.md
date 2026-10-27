@@ -1,6 +1,6 @@
 # Installing psp5-authentic
 
-*psp5-authentic 1.1.0 – a fork of psp5 v1.5.3 by Mille Weber ([08Weber/psp5](https://github.com/08Weber/psp5))*
+*psp5-authentic 1.2.0 – a fork of psp5 v1.5.3 by Mille Weber ([08Weber/psp5](https://github.com/08Weber/psp5))*
 
 **You need:** a PSP with **ARK-4 or ARK-5** (PSP-1000, 2000, 3000 or PSP Go) and a **USB cable**.
 
@@ -13,10 +13,10 @@ Not sure which ARK you have? In the XMB, press **SELECT**. ARK's menu shows *ARK
 
 | Your PSP | Download this |
 |---|---|
-| PSP-1000, 2000 or 3000 with **ARK-5** | `psp5-authentic-v1.1.0-ARK5.zip` |
-| PSP-1000, 2000 or 3000 with **ARK-4** | `psp5-authentic-v1.1.0-ARK4.zip` |
-| **PSP Go** with **ARK-5** | `psp5-authentic-v1.1.0-PSPGo-ARK5.zip` |
-| **PSP Go** with **ARK-4** | `psp5-authentic-v1.1.0-PSPGo-ARK4.zip` |
+| PSP-1000, 2000 or 3000 with **ARK-5** | `psp5-authentic-v1.2.0-ARK5.zip` |
+| PSP-1000, 2000 or 3000 with **ARK-4** | `psp5-authentic-v1.2.0-ARK4.zip` |
+| **PSP Go** with **ARK-5** | `psp5-authentic-v1.2.0-PSPGo-ARK5.zip` |
+| **PSP Go** with **ARK-4** | `psp5-authentic-v1.2.0-PSPGo-ARK4.zip` |
 
 You'll find them under [Releases](../../releases). Unzip the one you downloaded.
 
@@ -81,7 +81,7 @@ Every screen uses the same few buttons for the same things:
 | ✕ | **Confirm**: start the game, open, choose, switch on or off (in Music: play / pause) |
 | ○ | **Back**: one step back, close a popup or a screen (it closes the Library) |
 | START | **Options**: of the selected game, card or file · on the Library card: pin / unpin · START again closes the options |
-| SELECT | **Power menu** on every tab: Sleep, Shut down, Restart, Recovery menu (Confirm does it at once, Back or SELECT closes) |
+| SELECT | **Power menu** on every tab: Sleep, Shut Down, Restart, Recovery Menu (Confirm does it at once, Back or SELECT closes) |
 | L / R | **Switch tabs**: Games and Music (not in the Library: ○ closes it) · in a long list a page up / down |
 | □ △ | Extras on a few screens only: mark / select all in a list (*Manage Saved Data*, the File Manager), □ pauses the music |
 | HOME | Back to the XMB (not as custom launcher)|

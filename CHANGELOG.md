@@ -3,161 +3,87 @@
 All notable changes of **psp5-authentic**, a fork of [psp5](https://github.com/08Weber/psp5) by Mille Weber (08Weber).
 Newest first. Changes that are not in a release yet are under *Unreleased*.
 
-## Unreleased
+## 1.2.0 – Controls, new Settings pages, folders in the Library and time played
 
-- **Settings → About: the battery temperature is right.** It showed "3687 °C": the PSP gives the temperature in hundredths of a degree (36.87 °C is 3687), not in degrees as the SDK says. psp5 now
-  shows whole degrees ("37 °C"); a number below 100 is taken as degrees, and a PSP that does not say shows no row. (Seen in a report from a real PSP; the fix is tested with the numbers only.)
-- **The file manager's folders have the Library's folder picture.** The folders in the file manager were drawn with two plain rounded boxes; they are the folder of the Library's folder
-  cards now (the soft tab and corners), 14 px high (19 wide) in the row, one image like the one on the cards. (Seen in PC test frames only; not looked at on a PSP.)
-- **Settings and Information have more room.** They use the same sides as the file manager and *Manage Saved Data* now: the list of categories starts 24 px from the left edge
-  of the screen (it was 32) and is wider (136 px, it was 124), the gap between the categories and their settings is 12 px (it was 20), and the settings go to 24 px from the
-  right edge as before (284 px wide, it was 280). The title sits where the file manager's does. *Information* (the screen of a game) has the same columns, so the game's picture is
-  wider there (136 px). (Seen in PC test frames only; not looked at on a PSP.)
-- **The PSP confirm button (Settings → Controls) is written to the XMB's registry now.** Before, psp5 only told the Impose service, which a running program asks and which is not
-  kept: the row could change back as soon as Settings was opened again, and the XMB did not follow. psp5 now also sets `button_assign` in `/CONFIG/SYSTEM/XMB` (0 = ○, 1 = ✕), the
-  way the XMB itself and the homebrew tools that swap the buttons do, tells the Impose service as before, and shows what the system says afterwards. **Not tried on a PSP**: it is
-  how the other tools do it, but psp5 has not done it on a real one; please try it and say what you see (does the row keep ○ / ✕, does the XMB follow, does it stay after a restart).
-- **○ cancels before it leaves.** In the **file manager** the first ○ clears the marks (□), and the next one goes up a folder as before; at the top (the last step out of the
-  screen) a waiting *Copy* or *Move* is cancelled first, and only the next ○ leaves. (With a *Copy* waiting and a folder above, ○ still goes up, so you can walk to where you
-  want to paste.) In **Manage Saved Data** the first ○ clears the marks and the next one leaves. (Seen in the PC tests; not looked at on a PSP.)
-- **Settings → Network: the PSP's Wi-Fi screen brings you back to Settings** (on *Wi-Fi connection*), not to the main screen. If the network could not be started, the message is shown in
-  Settings. (*USB mode*, *File manager* and *Clear image cache* still end on the main screen, as they scan the games again.)
-- **"File Manager" is written with a capital M.** The names of the screens and categories in the other languages follow the English capitals in their own way (title case in
-  French, Spanish, Italian, Portuguese, Russian, Czech, Swedish and Dutch, nouns in German): *Gestionnaire de Fichiers*, *Gestor de Archivos*, *Gestione File*, *Gestor de Ficheiros*,
-  *Файловый Менеджер*, *Správce Souborů*; *Display and Sound* is *Skärm och Ljud*, *Écran et Son*, *Pantalla y Sonido*, *Schermo e Audio*, *Scherm en Geluid*, *Ecrã e Som*,
-  *Экран и Звук*, *Displej a Zvuk*; Swedish *Ta Bort från Hem*. Translated by Claude, not by native speakers: please check them.
-- **The start-up screen shows the PlayStation logo, drawn by psp5.** The little grey "psp5" at the start is replaced by the PlayStation logo (the P with its two swooshes), a
-  quarter of the screen high (68 px, 88 px wide) in the middle, in the same matt grey, fading in and out as before. It is **not a picture**: the outline of its three shapes (142 points,
-  about 570 bytes, traced from the reference picture with `tools/trace_logo.py`) is turned into a small image once, with smooth edges from the exact area each pixel has
-  inside the outline, and after that it is one sprite a frame, so it costs the PSP next to nothing. (Seen in PC test frames only; not looked at on a PSP.) **Please note:** the
-  logo is Sony's trademark (see the README); the README no longer says that nothing from Sony is used.
-- **Settings → Display and Sound: Brightness and Volume added.** *Brightness* (the XMB's level; the list is 1 to 4 and the PSP's own level in its place when it is another one)
-  and *Volume* (0 to 30, a popup with all the numbers, as the volume buttons have it) join the backlight timer, the equalizer and AVLS; the screen ones come first, then the sound
-  ones. They are the PSP's own settings (the XMB follows, nothing is saved by psp5), read and written the way the equalizer and AVLS are. A row the PSP does not answer for is left out.
-  **Not tried on a PSP**: whether the calls take effect, and **how many brightness levels the PSP has and whether it counts from 0 or 1** (psp5 shows whatever level the PSP
-  says, and what it has afterwards): please check. The new words are translated into all 11 languages by Claude.
-- **Settings → psp5: the version and CFW rows are gone** (they were also in *About*, which now has them alone).
-- **Settings → Display and Sound (new): the PSP's own backlight timer, equalizer and AVLS.** Three of the XMB's own settings, so you do not have to go there
-  to change them (they change in the XMB too, and nothing is saved by psp5): **Backlight auto-off** (30 s, 1, 2, 5, 10 and 15 min; when the PSP has another
-  time it is shown in its place in the list, so the row never says anything else than what the PSP has), **Equalizer** (Off, Heavy, Pops, Jazz, Unique, the
-  XMB's order) and **AVLS** (the volume limiter, on or off). A row the PSP does not have, or cannot be asked about, is left out; if there is none the
-  category says *Not available*. **Not tried on a PSP**: the calls (the backlight
-  timer is a call any program may make; the equalizer and AVLS are parameters of the kernel's Impose service, reached the way the volume bar reads the
-  volume), and above all **the numbers of the equalizer modes** (psp5 takes 0 = off and 1 to 4 in the XMB's order, which is a guess: please check
-  that *Heavy*, *Pops*, *Jazz* and *Unique* in psp5 are the same ones as in the XMB). The new words are translated into all 11 languages by Claude.
-- **Settings → Network (new): the PSP's own Wi-Fi screen.** *Wi-Fi connection* opens the network dialog that games show when they ask you to choose a connection (psp5
-  starts the PSP's network libraries the way a game does, shows the dialog over the theme's background, and stops everything again when it closes, so the PSP is not left
-  connected; turn the Wi-Fi switch on first). psp5 draws none of it. **What it can and cannot do:** the SDK has this dialog for *choosing one of the connections that are saved
-  and connecting to it*; there is no way for a program to ask it for *adding, editing or removing* a connection. If the dialog on your PSP does not offer those, they still
-  have to be done in the XMB (*Settings → Network Settings*). **Not tried on a PSP.** If the network cannot be started a message says so.
-- **Settings → About (new): everything the PSP says about itself.** Rows you can scroll through (nothing in them can be changed): the PSP's **nickname**, the **model**, the **system
-  software** version (6.61), the **custom firmware** (ARK-4 / ARK-5), the psp5 version, the **MAC address**, the free and total space of the **Memory Stick** (and of the
-  **internal storage** on a PSP Go), and the **battery**: level (and *charging*), voltage, temperature and capacity (mAh now / full). A row the PSP does not give is left out. It is read
-  again whenever the About category comes into view, so the battery is as it is now. (Seen in PC test frames only; the calls are not tried on a PSP. Translated into all 11 languages
-  by Claude.)
-- **Controls: every button means one thing everywhere, and you can choose which buttons they are.** The screens now use the same few buttons for the
-  same things: the D-pad and the analog stick **navigate**, ✕ **confirms**, ○ goes **back**, START opens the **options**, SELECT opens the **power menu**,
-  L / R **switch tabs** (a page up / down in a long list), and □ △ are left for the few screens that have something extra (mark and select all in a list,
-  pause the music). Before, some screens had a second button for the same thing, and some ignored the PSP's own ✕ / ○ setting. What changed:
-  △ and □ no longer close a popup, *Information*, *Manage Saved Data*'s popups or Settings (△ closed all of Settings from any row; ○ goes back one step
-  now, and from the list of categories it closes Settings); in the **file manager** the options are on **START** now (△ was the button there; ✕ on a file
-  still opens them), and START closes them again; the USB screen is left with **back** only (✕ left it too); the game delete's panel and the
-  hints show the symbol of the button that does the job now (also START / SELECT: a small pill with the word in it). The file manager used ✕ / ○ as they are on the
-  pad and ignored the PSP's own setting before; it follows it now, like everything else.
-  - **Settings → Controls** (new category): *PSP confirm button* (✕ or ○; **this is the PSP's own setting and changes the XMB too**, the same one as
-    the XMB's *Button Assignment*), then **Confirm**, **Back**, **Options** and **Power menu**. Confirm and Back can be *as the PSP's setting* or any of ✕ ○ □ △;
-    when you give one the button that the other has, the two swap (so you never end up with one button for both). The two buttons that are left take
-    □ and △ (in the order □ △ ✕ ○), so every button always has a job and nothing is lost. Options and Power menu are START and SELECT, either way round
-    (it is one setting seen from both sides). The choices are kept in `psp5.cfg` (`confirm=`, `back=`, `options=`) and work at once, also in the popup that
-    you are choosing them in.
-  - The list of **categories in Settings scrolls** now (there are more than fit), with a small arrow when there are more above or below.
-  (Seen in PC test frames and measured on a PC only. **Not tried on a PSP: the call that sets the PSP's own confirm button** (`sceImposeSetLanguageMode`;
-  the SDK does not say which values it takes, so psp5 works that out by comparing it with the system setting first, and shows what the PSP says afterwards:
-  if the PSP does not take the change, the row keeps its old value). The new names are translated into all 11 languages by Claude, not by a native
-  speaker: please check them.)
-- **Settings: a choice is picked from a popup now.** The settings that used to be changed with ← → (`<  value  >`: language, CPU speed, extra memory, the
-  regions ...) open a **popup with all their values** when you press ✕ on them, the one you have chosen at the moment framed, like the other popups. ↑ ↓ choose,
-  ✕ takes the value, ○ closes the popup and keeps the old one. ← → no longer change anything, so a stray press while you move through the list can't change a
-  setting; ← goes back to the list of categories on every kind of row. A long list (the 14 regions, the 12 languages) shows eight values at a time and a thin bar
-  at the right. The on/off switches still change with ✕. (Seen in PC test frames and measured on a PC only; not looked at on a PSP.)
-- **Top bar: a battery like the PS5's, a Wi-Fi sign, and the cog wheel at the end.**
-  - **Battery:** the little terminal is on the **left** now and the battery has **four bars** that are lit **from the right**, so the
-    charge runs out from the left (one bar up to 25 %, two up to 50 %, three up to 75 %, four above). At 15 % or less the bars are red.
-  - **Charging:** the **bolt** is back, **left of the battery** (as high as the battery and 3 px from it), and the bars above the level come
-    on one after the other (half a second each, a little dimmer than the real ones) and then it starts again from the level. The battery and
-    its number stay where they are when charging starts; the Wi-Fi sign and the tabs make room for the bolt.
-  - **Wi-Fi:** a Wi-Fi sign (three arcs and a square, like the one on the PS5) is shown left of the battery while the PSP's **Wi-Fi switch
-    is on**. It shows the switch, not whether the PSP is connected to a network. Its edges are **soft like the other icons** now (it was
-    drawn with hard edges first); it is 14 px high, two more than the battery, because three soft arcs do not fit in 12 px without turning
-    into grey stripes.
-  - **No Bluetooth sign on the PSP Go.** I found no way for a program to read the Bluetooth state (not in the PSP SDK and not in ARK), so
-    I did not add one that could only guess.
-  - **The cog wheel is at the very end of the top bar** now (its right edge where the clock's used to end), then the clock, then the battery
-    (with its percentage if you have it on), then the Wi-Fi sign. There are **12 px between all of them**; a sign or the battery that is not
-    there (Wi-Fi off, no battery in the PSP) leaves no gap. The percentage is 5 px right of the battery and 12 px before the clock, whatever its width.
-  (The maintainer tried it on a real PSP on 27 October 2026 and reported that the top bar looks fine and that the **Wi-Fi sign (the call that reads the Wi-Fi switch) works**; which PSP
-  that was was not said, so the PSP Go is still not known.)
-- **Library: the number of cards is level with the text before it.** In the row at the top (*All: 15*) the number was drawn on the baseline of
-  the Sort button, one pixel higher than *All:*, which sits a little lower so that it is centred with the button. It is on the baseline of the text now.
-  (Seen in the PC test frames; not looked at on a PSP.)
-- **Library: a button that chooses what the Library shows – with folders.** The title at the top left (it used to say *All games
-  and apps*) is a button now, framed when selected like **Sort**, in the same row. ↑ from a card selects the button nearest above
-  it (the new one on the left, Sort on the right); ← → move between the two; ✕ opens a list of four views:
-  - **All** – everything in one list, as before.
-  - **In folders** – a card for every folder. A game's folder is the last folder before its own folder in
-    `PSP/GAME` (`PSP/GAME/Racing/MyGame/EBOOT.PBP` is in *Racing*), or before the image in `ISO` (`ISO/Racing/MyGame.iso`).
-    ✕ on a folder opens it and its games and apps take the place of the folders; the folder's name is at the top where the button
-    was, and **○ goes back** to the folders (○ again closes the Library). START does nothing on a folder.
-  - **Outside of folders** – only what is not in any folder.
-  - **Both in and out of folders** – the folders first, then the games and apps that are in no folder (the UMD disc stays
-    first of all).
-  The button has a **colon and the number of cards** in it, like on the real console: *All: 15*, *In folders: 3*. Inside a folder
-  the name has the colon too (*Racing: 3*). The Sort button says **Sort by:** (*Sort by: Name (A-Z)*) – in Saved Data too, which
-  uses the same word.
-  A folder card is in your theme's colour with a folder drawn by the launcher (a wide folder with a soft, rounded tab, shaped after a
-  folder picture the maintainer chose) and the folder's first letter in the middle of it, as a capital (two
-  letters for a pair like *Ch*). Its name is in the bottom row, where a game's name is, with the tag **FOLDER** (in capitals like
-  PSP and APP, in every language). The folders are sorted
-  by the Sort button like games (by name, or the folder with the newest game first). Folder names are shown the way the
-  Categories Lite plugin shows them: without `CAT_` and without the two sort digits (`01Racing` is *Racing*). Folders with the
-  same name – in `GAME` and in `ISO`, on the Memory Stick and on the internal storage – are one card.
-  If a view has nothing to show (no folders at all, say) the screen says so and the button stays selected so you can change the view.
-  When there is not enough room in a language with long words, the number of games next to the button is left out first and the
-  text gets a little smaller.
-  (The new names are translated into all 11 languages by Claude, not by a native speaker – please check them. In Czech and
-  Japanese the Sort word stays as it was: *Seřadit*, 並べ替え.)
-- **The *Start* button in Games says *Play* now** (*Spela*, *Spielen*, *Jouer*, *Jugar*, *Gioca*, *Spelen*, *Jogar*, *Играть*, *プレイ*, *Hrát*).
-  The Library card's button still says **Open**. (The Play words are Claude's translations; Czech was *Spustit* before.)
-- **Time played.** A small dark pill with a clock and the time, like **54h** or **45min**, shows on the right-hand end of the
-  bottom row – in the Games tab opposite *Play* and the ⋯ button, in the Library opposite the tag and the name. It shows
-  **minutes up to an hour, then whole hours – never both** (*h* / *min* in most languages, *u* in Dutch, *ч* / *мин* in Russian,
-  時間 / 分 in Japanese). Nothing is shown for a game that has not been played, and **never** for the Library card or a folder (the launcher's own cards). Something played but under a minute shows **<1min**. The time is added up
-  when psp5 starts, in a file `playtime.txt` next to the other psp5 files, one line per game. Games that
-  are the same (the same disc ID, or the same folder / file name) share one time, wherever the files are.
-  The time comes from a small helper plugin that psp5 installs by itself (next paragraph). **There is no other way of counting**: with no ARK, or with the plugin's lines turned off, **nothing is counted**.
-  A game of under 10 seconds is not counted either.
-  (The test builds 4–6 had a switch for this, *Exact time played*, and measured from *Play* to the next start of psp5 when the plugin was off. The switch and that measuring are gone.)
-- **The helper plugin that counts the time (installs itself).** `psp5time.prx` is a small kernel module that is carried inside psp5. At every start with ARK psp5 writes it to the `PSP5` folder (when it is missing or not the one that comes with this psp5) and,
-  when `PLUGINS.TXT` has **no line for it at all**, adds two lines: `game, ...psp5time.prx, on` (PSP games, ISOs and homebrew) and `pops, ...psp5time.prx, on` (PS1 games). Every other line is left as it is, and so are lines for the plugin
-  that are already there, on or off: **to turn it off, turn off the two `psp5time.prx` lines in Settings → Plugins** (they are listed as *Games* and *PS1*) and they stay off. It works from the next game, no restart.
-  It runs inside every PSP game, ISO, homebrew and PS1 game, **whoever started it**, so the time is counted **also for games you start from the XMB, and
-  psp5 does not have to be ARK's launcher**. It counts only the seconds the game is running **and the PSP is awake**: sleep and a PSP that was
-  switched off during a game add nothing, and a long sleep no longer makes a 1-hour game show 15 hours.
-  The plugin finds out which game it is in by itself and names it as psp5 does in `playtime.txt`: a homebrew, PSN or PS1 game by the folder of its `EBOOT.PBP`, a PSP game (disc, ISO, an installed
-  update) by the disc ID in its `PARAM.SFO`. **A PSP game that has no disc ID** (a `PARAM.SFO` without one, or none at all; some homebrew ISOs) **is named by the name of its ISO file without the extension**, which is also how psp5 names it
-  (so it matches the card; renaming the file starts a new time). The plugin gets the file name from the file the PSP started, or else from ARK, which knows the ISO it mounted (`sctrlSEGetUmdFile`; looked up when needed, so an ARK without it only means "no name" and the plugin still loads). It keeps the seconds of each game in a small file `PSP5/played/<name>.txt` (written in place every 10 seconds, so a battery that runs out loses at most 10 seconds)
-  and **psp5 adds them to `playtime.txt` at its next start** (then removes the files). The plugin never writes `playtime.txt` itself, so a game that is switched off cannot damage the list of all your times.
-  The counting was reported to work on a real PSP (test builds 4–6: games started from psp5 and from the XMB were counted correctly). **The self-installing version: the maintainer reported on 27 October 2026 that the plugin works on their PSP, and so does the naming of ISO games that have no disc ID** (on a PC it was tried with the plugin's own loop against a clock that sleeps, a throwaway memory stick and a made-up disc). Not known (it was not said which PSP or which ARK that was, so these are still open): that ARK-5 has `sctrlSEGetUmdFile` like ARK-4's source (a missing one means no name for ISOs without a disc ID), the
-  PSP Go (the plugin keeps its files in the folder it was loaded from, so on the internal storage they are on `ef0:`), ARK-4, the file names ARK gives for ISO, PBOOT, PSN and PS1 games, and whether the Go's pause mode (the game paused behind the XMB) is left out.
-  Any other homebrew you run gets a time line in `playtime.txt` too (under its folder name): it is never shown, but it is there.
-  **psp5 itself is never counted**: the plugin ends at once in psp5 (an `EBOOT.PBP` in a folder called `PSP5`, or ARK's launcher `VBOOT.PBP`), and as a second guard psp5 knows its own path and throws away any
-  file the plugin made for psp5's own folder, so even a psp5 that was put in a folder with another name does not get a time of its own.
-- **The Library remembers the Sort and the view** after a restart (two lines in `psp5.cfg`). Before, it was *by name* every time.
-- **.jso games** (an ISO packed with LZO) show up in the Library, can be started, deleted and looked at in the file manager and in
-  Information, like .iso, .cso, .zso and .dax. (Checked on a PC with made-up data against the reference LZO library; no real .jso file
-  and no PSP was used.)
-- **PS1 theme: the four symbols sit lower.** They moved from behind the clock and the battery to the right side, under the row of
-  cards on Home, so they can be seen clearly. They are in the same place on every screen.
+### Controls
+
+- **Every button means one thing on every screen:** the D-pad and the analog stick **navigate**, ✕ **confirms**, ○ goes **back**, START opens the
+  **options**, SELECT opens the **power menu**, L / R **switch tabs** (or page up / down in a long list). □ and △ are only for extras (mark
+  and select all in a list, pause the music).
+- **Second buttons for the same job are gone.** △ and □ no longer close popups, *Information*, *Manage Saved Data* or Settings (○ goes back one
+  step; from the list of categories it closes Settings). The USB screen is left with Back only. In the File Manager the options are on START.
+  The File Manager now follows the PSP's own ✕ / ○ setting like everything else.
+- **New: Settings → Controls.** *PSP confirm button* (✕ or ○ – this is the PSP's own setting and changes the XMB too), then **Confirm**, **Back**,
+  **Options** and **Power menu**. Confirm and Back can be any of ✕ ○ □ △ (or *as the PSP's setting*); give one the button the other has and the two
+  swap, so no button ever has two jobs. Options and Power menu are START and SELECT, either way round. Your choices are kept in `psp5.cfg`.
+- **○ cancels before it leaves:** in the File Manager and in *Manage Saved Data* the first ○ clears your marks. In the File Manager, at the top, a
+  waiting *Copy* or *Move* is cancelled before ○ leaves.
+
+### Settings
+
+- **A choice opens a popup.** Settings that used to change with ← → (language, CPU speed, regions, ...) show all their values when you press ✕. ↑ ↓
+  choose, ✕ takes it, ○ keeps the old one. A stray press can't change a setting any more. Long lists scroll with a thin bar.
+- **New: Display and Sound** – the PSP's own **Brightness**, **Backlight auto-off**, **Volume**, **Equalizer** and **AVLS**. They change in the XMB too.
+- **New: Network** – opens the PSP's own Wi-Fi screen (the one games show) and brings you back to Settings. The SDK only lets it *choose and
+  connect to a saved connection*; adding, editing or removing connections still has to be done in the XMB.
+- **New: About** – nickname, model, system software, CFW, psp5 version, MAC address, space left on the Memory Stick (and the internal storage of a PSP
+  Go) and the battery (level, voltage, temperature, capacity). The battery temperature shows whole degrees (it showed 3687 °C before: the PSP gives
+  hundredths of a degree).
+- The category list scrolls. The version and CFW rows are gone from *psp5* (they are in *About*).
+- **More room:** Settings and *Information* start 24 px from the screen's edges, like the File Manager, with a wider list of categories and 12 px
+  between the columns.
+- **Names with capitals:** *File Manager*, *Shut Down*, *Recovery Menu*, *USB Mode*, *Disable UMD Drive*, *Disable Analog Stick*, *Display and Sound*
+  – in all 11 languages, each with its own capital rules.
+
+### Library
+
+- **Folders.** The title at the top of the Library is a button now (like **Sort by**) with four views: **All**, **In folders**, **Outside of folders** and
+  **Both in and out of folders**. A folder card shows a folder with its first letter and the tag *FOLDER*; ✕ opens it, ○ goes back. Folders come from
+  `PSP/GAME` and `ISO` (a game's folder is the last one before it; `CAT_` and sort digits are dropped, like Categories Lite shows them).
+  The view button shows the number of cards (*All: 15*) and the Sort button says *Sort by:*. The Library remembers your sort and view after a restart.
+- **The Start button says *Play*** (the Library card's says *Open*).
+- **.jso games** (an ISO packed with LZO) show up in the Library, and can be started, deleted and looked at.
+- The number of cards at the top is level with the text before it. The PS1 theme's four symbols sit lower, under the cards.
+
+### Time played
+
+- **Each game shows how long you played** – a small pill (a clock and *54h* or *45min*) at the right end of the bottom row, in Games and in the Library.
+  Minutes up to an hour, then whole hours. Nothing for a game you never played, the Library card or a folder.
+- **It is counted by a small helper plugin** (`psp5time.prx`) that psp5 installs by itself (two lines in `PLUGINS.TXT`, shown as *Games* and *PS1* in
+  *Settings → Plugins*; turn them off to stop counting). It counts only while the game runs and the PSP is awake, also for games started from the XMB,
+  and psp5 adds the times up at its next start (`playtime.txt`). Games without a disc ID are named by their ISO file name.
+  *The maintainer reported on 27 October 2026 that the plugin and the ISO naming work on their PSP.*
+
+### Top bar
+
+- **A battery like the PS5's:** four bars lit from the right (red at 15 % or less) with the terminal on the left. While charging the bolt is back
+  left of the battery and the bars above the level light up one after the other.
+- **A Wi-Fi sign** while the PSP's Wi-Fi switch is on (it shows the switch, not a connection). *The maintainer reported that it works.* No Bluetooth
+  sign on the PSP Go: there is no way for a program to read it.
+- The cog wheel is at the very end, then the clock, the battery and the Wi-Fi sign, 12 px apart.
+
+### File Manager and start-up screen
+
+- **The File Manager's folders have the Library's folder picture** now (they were two plain boxes).
+- **The start-up screen shows the PlayStation logo**, drawn by psp5 from its outline (not a picture), a quarter of the screen high, in the same grey.
+  The logo is Sony's trademark (see the README).
+
+### Not tried on a PSP
+
+Everything above was checked on a PC (test frames and numbers). These parts use calls that psp5 has **not** run on a PSP yet, so please check them: the
+**PSP confirm button** (psp5 now also writes the XMB's own setting), **Brightness**, **Volume**, **Equalizer** and **AVLS** (the equalizer's mode numbers
+are a guess), the **Wi-Fi screen**, the readings in **About**, and the start-up logo. The new words are translated into all 11 languages by Claude,
+not by native speakers.
+
+### Docs
+
+- README and INSTALL describe the buttons by what they do, and have new screenshots.
+
+### Downloads and installing
+
+`psp5-authentic-v1.2.0-ARK5.zip`, `-ARK4.zip`, `-PSPGo-ARK5.zip` and `-PSPGo-ARK4.zip`: see [INSTALL.md](INSTALL.md). They use
+the same folders as before (`PSP/GAME/PSP5`, `PSP5`), so they replace an installed 1.1.0 (or 1.0.0, or psp5) and keep your settings and
+covers.
 
 ## 1.1.0 – the Library card, the battery percentage and a PSP Go fix
 

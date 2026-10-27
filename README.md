@@ -5,7 +5,7 @@ on the PSP's 480×272 screen. You move through it with the D-pad alone.
 
 psp5-authentic is a fork of [psp5](https://github.com/08Weber/psp5) by Mille Weber (08Weber), based on psp5 v1.5.3. It has
 one goal of its own: to be **as authentic as possible to its home console counterpart**. Where the console does something,
-this fork does it the same way. This is version 1.1.0 (1.0.0 was the first release); everything that changed compared with psp5 is in the
+this fork does it the same way. This is version 1.2.0 (1.0.0 was the first release); everything that changed compared with psp5 is in the
 [release notes](CHANGELOG.md). Many thanks to Mille Weber – all of this stands on that work.
 
 <table>
@@ -45,18 +45,21 @@ this fork does it the same way. This is version 1.1.0 (1.0.0 was the first relea
   ARK's own save folder is locked and can't be deleted.
 - **Music.** Plays the MP3 files in `MUSIC` with title, artist and album art (from the file, or a `cover.jpg` / `folder.jpg`
   in the folder). It keeps playing while you browse your games.
-- **Settings** (the cog wheel). *psp5* (boot into psp5, sounds, startup animation, battery percentage, language), *Theme*,
-  *Controls* (the PSP's own confirm button, and which buttons confirm, go back, open the options and the power menu),
-  *Display and Sound* (the PSP's own brightness, backlight timer, volume, equalizer and AVLS), *Network* (the PSP's own Wi-Fi screen), *About* (nickname, model, system software, MAC address, storage,
-  battery),
-  *Performance* (CPU speed, extra memory, caches), *System*, *Plugins* and *Power and USB* (USB mode, File Manager, XMB,
-  sleep, shut down, restart, recovery menu). A setting with several values opens a popup when you press Confirm on it.
+- **Settings** (the cog wheel). Several pages:
+  - *psp5* – boot into psp5, sounds, startup animation, battery percentage, language. *Theme* – the colours.
+  - *Controls* – the PSP's own confirm button, and which buttons confirm, go back, open the options and the power menu.
+  - *Display and Sound* – the PSP's own brightness, backlight timer, volume, equalizer and AVLS.
+  - *Network* – the PSP's own Wi-Fi screen. *About* – nickname, model, system software, MAC address, storage, battery.
+  - *Performance* (CPU speed, extra memory, caches), *System*, *Plugins* and *Power and USB* (USB Mode, File Manager, XMB,
+    Sleep, Shut Down, Restart, Recovery Menu).
+
+  A setting with several values opens a popup when you press Confirm on it.
 - **Themes.** The colours of the console covers, each with the console's scene behind your games (a beam of light, golden
   dust, haze), plus the classic looks of PS1 to PS4. Highlight a theme to preview it, Confirm to use it. You can turn the game art
   in the background off, so the theme is always visible.
 - **Startup.** A short intro like a console's, with a health notice, soft circles and golden dust in your theme's colours.
   It plays when the PSP starts and wakes up, not when you come back from a game. Any button skips it, and you can turn it off.
-- **Power menu** (SELECT, on every tab). Sleep, Shut down, Restart, Recovery menu – Confirm does it at once.
+- **Power menu** (SELECT, on every tab). Sleep, Shut Down, Restart, Recovery Menu – Confirm does it at once.
 - **Volume, battery and Wi-Fi.** Pressing the volume buttons slides a volume bar in at the top. The battery has four bars that are lit
   from the right (one for each quarter); while the PSP charges, a bolt is shown left of the battery and the bars above the level come on
   one after the other. You can also show the battery percentage (*Settings → psp5*). A Wi-Fi sign is shown while the PSP's Wi-Fi switch is
@@ -103,7 +106,9 @@ Works on the **PSP-1000, 2000, 3000 and PSP Go** with **ARK-4 or ARK-5**; it ada
 version (the PSP-1000 has no extra memory or USB charging, ARK-4 has fewer CPU speeds). The PS Vita isn't supported.
 
 Every update is tested on a **PSP-1000**, the only device used for testing. The other models and the two ARK versions are
-expected to work but aren't tested separately. Claude also runs automated checks on a PC; they are not part of this
+expected to work but aren't tested separately. A few parts of 1.2.0 that talk to the PSP's own settings (brightness, volume,
+equalizer, AVLS, the confirm button, the Wi-Fi screen) have not been tried on a real PSP yet; the
+[release notes](CHANGELOG.md) say which. Claude also runs automated checks on a PC; they are not part of this
 repository. If something behaves oddly on your PSP, please open an issue and tell us what you saw and which PSP and ARK you
 have.
 

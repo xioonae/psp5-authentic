@@ -20,10 +20,13 @@ into psp5 instead of the XMB.
 - **Back to arkMenu:** copy `ARK_01234/VBOOT_ARKMENU.PBP` to `VBOOT.PBP` (a copy is also in `backup/`).
 - An ARK update can overwrite `VBOOT.PBP` – then copy `dist/PSP/GAME/PSP5/EBOOT.PBP` in as `VBOOT.PBP` again.
 
-## After 1.1.0 (next version)
+## Version 1.2.0 (changes after 1.1.0)
 
-All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`) until the next version is released.
+The changes after 1.1.0 are noted here; the list for users is under *1.2.0* in `CHANGELOG.md`. Changes after 1.2.0 go in a new section above this one.
 
+- **Version 1.2.0**: `PSP5_VERSION` in `settings.c` (shown in *About*), the download names in `INSTALL.md`, the default of `tools/make_release.py`. *Capitals:* *USB Mode*, *Shut Down*, *Recovery Menu*, *Disable UMD Drive* and
+  *Disable Analog Stick* are in title case now, in all languages (`lang.c`, checked by the private `units/caps_test.c`). *The test build* (`-DPSP5_TEST`, `tools/build.sh test`) fakes the Impose settings (`s_test_impose`: volume 18, brightness 3,
+  equalizer off, AVLS off) and the backlight timer (120 s) in `system.c`, so that *Settings → Display and Sound* can be looked at and used in PPSSPP, which has no Impose service and no ARK. Nothing of this is in the normal build.
 - **The battery temperature** (`system.c`: `battery_celsius`, used by `sys_about`): `scePowerGetBatteryTemp` gave 3687 on the maintainer's PSP, which is hundredths of a degree (36.87 °C), not the degrees that the SDK says. From 100 up the number is
   hundredths and is rounded to whole degrees (`raw / 100 + (raw % 100 >= 50)`); below 100 it is taken as it is; a negative one is -1 (the row is left out). Tested by cutting the function out of `system.c` (23 checks, from 3687 to
   `INT_MIN`; 9 mutation runs: all caught except one that changes nothing (the test for a negative number) and one hole that was closed: that `sys_about` really calls the conversion, which the test script checks in the source). The PSP that
@@ -457,7 +460,7 @@ The entries below were written between 1.0.0 and 1.1.0.
   at size 0.8, `ALIGN_LEFT` at `bx + BAT_W + BAT_GAP`, i.e. always 5 px after the end of the battery; with fewer digits its right
   end is further from the clock. It is only drawn when the level is known (`level >= 0`); the room stays reserved then.
   The tabs shrink with the same rule as before (`room = bx - COG_GAP - 21 - MARGIN`, smallest size 0.56).
-  *(The layout in this entry - room for "100%", `COG_GAP`, the bolt - was replaced by the new top bar at the top of the section "After 1.1.0".)*
+  *(The layout in this entry - room for "100%", `COG_GAP`, the bolt - was replaced by the new top bar at the top of the section "Version 1.2.0".)*
 - **Top bar without a battery** (`ui.c`): the poll keeps `sys_present` (`scePowerIsBatteryExist()`; the test-run battery counts as
   present). Without a battery `draw_battery` is not called at all (before it drew the empty outline) and no number is drawn; `bx`
   is the position without the number (`shift = 0`), so the cog wheel does not move.
@@ -491,7 +494,7 @@ The entries below were written between 1.0.0 and 1.1.0.
   - The kit (generator, run script, the eight button scripts, the patch, a README with the PPSSPP build flags) is in
     `screenshot-kit/` next to `host-tests/` in the hand-off bundle, **not in git**. Run it again whenever the look changes.
 
-- **Top bar: the number closer to the battery, the cog wheel further from it** (`ui.c`): *(replaced by the new top bar at the top of "After 1.1.0")* `TOP_GAP` (clock to what is left of it, 10),
+- **Top bar: the number closer to the battery, the cog wheel further from it** (`ui.c`): *(replaced by the new top bar at the top of "Version 1.2.0")* `TOP_GAP` (clock to what is left of it, 10),
   `BAT_W` (battery body 20 + terminal 2), `BAT_GAP` (battery to its number, was 10, now 5) and `COG_GAP` (battery's left edge to the
   cog wheel's centre, was 22, now 27) replace the literals 32 / 22 / 10 in `draw_top_bar`. `gx = bx - COG_GAP`, tab
   `room = bx - COG_GAP - 21 - MARGIN`. The group (battery + number) sits 5 px closer to the clock, so with the percentage on the cog
