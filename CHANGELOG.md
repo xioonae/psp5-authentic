@@ -5,6 +5,11 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ## Unreleased
 
+- **Settings: a choice is picked from a popup now.** The settings that used to be changed with ← → (`<  value  >`: language, CPU speed, extra memory, the
+  regions ...) open a **popup with all their values** when you press ✕ on them, the one you have chosen at the moment framed, like the other popups. ↑ ↓ choose,
+  ✕ takes the value, ○ closes the popup and keeps the old one. ← → no longer change anything, so a stray press while you move through the list can't change a
+  setting; ← goes back to the list of categories on every kind of row. A long list (the 14 regions, the 12 languages) shows eight values at a time and a thin bar
+  at the right. The on/off switches still change with ✕. (Seen in PC test frames and measured on a PC only; not looked at on a PSP.)
 - **Top bar: a battery like the PS5's, a Wi-Fi sign, and the cog wheel at the end.**
   - **Battery:** the little terminal is on the **left** now and the battery has **four bars** that are lit **from the right**, so the
     charge runs out from the left (one bar up to 25 %, two up to 50 %, three up to 75 %, four above). At 15 % or less the bars are red.
