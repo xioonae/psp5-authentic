@@ -84,6 +84,9 @@ void gfx_logo(int x, int y, int h, u32 color);
  * way: one image for exactly this size, on whole pixels. `pic` (can be NULL) gets where it went and how it is built, so that the
  * letter of the folder can be put in the middle of its body. */
 void gfx_folder_icon(int l, int t, int w, int h, u32 color, FolderPic *pic);
+/* The same folder picture, `h` pixels high (1.38 times as wide) with its top left corner on the whole pixel (x, y), for a row of a list that has no card round it:
+ * the file manager's folders. It is one image of exactly that size, like the one on a card, so the two look the same. */
+void gfx_folder_picture(int x, int y, int h, u32 color);
 /* Where the capital letter of a folder (one letter or a pair like "Ch") goes on the folder that gfx_folder_icon has just drawn (`pic` is what it
  * gave back), in the middle of its body (the part under the tab): the point to give text_draw with ALIGN_CENTER (the middle of the letter sideways, and
  * its baseline: half the height of a capital below the middle of the body) and the size of the text. Whole pixels. */

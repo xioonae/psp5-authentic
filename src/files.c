@@ -971,9 +971,8 @@ static void draw_icon(float x, float y, const FileEntry *e, float a)
         gfx_rect(x + 3, y + 6, 8, 2, fade(RGBA(90, 92, 100, 255), a));
         return;
     }
-    if (e->kind == KIND_DIR) {
-        gfx_round_rect(x, y + 2, 8, 5, 1.5f, fade(RGBA(168, 170, 180, 255), a));
-        gfx_round_rect(x, y + 4, 18, 13, 2.5f, fade(RGBA(222, 222, 228, 255), a));
+    if (e->kind == KIND_DIR) { /* the folder of the Library's folder cards, 14 px high (19 wide) on whole pixels, 5 px below the top of the 24 px row (y is 2 below it) */
+        gfx_folder_picture((int)ceilf(x - 0.5f), (int)ceilf(y + 2.5f), 14, fade(RGBA(222, 222, 228, 255), a));
         return;
     }
     const char *dot = strrchr(e->name, '.');

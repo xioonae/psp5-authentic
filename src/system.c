@@ -307,6 +307,16 @@ static int device_space(const char *dev, unsigned long long *free_b, unsigned lo
     return 1;
 }
 
+/* scePowerGetBatteryTemp: the SDK says degrees Celsius, but a PSP gives the temperature in hundredths of a degree (36.87 °C comes as 3687 - psp5 showed
+ * "3687 °C" first). A battery is never 100 °C, so a number from 100 up is hundredths and is rounded to whole degrees; below that it is taken as it
+ * is (should a PSP give whole degrees); a negative number is the PSP not saying (-1). */
+static int battery_celsius(int raw)
+{
+    if (raw < 0)
+        return -1;
+    return raw >= 100 ? raw / 100 + (raw % 100 >= 50) : raw;
+}
+
 void sys_about(SysAbout *a)
 {
     memset(a, 0, sizeof(*a));
@@ -321,7 +331,7 @@ void sys_about(SysAbout *a)
         a->percent = scePowerGetBatteryLifePercent();
         a->charging = scePowerIsBatteryCharging() > 0;
         a->mv = scePowerGetBatteryVolt();
-        a->celsius = scePowerGetBatteryTemp();
+        a->celsius = battery_celsius(scePowerGetBatteryTemp());
         a->mah_left = scePowerGetBatteryRemainCapacity();
         a->mah_full = scePowerGetBatteryFullCapacity();
     }

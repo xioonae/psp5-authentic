@@ -5,6 +5,10 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ## Unreleased
 
+- **Settings → About: the battery temperature is right.** It showed "3687 °C": the PSP gives the temperature in hundredths of a degree (36.87 °C is 3687), not in degrees as the SDK says. psp5 now
+  shows whole degrees ("37 °C"); a number below 100 is taken as degrees, and a PSP that does not say shows no row. (Seen in a report from a real PSP; the fix is tested with the numbers only.)
+- **The file manager's folders have the Library's folder picture.** The folders in the file manager were drawn with two plain rounded boxes; they are the folder of the Library's folder
+  cards now (the soft tab and corners), 14 px high (19 wide) in the row, one image like the one on the cards. (Seen in PC test frames only; not looked at on a PSP.)
 - **Settings and Information have more room.** They use the same sides as the file manager and *Manage Saved Data* now: the list of categories starts 24 px from the left edge
   of the screen (it was 32) and is wider (136 px, it was 124), the gap between the categories and their settings is 12 px (it was 20), and the settings go to 24 px from the
   right edge as before (284 px wide, it was 280). The title sits where the file manager's does. *Information* (the screen of a game) has the same columns, so the game's picture is

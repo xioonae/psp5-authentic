@@ -115,13 +115,21 @@ static void folder_dims(int w, int h, int *tab_w, int *tab_h, int *r, int *rl, i
         *rr = *r;
 }
 
+void icon_folder_pic_at(int x, int y, int h, FolderPic *p)
+{
+    p->h = h;
+    p->w = (int)floorf(h * 1.38f + 0.5f);
+    p->x = x;
+    p->y = y;
+    folder_dims(p->w, p->h, &p->tab_w, &p->tab_h, &p->r, &p->tab_rl, &p->tab_rr);
+}
+
 void icon_folder_pic(int l, int t, int w, int h, FolderPic *p)
 {
-    p->h = (int)floorf(h * 0.66f + 0.5f);
-    p->w = (int)floorf(p->h * 1.38f + 0.5f);
-    p->x = l + (w - p->w + 1) / 2; /* centred, on whole pixels (the odd pixel goes to the left, as with the Library picture) */
-    p->y = t + (h - p->h + 1) / 2;
-    folder_dims(p->w, p->h, &p->tab_w, &p->tab_h, &p->r, &p->tab_rl, &p->tab_rr);
+    int ph = (int)floorf(h * 0.66f + 0.5f);
+    int pw = (int)floorf(ph * 1.38f + 0.5f);
+    /* centred, on whole pixels (the odd pixel goes to the left, as with the Library picture) */
+    icon_folder_pic_at(l + (w - pw + 1) / 2, t + (h - ph + 1) / 2, ph, p);
 }
 
 /* The Library picture, in whole pixels from its top left corner. The design is 83 x 77 units: six squares (19 on a pitch of 25) and the
