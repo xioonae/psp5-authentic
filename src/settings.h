@@ -6,7 +6,7 @@
 
 /* Det inställningsskärmen ber huvudprogrammet att göra */
 enum {
-    SA_NONE, SA_CLOSE, SA_USB, SA_XMB, SA_RESTART, SA_SUSPEND, SA_SHUTDOWN, SA_RECOVERY, SA_CLEAR_CACHE, SA_FILES,
+    SA_NONE, SA_CLOSE, SA_USB, SA_XMB, SA_RESTART, SA_SUSPEND, SA_SHUTDOWN, SA_RECOVERY, SA_CLEAR_CACHE, SA_FILES, SA_WIFI,
 };
 
 /* Läser ARK-inställningar och plugins och visar första kategorin. */

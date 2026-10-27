@@ -11,8 +11,18 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   XMB's order) and **AVLS** (the volume limiter, on or off). A row the PSP does not have, or cannot be asked about, is left out; if there is none the
   category says *Not available*. (The screen brightness is not here: the PSP has its own button for it.) **Not tried on a PSP**: the calls (the backlight
   timer is a call any program may make; the equalizer and AVLS are parameters of the kernel's Impose service, reached the way the volume bar reads the
-  volume), and above all **the numbers of the equalizer modes** (psp5 takes 0 = off and 1 to 4 in the XMB's order, which is a guess: please look
+  volume), and above all **the numbers of the equalizer modes** (psp5 takes 0 = off and 1 to 4 in the XMB's order, which is a guess: please check
   that *Heavy*, *Pops*, *Jazz* and *Unique* in psp5 are the same ones as in the XMB). The new words are translated into all 11 languages by Claude.
+- **Settings → Network (new): the PSP's own Wi-Fi screen.** *Wi-Fi connection* opens the network dialog that games show when they ask you to choose a connection (psp5
+  starts the PSP's network libraries the way a game does, shows the dialog over the theme's background, and stops everything again when it closes, so the PSP is not left
+  connected; turn the Wi-Fi switch on first). psp5 draws none of it. **What it can and cannot do:** the SDK has this dialog for *choosing one of the connections that are saved
+  and connecting to it*; there is no way for a program to ask it for *adding, editing or removing* a connection. If the dialog on your PSP does not offer those, they still
+  have to be done in the XMB (*Settings → Network Settings*). **Not tried on a PSP.** If the network cannot be started a message says so.
+- **Settings → About (new): everything the PSP says about itself.** Rows you can scroll through (nothing in them can be changed): the PSP's **nickname**, the **model**, the **system
+  software** version (6.61), the **custom firmware** (ARK-4 / ARK-5), the psp5 version, the **MAC address**, the free and total space of the **Memory Stick** (and of the
+  **internal storage** on a PSP Go), and the **battery**: level (and *charging*), voltage, temperature and capacity (mAh now / full). A row the PSP does not give is left out. It is read
+  again whenever the About category comes into view, so the battery is as it is now. (Seen in PC test frames only; the calls are not tried on a PSP. Translated into all 11 languages
+  by Claude.)
 - **Controls: every button means one thing everywhere, and you can choose which buttons they are.** The screens now use the same few buttons for the
   same things: the D-pad and the analog stick **navigate**, ✕ **confirms**, ○ goes **back**, START opens the **options**, SELECT opens the **power menu**,
   L / R **switch tabs** (a page up / down in a long list), and □ △ are left for the few screens that have something extra (mark and select all in a list,

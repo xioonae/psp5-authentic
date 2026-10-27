@@ -24,6 +24,35 @@ into psp5 instead of the XMB.
 
 All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`) until the next version is released.
 
+- **Settings → Network** (new `wifi.c` / `wifi.h`, `netstub.S`; `settings.c`, `settings.h`, `main.c`, `Makefile`, `lang.c`).
+  - *What it is*: `CAT_NETWORK` has one action row, *Wi-Fi connection* (`SA_WIFI`). `main.c`'s `run_action` stops everything (`app_stop`), runs `wifi_mode()` (`gfx_init`, `wifi_dialog(&s_running)`,
+    `gfx_term`) and rebuilds the app, like the USB and file-manager modes (so Settings is left, as it is by those); a result of -1 shows `S_WIFI_FAILED` as a toast.
+  - *`wifi_dialog`*: `sceUtilityLoadNetModule(PSP_NET_MODULE_COMMON)` and `_INET` (an "already loaded" answer, 0x80111102, counts as loaded and is not unloaded), `sceNetInit(0x20000, 0x20, 0x1000, 0x20, 0x1000)`,
+    `sceNetInetInit()`, `sceNetApctlInit(0x1600, 42)` (the numbers games use), then `sceUtilityNetconfInitStart` with `PSP_NETCONF_ACTION_CONNECTAP`, `hotspot` and `wifisp` = 1 (all saved kinds can be chosen),
+    `buttonSwap` and `language` from the system (the dialog is the system's: it does not follow psp5's own Controls), and the thread priorities 17 / 19 / 18 / 16 that the on-screen keyboard
+    uses. It is driven like `osk_input` in `files.c`: `draw_frame` (the theme's backdrop) then `gfx_end_with(step)`, where `step` calls `sceUtilityNetconfUpdate(1)` while the dialog is VISIBLE, `ShutdownStart` at
+    QUIT and ends at NONE. When `*running` goes to 0 (HOME) up to 120 more frames are given for the dialog to end. Result: `data.base.result == 0` is 1 (a connection was made), else 0; -1 when a module,
+    the network libraries or the dialog would not start; then whatever was started is stopped, in the other order (`sceNetApctlTerm`, `sceNetInetTerm`, `sceNetTerm`, the modules this call loaded).
+  - *What the SDK offers* (`psputility_netconf.h`): three actions only (`CONNECTAP`, `DISPLAYSTATUS`, `CONNECT_ADHOC`). **Nothing for adding, editing or removing a connection.** The maintainer asked for "the screen that lets you
+    add, remove or edit Wi-Fi, like in apps": this is the dialog apps have, which (as far as the SDK says) chooses among saved connections; whether it offers more on a real PSP is not known. **Never run on a PSP.**
+  - *Why `netstub.S`*: linking the SDK's `libpspnet_inet` for `sceNetInetInit` / `sceNetInetTerm` makes `psp-fixup-imports` print "could not fixup imports, stubs out of order" (it does so in a three-line program too,
+    in every link order tried; it is the library's `sceNetInet.o`), and the build must have no warnings. The two calls are imported by hand (`STUB_START "sceNetInet", 0x00090000, ...` with the numbers 0x17943399 and
+    0xA9ED66B9 read from `libpspnet_inet.a` with `objdump -s -j .rodata.sceNid`): the same module, attribute (0x0009, as the library's own header has it) and numbers, so it is the same import. `libpspnet` and
+    `libpspnet_apctl` are linked by the SDK's default libraries already.
+  - *Tests* (`host-tests/wifi/wifi_test.c`, 27 checks; stand-in headers in `wifi/inc`): the real `wifi.c` against stand-ins that log every call: the order of the calls for a connection made and for a dialog closed without one,
+    what the dialog is asked for (action, hotspot, WISP, the system's button setup and language, the thread priorities), each of the six steps failing (what was started is stopped, nothing else, -1), "already loaded"
+    modules left loaded, HOME during the dialog, and a dialog that never ends (the wait is bounded; the stand-in's frame limit makes a loop that does not end *fail* the test instead of hanging it).
+    `settings/settings_test.c`: the category, the action it returns, the position after Display and Sound.
+- **Settings → About** (`settings.c`, `system.c` / `system.h`, `lang.c`).
+  - *System*: `sys_about(SysAbout *)` asks the PSP for everything at once: `sceUtilityGetSystemParamString(PSP_SYSTEMPARAM_ID_STRING_NICKNAME)`, `sceKernelDevkitVersion()`, `sceWlanGetEtherAddr`, the battery
+    (`scePowerIsBatteryExist`, `GetBatteryLifePercent`, `IsBatteryCharging`, `GetBatteryVolt` (mV), `GetBatteryTemp` (°C), `GetBatteryRemainCapacity` / `FullCapacity` (mAh); -1 where it does not say), and the
+    free / total space of `ms0:` (and `ef0:` on a PSP Go) by `sceIoDevctl(dev, 0x02425818, ...)`, the call the file manager makes (a copy of the few lines: `files.c` is built without `system.c` in the tests).
+  - *The rows* (`fill_about`, `CAT_ABOUT`, the last category): Nickname (only when there is one), Model, System software (`%u.%u%u` from the devkit: 0x06060110 is 6.61), CFW (`ARK-4` / `ARK-5`, only with ARK),
+    psp5 (`PSP5_VERSION`, now one define), MAC address, Memory Stick (`S_ABOUT_FREE_OF`: "12.3 GB free of 29.8 GB"; MB under a gigabyte), System Storage (PSP Go), Battery ("87 %" and ", charging"),
+    voltage ("4.12 V"), temperature ("31 °C") and capacity ("1860 / 2200 mAh"). Every row is an `IT_INFO` (selectable, so the list scrolls like the others; nothing can be changed). `fill_about` is called when the
+    menu is built and every time the category *comes into view* in the left column (`settings_update`, with the chosen row kept inside the list if it got shorter).
+  - *Tests* (`settings/settings_test.c`; `sys_about` is a stand-in): every row and value in order, four devkit numbers, what is left out (no nickname, MAC, ARK, battery, charging; a battery that only says its level), a PSP
+    Go's internal storage, MB / GB, the list scrolling to the last row, being asked again when it comes into view, the chosen row kept in range, and Network / About in all 11 languages on whole pixels.
 - **Settings → Display and Sound** (`settings.c`, `system.c` / `system.h`, `lang.c` / `lang.h`).
   - *System* (`system.c`): `sys_backlight_off()` / `sys_set_backlight_off(secs)` are `sceImposeGetBacklightOffTime` / `sceImposeSetBacklightOffTime` (user calls in `libpspuser`: any program may
     make them; "30 to a lot of seconds" in the SDK); `sys_equalizer` / `sys_avls` and their setters go through `impose_get` / `impose_set`: the kernel's `sceImposeGetParam` (NID 0x531C9778; 0xDC3BECFF in
