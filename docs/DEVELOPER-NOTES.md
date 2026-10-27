@@ -150,7 +150,7 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
     starts again; with four bars nothing animates. The bolt (`gfx_bolt`, `ICON_BOLT`, the old polygon) is drawn by `draw_top_bar`, not
     by `draw_battery`, because it is outside the battery and moves the things left of it (see *Layout*).
   - *Wi-Fi*: `sceWlanGetSwitchState() > 0` in the once-a-second poll (`#include <pspwlan.h>`, `-lpspwlan` in the `Makefile`; PPSSPP
-    implements it too). It is the state of the Wi-Fi switch, not "connected to a network", and it has not been tried on a real PSP.
+    implements it too). It is the state of the Wi-Fi switch, not "connected to a network". The maintainer reported on 27 Oct 2026 that the sign works on their PSP (which model was not said: the PSP Go is still unknown).
     **There is no Bluetooth sign for the PSP Go**: no call that reads the Bluetooth state was found in the SDK headers (`pspwlan.h` and
     `pspnet_apctl.h` are Wi-Fi only) or in the ARK-4 sources (only the file names `bluetooth_plugin.prx`, `btdun.prx`, `hidsvc.prx` and an LED id);
     a sign that is never drawn would only be dead code. If someone finds the call, the sign goes at `bar_left - TOP_GAP`, left of the Wi-Fi sign.
@@ -312,7 +312,8 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
       **Lines that are there are never changed**: the opt-out is turning them off in Settings > Plugins (they are listed as `psp5time.prx`, Games and PS1), and they stay off. One line left of the two counts as "there" (nothing is added). The user who deletes both lines gets
       them back at the next start. ARK reads PLUGINS.TXT at every game start, so no restart is needed. A test build user who had the switch on keeps working (the lines are there); one who had it off has `off` lines and keeps them off.
     - *Build*: the main Makefile makes `plugin/psp5time.prx` (sub-make), then `plugin/psp5time_prx.h` (`bin2c`), which `src/helper.c` includes; `make clean` cleans the plugin too.
-    - *Not known* (no PSP): that ARK accepts and runs the module as written; the thread's behaviour across a real sleep and wake-up (the code works for a clock that jumps and for one that stands still);
+    - *Reported working* (the maintainer, 27 Oct 2026, one PSP, model and ARK version not said): the self-installing plugin and the naming of ISO games without a disc ID. *Not known* (so still open for the other
+      models, ARK-4 and the Go): that ARK accepts and runs the module as written; the thread's behaviour across a real sleep and wake-up (the code works for a clock that jumps and for one that stands still);
       the file names `sceKernelInitFileName()` gives (above); that ARK-5 (only ARK-4's source was read) exports `sctrlSEGetUmdFile` under one of the two numbers (without it a game with no disc id gets no time); file calls from the thread on a PSP Go with a game on the internal storage; the PSP Go's pause mode and the HOME menu (user threads are paused, the kernel thread may go on counting).
       The old test build 4 kept `PSP5/ingame.awake` (a different design, matched by the marker's number); that file is no longer read, and is not removed.
   - *Under a minute*: `playtime_text` gives `<1min` for 1..59 s (it was empty), so a short test shows something; sessions under 10 s are still not
