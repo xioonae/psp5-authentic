@@ -293,22 +293,21 @@ static float sd_folder(const Shape *p, float px, float py)
     return fminf(body, tab);
 }
 
-/* The Wi-Fi sign in a box of side 2 r = 12 units: a square of 3 units in the bottom left corner and, round its middle, the upper
- * right quarters of three rings (radii 4, 7 and 10 units, 2 thick: 1 between them), cut straight on the lines through the middle.
- * It is one shape, so where the parts meet nothing is blended twice. (px, py) is measured from the middle of the box.
- * At 12 pixels the arcs are too close together for smooth edges (they blur into grey stripes), so the distance is made so steep that
- * a pixel is either in or out: every pixel is fully lit or not at all, like the battery's bars. The pixel centres of the usual
- * size are whole pixels from the middle of the square (3, 4, 5 ... 5 away), so some are exactly on an edge (3-4-5 triangles); the
- * arcs are 0.01 thinner and a pixel on a cut or an edge is out, so the picture does not depend on rounding. */
+/* The Wi-Fi sign in a box of side 2 r = 14 units: a square of 3 units in the bottom left corner and, round its middle, the upper
+ * right quarters of three rings (2 thick, 1.7 between them), the outer one touching the right and the top of the box. The arcs start
+ * half a unit to the right of the square's middle and half a unit above it, which is on a pixel line at the usual size, so their ends are
+ * straight lines between two pixels. All of it has soft edges like the other icons (icon_render samples the sign 4 x 4 times per pixel),
+ * and the square is on whole pixels, so it is sharp. It is one shape, so where the parts meet nothing is blended twice.
+ * (px, py) is measured from the middle of the box. */
 static float sd_wifi(const Shape *p, float px, float py)
 {
-    float u = p->r / 6.0f;
-    float x = px + 4.5f * u, y = py - 4.5f * u; /* from the middle of the square */
+    float u = p->r / 7.0f;
+    float x = px + 5.5f * u, y = py - 5.5f * u; /* from the middle of the square */
     float d = sd_rbox(x, y, 1.5f * u, 1.5f * u, 0.3f * u);
-    float cut = fmaxf(-x, y); /* inside where x >= 0 and y <= 0: up and to the right of the middle */
+    float cut = fmaxf(0.5f * u - x, y + 0.5f * u); /* inside where x >= 0.5 and y <= -0.5: up and to the right of the middle */
     for (int i = 0; i < 3; i++)
-        d = fminf(d, fmaxf(fabsf(len2(x, y) - (4.0f + 3.0f * i) * u) - 0.99f * u, cut));
-    return d * 1000.0f + 0.5f; /* coverage = 0.5 - this: 1 inside by a hair, 0 from the edge outwards (a pixel exactly on the edge is out) */
+        d = fminf(d, fmaxf(fabsf(len2(x, y) - (11.5f - 3.7f * i) * u) - 1.0f * u, cut));
+    return d;
 }
 
 /* The bolt: a zigzag 2 r high, drawn with the corners in this order (the units are 1/5.2 r). */
@@ -408,11 +407,11 @@ void icon_render(int kind, float w, float h, float r, float cx, float cy, int tw
     /* The coverage of a pixel follows from the distance of its centre to the edge (a one pixel wide ramp),
      * which is exact for straight edges and good for curves that are not too tight. Small round shapes
      * (a few pixels across) are tighter than that, so they are sampled 4 x 4 times per pixel instead.
-     * So are the bolt, the triangles, the note and the speaker, whose sharp tips and thin stems are tighter still. */
+     * So are the bolt, the triangles, the note, the speaker and the Wi-Fi sign, whose sharp tips and thin stems and arcs are tighter still. */
     float feature = kind == ICON_DISC ? r
                   : kind == ICON_RRECT || kind == ICON_RRING || kind == ICON_RFRAME || kind == ICON_RFRAME_S
                       ? fminf(r, fminf(w, h) / 2) : 99;
-    int fine = kind == ICON_BOLT || kind == ICON_TRI_R || kind == ICON_TRI_L || kind == ICON_NOTE || kind == ICON_SPEAKER;
+    int fine = kind == ICON_BOLT || kind == ICON_TRI_R || kind == ICON_TRI_L || kind == ICON_NOTE || kind == ICON_SPEAKER || kind == ICON_WIFI;
     if (kind == ICON_LIBRARY && h < 32)
         fine = 1; /* its corners are a pixel or two across at the small size */
     if (kind == ICON_FOLDER && h < 24)

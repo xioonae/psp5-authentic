@@ -611,10 +611,10 @@ void gfx_wifi(float cx, float cy, float r, u32 color)
         icon_blit(tex, &b, color);
         return;
     }
-    const float u = r / 6, px = cx - 4.5f * u, py = cy + 4.5f * u; /* the old way: the square, and each arc as 8 flat pieces */
+    const float u = r / 7, px = cx - 5.5f * u, py = cy + 5.5f * u; /* the old way: the square, and each arc as 8 flat pieces */
     gfx_rect(px - 1.5f * u, py - 1.5f * u, 3 * u, 3 * u, color);
     for (int i = 0; i < 3; i++) {
-        float r0 = (3 + 3 * i) * u, r1 = (5 + 3 * i) * u;
+        float r1 = (12.5f - 3.7f * i) * u, r0 = r1 - 2 * u;
         for (int k = 0; k < 8; k++) {
             float a0 = k * 3.14159265f / 16, a1 = (k + 1) * 3.14159265f / 16;
             const float q[8] = { px + sinf(a0) * r0, py - cosf(a0) * r0, px + sinf(a0) * r1, py - cosf(a0) * r1,

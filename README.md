@@ -55,8 +55,9 @@ this fork does it the same way. This is version 1.1.0 (1.0.0 was the first relea
   It plays when the PSP starts and wakes up, not when you come back from a game. Any button skips it, and you can turn it off.
 - **Power popup** (SELECT, on every tab). Sleep, Shut down, Restart, Recovery menu – ✕ does it at once.
 - **Volume, battery and Wi-Fi.** Pressing the volume buttons slides a volume bar in at the top. The battery has four bars that are lit
-  from the right; while the PSP charges, the bars above the level come on one after the other. You can also show the battery percentage
-  (*Settings → psp5*). A Wi-Fi sign is shown while the PSP's Wi-Fi switch is on. At the very end of the top bar is the cog wheel.
+  from the right (one for each quarter); while the PSP charges, a bolt is shown left of the battery and the bars above the level come on
+  one after the other. You can also show the battery percentage (*Settings → psp5*). A Wi-Fi sign is shown while the PSP's Wi-Fi switch is
+  on. At the very end of the top bar is the cog wheel.
 - **File manager** (*Settings → Power and USB*). Browse the Memory Stick (and the internal storage on a PSP Go) and copy,
   move, rename, delete or make folders.
 - **Sounds and languages.** Menu sounds (you can turn them off). 11 languages: psp5 follows the PSP's language; Swedish and

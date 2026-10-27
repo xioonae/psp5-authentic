@@ -28,9 +28,12 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
   - *Layout* (`draw_top_bar`): from the right edge to the left, `TOP_GAP` = 12 px between the things. The cog wheel (`COG_R` 7:
     `gx = SCREEN_W - MARGIN - 7`, so its right edge is on the margin, where the clock's used to be; its frame is `popup_choice(gx - 15, ..., 30, ...)`
     as before). The clock, right-aligned at `gx - 7 - 12` (= 430). The number, when "Show battery percentage" is on and the level is known:
-    its right end 12 px before the clock text's left end, its left end `BAT_GAP` = 6 px after the battery. The battery (`BAT_W` 23: terminal 2 +
-    body 21; `bx = floorf(next - BAT_W + 0.5)`, a whole pixel). The Wi-Fi sign (12 px wide, `floorf(bar_left - 12 - 12 + 0.5)`) while the
-    switch is on. `bar_left` is the left end of what has been placed so far; what is not there (no battery, switch off) takes no room,
+    its right end 12 px before the clock text's left end, its left end `BAT_GAP` = 5 px after the battery. The battery (`BAT_W` 23: terminal 2 +
+    body 21; `bx = floorf(next - BAT_W + 0.5)`, a whole pixel). While it charges, the bolt: `gfx_bolt(bx - BOLT_GAP - BOLT_W / 2, TOP_MID,
+    BOLT_R, LIGHT)` with `BOLT_R` = `BOLT_W` = 6 (12 px high, 6 wide, as high as the battery) and `BOLT_GAP` = 3 (the bolt is slanted, so it
+    looks a little further away; the number's own left edge likewise adds about a pixel to `BAT_GAP`). The battery stays put: `bar_left`
+    becomes the bolt's left end, so only what is left of it moves. The Wi-Fi sign (14 px wide, `WIFI_R` 7, `floorf(bar_left - 12 - 14 + 0.5)`)
+    while the switch is on. `bar_left` is the left end of what has been placed so far; what is not there (no battery, switch off) takes no room,
     so what is left of it moves right. The number is not given room for "100%" ahead of time any more (the cog wheel no longer
     depends on it): the group is laid out from the real width, so with a 2-digit level the battery is about 8 px further right than at
     100 %; the clock and the cog wheel never move. Tabs: `room = bar_left - TOP_GAP - MARGIN` (the last tab's frame, 9 px wider than
@@ -38,35 +41,40 @@ All changes after 1.1.0 are noted here (and under *Unreleased* in `CHANGELOG.md`
     `COG_GAP` and the old `shift` are gone.
   - *Battery* (`draw_battery`): terminal 2 x 4 on the left (`x`, `y + 4`), body 21 x 12 (a `gfx_round_rect` outline of radius 2.5 with a 1.5
     dark one inside, as before), four bars 3 x 6 at `body + 3 + (3 - i) * 4`, `y + 3`; bar 0 is the right one. `battery_bars(percent)`:
-    0 for 0, otherwise `(percent + 12) / 25` limited to 1..4 (1-37 % one bar, 38-62 two, 63-87 three, 88-100 four). Red (255, 95, 85)
+    0 for 0, otherwise `(percent + 24) / 25` limited to 1..4 (1-25 % one bar, 26-50 two, 51-75 three, 76-100 four). Red (255, 95, 85)
     at 15 % or less when not charging. Charging: the bars `lit .. lit + step - 1` are drawn at half strength, with
     `step = floor(time / 0.5) mod (5 - lit)`: the bars above the level come on one after the other every half second, then it
-    starts again; with four bars nothing animates. `gfx_bolt` / `ICON_BOLT` are not used by the top bar any more (still in the code
-    and tested; nothing else draws a bolt).
+    starts again; with four bars nothing animates. The bolt (`gfx_bolt`, `ICON_BOLT`, the old polygon) is drawn by `draw_top_bar`, not
+    by `draw_battery`, because it is outside the battery and moves the things left of it (see *Layout*).
   - *Wi-Fi*: `sceWlanGetSwitchState() > 0` in the once-a-second poll (`#include <pspwlan.h>`, `-lpspwlan` in the `Makefile`; PPSSPP
     implements it too). It is the state of the Wi-Fi switch, not "connected to a network", and it has not been tried on a real PSP.
     **There is no Bluetooth sign for the PSP Go**: no call that reads the Bluetooth state was found in the SDK headers (`pspwlan.h` and
     `pspnet_apctl.h` are Wi-Fi only) or in the ARK-4 sources (only the file names `bluetooth_plugin.prx`, `btdun.prx`, `hidsvc.prx` and an LED id);
     a sign that is never drawn would only be dead code. If someone finds the call, the sign goes at `bar_left - TOP_GAP`, left of the Wi-Fi sign.
-  - *`ICON_WIFI`* (`icons.c`: `sd_wifi`; `gfx_wifi(cx, cy, r, color)` in `gfx.c`): a box of 2 r = 12 px: a 3 x 3 square in the bottom left
-    corner and, round its middle, the upper right quarters of three rings (centre-line radii 4, 7 and 10, 2 thick). With only 1 px between
-    the arcs a smooth edge turns them into grey stripes, so the distance is made so steep that a pixel is lit or not at all
-    (`d * 1000 + 0.5`; a pixel exactly on an edge or on a cut - the 3-4-5 triangles make some - is out, and the arcs are 0.01 thinner for the same reason).
-    At the usual place (`cx`, `cy` whole) it is the same 66 pixels everywhere. When the icon cache is full `gfx_wifi` draws the square and 24 flat
-    pieces instead (like `gfx_gear` and `gfx_bolt` have a fallback).
+  - *`ICON_WIFI`* (`icons.c`: `sd_wifi`; `gfx_wifi(cx, cy, r, color)` in `gfx.c`): a box of 2 r = 14 px (r = 7, `u = r / 7`): a 3 x 3 square in
+    the bottom left corner and, round its middle, the upper right quarters of three rings 2 thick (bands 3.1-5.1, 6.8-8.8 and 10.5-12.5 from
+    the middle; the outer one touches the box's right and top). The arcs begin 0.5 right of and above the square's middle, which is on pixel
+    lines at the usual place, so their ends are straight. The edges are soft like the other icons (`ICON_WIFI` is in the `fine` kinds of
+    `icon_render`: 4 x 4 samples per pixel; the distance is a true distance). The first version was 12 px with a steep distance so that every
+    pixel was lit or not at all; the maintainer found it too sharp next to the other icons, and at 12 px a soft edge makes the three arcs
+    (3 px apart) blur into grey stripes, which is why the sign is 14 px with 1.7 px between the arcs. At the usual place (`cx`, `cy` whole) it
+    is the same picture everywhere. When the icon cache is full `gfx_wifi` draws the square and 24 flat pieces instead (like `gfx_gear` and
+    `gfx_bolt` have a fallback).
   - *Test mode*: `wifi 0/1` in the test script (`testrun_wifi()`).
   - *Tests* (`host-tests`, not in git): `ui/stubs.c` (`g_stub_wifi`, `sceWlanGetSwitchState`) and `inc/pspwlan.h`; `ui/menu_test.c`:
     `top_right_at()` measures from the draw calls and the pixels (the Wi-Fi sign is what disappears when the switch goes off; the cog
     wheel is everything right of the clock). It checks the 12 px gaps, the cog wheel on the margin, the bars of 12 levels (place, full
-    strength, red only up to 15 %), the charging steps (4 levels x 12 half seconds: count, place, half strength, never red, no bolt), the
-    number at 7 levels (6 px after the battery, 12 px before the clock, the battery moves by the width difference), no battery, no Wi-Fi,
+    strength, red only up to 15 %), the charging steps (4 levels x 12 half seconds: count, place, half strength, never red, the bolt 6 x 12 px
+    on the battery's rows, 3 px from it, 12 px from the sign, bright, the same in every step), the bolt not moving the battery or the number
+    (number on and off, no Wi-Fi, no battery), the number at 7 levels (5 px after the battery, 12 px before the clock, the battery moves by the width difference), no battery, no Wi-Fi,
     level unknown, the highlight of the cog wheel changing nothing left of it, the last tab ending before the sign in all 11
     languages with the number off and on, the tab row shrinking to the biggest size that leaves 12 px (six layouts; `text_width` is wrapped
     with `-Wl,--wrap=text_width` in the menu, library and pixel builds so that a test can make the two tab names too wide: the plain
     mock's widths never make the row shrink), and the music line (`music_current` / `music_state` / `music_track` in `ui/stubs.c`
     now say what a test wants) ending 40 px before the first thing on the right. `ui/pixel_test.c`: every level x number x charging
-    step and the battery / Wi-Fi combinations draw nothing between two pixels. `icons/icontest.py`: the 12 x 12 picture against its own definition (square, rings, every pixel
-    lit or not). `gfx/gfxtest.c`: the 66 pixels, half transparency, position, random signs in the stress test. `run_all.sh`: the menu test and the pixel
+    step and the battery / Wi-Fi combinations draw nothing between two pixels. `icons/icontest.py`: the 14 x 14 picture against an exact one worked out by sampling (largest difference
+    under 0.12, soft edges, the square sharp, the arcs ending on pixel lines, four separate stretches along the diagonal). `gfx/gfxtest.c`: the
+    same comparison in C, half transparency, position, random signs in the stress test. `run_all.sh`: the menu test and the pixel
     test run a second time with the letter widths of the real font (`MOCK_ATLAS`, from the atlas the foldertext test makes): the plain mock's
     widths are whole pixels, so a position that is not rounded to a whole pixel (the battery's, the sign's) looked fine in it; `KEEP=1`
     leaves the work folder (`menu.out` ...) in place for looking at a failure.
