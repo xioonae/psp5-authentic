@@ -17,6 +17,15 @@ int sys_has_ark(void);
 /* The PSP's own button assignment (the XMB's too): 1 = ○ confirms, 0 = ✕. sys_set_... changes it and returns what it is afterwards. */
 int sys_confirm_is_circle(void);
 int sys_set_confirm_is_circle(int circle);
+/* The PSP's own sound and power settings (the XMB's too). Each answers -1 when the PSP does not have it or the call does not work, and the
+ * setters answer with what the PSP says afterwards. Backlight auto-off: seconds. Equalizer: 0 = off, 1 .. 4 = the XMB's list in its order.
+ * AVLS (the volume limiter): 0 / 1. None of this has been run on a PSP. */
+int sys_backlight_off(void);
+int sys_set_backlight_off(int seconds);
+int sys_equalizer(void);
+int sys_set_equalizer(int mode);
+int sys_avls(void);
+int sys_set_avls(int on);
 /* ARK:s huvudversion: 4 (ARK-4), 5 (ARK-5) eller 0 (ingen ARK, t.ex. PPSSPP) */
 int sys_ark_version(void);
 /* PSP-modell (kuKernelGetModel): 0 = PSP-1000, 1 = PSP-2000, 2/3/6/8 = PSP-3000,

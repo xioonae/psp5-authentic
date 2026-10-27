@@ -47,6 +47,7 @@ this fork does it the same way. This is version 1.1.0 (1.0.0 was the first relea
   in the folder). It keeps playing while you browse your games.
 - **Settings** (the cog wheel). *psp5* (boot into psp5, sounds, startup animation, battery percentage, language), *Theme*,
   *Controls* (the PSP's own confirm button, and which buttons confirm, go back, open the options and the power menu),
+  *Display and Sound* (the PSP's own backlight timer, equalizer and AVLS),
   *Performance* (CPU speed, extra memory, caches), *System*, *Plugins* and *Power and USB* (USB mode, file manager, XMB,
   sleep, shut down, restart, recovery menu). A setting with several values opens a popup when you press ✕ on it.
 - **Themes.** The colours of the console covers, each with the console's scene behind your games (a beam of light, golden
