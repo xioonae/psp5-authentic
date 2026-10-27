@@ -1,0 +1,20 @@
+# byggresultat
+*.o
+*.elf
+*.prx
+/PARAM.SFO
+/EBOOT.PBP
+/plugin/psp5time_prx.h
+/dist/
+/dist-test/
+/dist-ark4/
+
+# lokalt: referenskod, testdata, säkerhetskopior, egna omslag
+/ref/
+/testdata/
+/backup/
+/tools/covers-src/*
+!/tools/covers-src/.gitkeep
+__pycache__/
+/release/
+PROGRESS-*.md
