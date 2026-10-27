@@ -6,6 +6,7 @@
 #include <string.h>
 #include <strings.h>
 #include "home.h"
+#include "playtime.h"
 #include "system.h"
 
 #define KEY_LEN     80 /* as entry_cover_key() callers have always used */
@@ -192,6 +193,30 @@ static void prune(const EntryList *list)
     free(keys);
 }
 
+/* The games that were played without psp5 (from the XMB, found by the helper plugin) since psp5 was last open: each one is the newest card, the
+ * one played first first, so the last one played is in front. They are taken once (home_load() runs again when the list is rebuilt), and
+ * not before the list has games (an empty list means the card could not be read). */
+static void apply_plays(const EntryList *list)
+{
+    int n = playtime_plays(), any = 0, changed = 0;
+    for (int i = 0; i < list->count; i++)
+        any |= list->items[i].type != ENTRY_UMD;
+    if (!any)
+        return;
+    Key *keys = list_keys(list);
+    if (!keys)
+        return;
+    for (int i = 0; i < n; i++)
+        if (find_entry(list, keys, playtime_play_key(i)) >= 0) {
+            push_front(s_recent, &s_nrecent, HISTORY_MAX, playtime_play_key(i));
+            changed = 1;
+        }
+    free(keys);
+    playtime_plays_taken();
+    if (changed)
+        save();
+}
+
 void home_load(const EntryList *list)
 {
     s_npinned = s_nrecent = 0;
@@ -199,6 +224,7 @@ void home_load(const EntryList *list)
         prune(list);
     else
         seed(list);
+    apply_plays(list);
 }
 
 int home_build(const EntryList *list, int *out, int max)

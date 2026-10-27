@@ -24,7 +24,31 @@ into psp5 instead of the XMB.
 
 The changes after 1.2.0 are noted here; the list for users is under *Unreleased* in `CHANGELOG.md`. When the next version is released, this section becomes *Version x.y.z* and a new *Unreleased* one is put above it.
 
-Nothing yet.
+- **Recently played** (new `lastplayed.c` / `lastplayed.h`; `ui.c` / `ui.h`, `playtime.c` / `playtime.h`, `home.c`, `main.c`, `config.c` / `config.h`, `lang.c` / `lang.h`, `Makefile`).
+  - *The times* (`lastplayed.c`): `<data dir>/lastplayed.txt`, one line per game: a packed time, a space, the game's key (`entry_cover_key()`, as in `playtime.txt`); at most 4096 games; read like `playtime.txt` (CRLF, damaged lines,
+    numbers over 10 digits or over 4294967295 or 0 skipped, a last line without its end ignored, the same name twice keeps the later time). A time is the packed local time of `scan_pack_time()` (year since 1980 in six bits: 1980 to 2043;
+    `lastplayed_pack()` gives 0 outside that, `lastplayed_now()` is the PSP's RTC through it), the same kind as `Entry.file_time`, so the time a game was played and the time it was added compare directly. `lastplayed_note(key, time)` keeps only
+    a later time and writes the file at once when something changed (a time of 0 or a name of 80 bytes or more is ignored and takes no place); `lastplayed_time(e)` is 0 when nothing is known, always for the disc; `lastplayed_sort_time(e)` is that
+    time, else `e->file_time` (a game that was played and then copied again is still sorted by when it was played).
+  - *Who writes them*: `main()` calls `lastplayed_load(DATA_DIR)` before `playtime_load(DATA_DIR)`, and `lastplayed_note_launch(&chosen)` right after `home_note_launch(&chosen)`. `playtime.c` `merge_played()` reads the `sce_st_mtime` of each file of the helper plugin
+    (the plugin writes it again every few seconds while a game runs, so it is when the game was last played; before 1980 / not readable: now) and, only once `playtime.txt` is saved and the files removed, notes it and puts the game in `s_plays`, the games
+    played since psp5 was last open, oldest first (an insertion by time that keeps the order the files came in for the same time; 256 at most, as the files taken at one start). `playtime_plays()`, `playtime_play_key(i)` and `playtime_plays_taken()` give the list out once.
+  - *Home* (`home.c` `apply_plays(list)`, the end of `home_load`): each of those games that is in the list (not the disc) is pushed to the front of `s_recent` with `push_front` (the oldest first, so the one played last is in front), `home.txt` is written when
+    something changed, and the list is taken. Not before the list has a game: an empty list means the card could not be read (the plays wait for the next `home_load`). Pinned cards stay pinned. *Unplayed games on Home*: Home was already by "played, else
+    added": the first start fills it with the newest files (`seed`, by file time), a game that is started goes in front, and a game that is never played and never added by hand is not on Home at all; so this was left as it is.
+  - *The Library* (`ui.c`): `Ui.lib_sort` is `LIB_SORT_NAME`, `LIB_SORT_RECENT` or `LIB_SORT_PLAYED` (`ui.h`; the names have `LIB_` because `saves.c` has `SORT_NAME` of its own, and Manage Saved Data is not changed); `psp5.cfg` has `libsort=0` to `2` (anything else is by name).
+    `rebuild_library()` makes the sort time of every game once (`lastplayed_sort_time`) and the time of every folder (the biggest of its games') when the sorting is by played, sorts with `cmp_played` / `cmp_folder_played` (a bigger time first; the same
+    time by name; the disc first) and frees them. The Sort popup has three choices (`MI_SORT_PLAYED`, `S_SORT_PLAYED`: "Recently played" and its ten translations), the button says *Sort by: Recently played*. A folder that is open sorts its games the same way.
+  - *Not changed on purpose*: the played times are not read from `playtime.txt` (a game can have a time played and no last time, and the other way round); games played before this version have no last time, so they are sorted by when they were added until
+    they are played again; the Information screen does not show the time.
+  - *Tests* (private, not in git): new `units/lastplayed_test.c` (71 checks: the packed time and the years that fit, the file and its damaged lines, 4096 games, only later times, the disc id, psp5 starting a game, the plugin's files with their modification times,
+    unset clock, files that leave no time, a failed save, 256 at a start, the order of the plays), `home/home_test.c` (the plays put in front, once, with a pinned card, a game that is gone, the disc, an unreadable card, forty remembered), `ui/library_test.c` (all
+    views by played, by added and by name, played before and after the file time, the same time, folders by their best game, an open folder, the popup and `psp5.cfg`, the same card kept selected, the three names, no memory left over 60 sortings),
+    `ui/menu_test.c` (three choices) and the loops over the 11 languages for the Sort button, `units/config_test.c` (`libsort` 0 to 2), `units/caps_test.c` (the sort names), source checks that `main.c` loads before the plugin's files are added and notes a launch.
+    About 80 mutation runs on the new code: all caught but three that change nothing (the folder-name tie-break of `cmp_folder_played`, because the host's `qsort` keeps equal elements in order; a literal that is 36 bits wide instead of 32, whose numbers become 0 anyway; the disc's time in
+    `cmp_played`, because the disc is put first before the times are looked at). Holes found and closed: a time of 0 that took a place in the table (in the file and noted), the disc's id found in the table, the order of the same time, a name left in the list after it was taken, and the two arrays of times
+    that were not freed (an AddressSanitizer count of the bytes in use over 60 sortings).
+
 
 ## Version 1.2.0 (changes after 1.1.0)
 

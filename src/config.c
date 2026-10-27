@@ -11,7 +11,7 @@
 
 unsigned char g_boot_anim = 1;
 unsigned char g_battery_pct = 0; /* off until the player turns it on */
-unsigned char g_lib_sort = 0;    /* the Library's Sort button: 0 = name, 1 = recently added */
+unsigned char g_lib_sort = 0;    /* the Library's Sort button: 0 = name, 1 = recently added, 2 = recently played (ui.h, LIB_SORT_*) */
 unsigned short g_backlight_off = 0;
 unsigned char g_lib_view = 0;    /* the Library's view button: 0 = all, 1 = only folders, 2 = only what is outside folders, 3 = both (ui.c, LIB_VIEW_*) */
 
@@ -38,7 +38,7 @@ void config_load(const char *data_dir)
         if ((p = strstr(buf, "batterypct=")))
             g_battery_pct = p[11] != '0';
         if ((p = strstr(buf, "libsort=")))
-            g_lib_sort = p[8] == '1';
+            g_lib_sort = p[8] == '1' || p[8] == '2' ? p[8] - '0' : 0;
         if ((p = strstr(buf, "libview=")) && p[8] >= '0' && p[8] <= '3')
             g_lib_view = p[8] - '0';
         if ((p = strstr(buf, "backlightoff="))) {
@@ -63,7 +63,7 @@ void config_save(const char *data_dir)
     snprintf(path, sizeof(path), "%s/psp5.cfg", data_dir);
     int n = snprintf(buf, sizeof(buf), "sound=%d\nbootanim=%d\nlang=%s\ntheme=%s\nthemeart=%d\nbatterypct=%d\nlibsort=%d\nlibview=%d\nconfirm=%s\nback=%s\noptions=%s\n",
                      g_sound_on ? 1 : 0, g_boot_anim ? 1 : 0, lang_code(g_lang_setting), theme_cur()->code,
-                     g_theme_art ? 1 : 0, g_battery_pct ? 1 : 0, g_lib_sort ? 1 : 0, g_lib_view <= 3 ? g_lib_view : 0,
+                     g_theme_art ? 1 : 0, g_battery_pct ? 1 : 0, g_lib_sort <= 2 ? g_lib_sort : 0, g_lib_view <= 3 ? g_lib_view : 0,
                      controls_code(g_ctl_confirm), controls_code(g_ctl_back), g_ctl_options ? "select" : "start");
     if (g_backlight_off >= BACKLIGHT_OFF_MIN && g_backlight_off <= BACKLIGHT_OFF_MAX)
         n += snprintf(buf + n, sizeof(buf) - n, "backlightoff=%d\n", g_backlight_off);

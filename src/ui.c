@@ -22,6 +22,7 @@
 #include "osd.h"
 #include "gameops.h"
 #include "home.h"
+#include "lastplayed.h"
 #include "playtime.h"
 #include "popup.h"
 #include "config.h"
@@ -128,8 +129,10 @@ static int top_tabs(const Ui *ui, int out[2])
     return 2;
 }
 
-/* biblioteket sorteras efter namn eller efter när filen lades till – UMD-skivan alltid först */
+/* the Library is sorted by name, by when a game was added (its file time) or by when it was played last (and when it has not been played, by when it
+ * was added) – the disc always first */
 static const EntryList *s_sort_list;
+static const u32 *s_sort_time; /* for every entry of the list, the time to sort it by in "Recently played" (lastplayed_sort_time) */
 static int cmp_name(const void *a, const void *b)
 {
     const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
@@ -147,10 +150,21 @@ static int cmp_recent(const void *a, const void *b)
         return x->file_time > y->file_time ? -1 : 1;
     return cmp_name(a, b);
 }
+static int cmp_played(const void *a, const void *b)
+{
+    const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
+    if ((x->type == ENTRY_UMD) != (y->type == ENTRY_UMD))
+        return x->type == ENTRY_UMD ? -1 : 1;
+    u32 tx = s_sort_time[*(const int *)a], ty = s_sort_time[*(const int *)b];
+    if (tx != ty)
+        return tx > ty ? -1 : 1;
+    return cmp_name(a, b);
+}
 
-/* the folders in the order of the Sort button: by name (the folders are numbered in the order of their names), or the one with the
- * newest game first */
+/* the folders in the order of the Sort button: by name (the folders are numbered in the order of their names), the one with the
+ * newest game first, or the one with the game that was played last first */
 static const FolderSet *s_sort_folders;
+static const u32 *s_folder_time; /* for every folder, the newest of the sort times of its games */
 static int cmp_folder_name(const void *a, const void *b)
 {
     return *(const int *)a - *(const int *)b;
@@ -160,6 +174,13 @@ static int cmp_folder_recent(const void *a, const void *b)
     const Folder *x = &s_sort_folders->items[*(const int *)a], *y = &s_sort_folders->items[*(const int *)b];
     if (x->newest != y->newest)
         return x->newest > y->newest ? -1 : 1;
+    return cmp_folder_name(a, b);
+}
+static int cmp_folder_played(const void *a, const void *b)
+{
+    u32 x = s_folder_time[*(const int *)a], y = s_folder_time[*(const int *)b];
+    if (x != y)
+        return x > y ? -1 : 1;
     return cmp_folder_name(a, b);
 }
 
@@ -177,14 +198,32 @@ static void rebuild_library(Ui *ui)
     const FolderSet *fs = &ui->folders;
     const EntryList *list = ui->list;
     int *t = v->idx ? malloc((list->count + 1) * sizeof(int)) : NULL;
-    int n = 0, open = ui->lib_open, view = ui->lib_view;
+    int n = 0, open = ui->lib_open, view = ui->lib_view, sort = ui->lib_sort;
+    u32 *times = NULL, *ftimes = NULL; /* "Recently played": the sort time of every game, and the newest of them in every folder */
     if (!t)
         return;
+    if (sort == LIB_SORT_PLAYED) {
+        times = malloc((list->count + 1) * sizeof(u32));
+        ftimes = calloc(fs->count + 1, sizeof(u32));
+        if (!times || !ftimes) {
+            free(times);
+            free(ftimes);
+            free(t);
+            return;
+        }
+        for (int i = 0; i < list->count; i++) {
+            times[i] = lastplayed_sort_time(&list->items[i]);
+            int f = i < fs->of_count ? fs->of[i] : -1;
+            if (f >= 0 && f < fs->count && times[i] > ftimes[f])
+                ftimes[f] = times[i];
+        }
+    }
     if (open < 0 && (view == LIB_VIEW_FOLDERS || view == LIB_VIEW_BOTH)) {
         for (int f = 0; f < fs->count; f++)
             t[n++] = f;
         s_sort_folders = fs;
-        qsort(t, n, sizeof(int), ui->lib_sort ? cmp_folder_recent : cmp_folder_name);
+        s_folder_time = ftimes;
+        qsort(t, n, sizeof(int), sort == LIB_SORT_PLAYED ? cmp_folder_played : sort == LIB_SORT_RECENT ? cmp_folder_recent : cmp_folder_name);
         for (int k = 0; k < n; k++)
             t[k] = LIB_FOLDER_ID(t[k]);
     }
@@ -197,7 +236,8 @@ static void rebuild_library(Ui *ui)
     }
     if (n - first > 1) {
         s_sort_list = list;
-        qsort(t + first, n - first, sizeof(int), ui->lib_sort ? cmp_recent : cmp_name);
+        s_sort_time = times;
+        qsort(t + first, n - first, sizeof(int), sort == LIB_SORT_PLAYED ? cmp_played : sort == LIB_SORT_RECENT ? cmp_recent : cmp_name);
     }
     if (first && n > first && list->items[t[first]].type == ENTRY_UMD) { /* the disc goes in front of the folders */
         int umd = t[first];
@@ -207,6 +247,8 @@ static void rebuild_library(Ui *ui)
     memcpy(v->idx, t, n * sizeof(int));
     v->count = n;
     free(t);
+    free(times);
+    free(ftimes);
 }
 
 static void build_views(Ui *ui)
@@ -231,7 +273,7 @@ static void build_views(Ui *ui)
 /* The Library's sort and view are kept in psp5.cfg: they are the same the next time */
 static void remember_library_choice(const Ui *ui)
 {
-    g_lib_sort = ui->lib_sort ? 1 : 0;
+    g_lib_sort = (unsigned char)ui->lib_sort;
     g_lib_view = (unsigned char)ui->lib_view;
     config_save(PSP5_DATA_DIR);
 }
@@ -259,7 +301,7 @@ static void library_reselect(Ui *ui, int chosen, int snap)
 /* The Sort popup of the Library: sort again but keep the same card selected */
 static void set_sort(Ui *ui, int sort)
 {
-    if (sort == ui->lib_sort)
+    if (sort == ui->lib_sort || sort < 0 || sort >= LIB_SORT_COUNT)
         return;
     int chosen = sel_card(ui);
     ui->lib_sort = sort;
@@ -416,7 +458,7 @@ void ui_init(Ui *ui, const EntryList *list, int can_launch)
     ui->tab_anim = 1;
     ui->top_focus = -1;
     ui->card_ring = 1;
-    ui->lib_sort = g_lib_sort ? 1 : 0; /* the Library comes back as it was left (psp5.cfg) */
+    ui->lib_sort = g_lib_sort < LIB_SORT_COUNT ? g_lib_sort : LIB_SORT_NAME; /* the Library comes back as it was left (psp5.cfg) */
     ui->lib_view = g_lib_view < LIB_VIEW_COUNT ? g_lib_view : LIB_VIEW_ALL;
     ui->lib_open = -1;
     home_load(list);
@@ -618,14 +660,14 @@ static void menu_build(Ui *ui, const UiInput *in)
     }
 }
 
-/* The Sort button of the Library: the two ways to sort, the one in use chosen */
+/* The Sort button of the Library: the three ways to sort, the one in use chosen */
 static void menu_build_sort(Ui *ui, const UiInput *in)
 {
     ui->menu_kind = MENU_SORT;
-    ui->menu_n = 2;
-    ui->menu_item[0] = MI_SORT_NAME;
-    ui->menu_item[1] = MI_SORT_RECENT;
-    ui->menu_sel = ui->lib_sort ? 1 : 0;
+    ui->menu_n = LIB_SORT_COUNT;
+    for (int k = 0; k < LIB_SORT_COUNT; k++)
+        ui->menu_item[k] = (unsigned char)(MI_SORT_NAME + k);
+    ui->menu_sel = ui->lib_sort;
     ui->menu_stage = 0;
     ui->menu_dir = menu_dir_of(in);
 }
@@ -946,7 +988,7 @@ static void activate_card(Ui *ui)
 /* the text of the Library's Sort button */
 static void sort_text(const Ui *ui, char *out, int size)
 {
-    snprintf(out, size, "%s: %s", L(S_SORT), L(ui->lib_sort ? S_SORT_RECENT : S_SORT_NAME));
+    snprintf(out, size, "%s: %s", L(S_SORT), L(ui->lib_sort == LIB_SORT_PLAYED ? S_SORT_PLAYED : ui->lib_sort == LIB_SORT_RECENT ? S_SORT_RECENT : S_SORT_NAME));
 }
 
 static const char *view_label(int view)
@@ -1139,8 +1181,8 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
                     sound_play(SND_SELECT);
                     return UI_DELETE;
                 }
-                if (item == MI_SORT_NAME || item == MI_SORT_RECENT)
-                    set_sort(ui, item == MI_SORT_RECENT);
+                if (item >= MI_SORT_NAME && item <= MI_SORT_PLAYED)
+                    set_sort(ui, item - MI_SORT_NAME);
                 else if (item >= MI_VIEW_ALL && item <= MI_VIEW_BOTH)
                     set_view(ui, item - MI_VIEW_ALL);
                 else if (item == MI_CANCEL)
@@ -1787,6 +1829,7 @@ static const char *menu_label(int item)
     case MI_UNPIN:        return L(S_HOME_UNPIN);
     case MI_SORT_NAME:    return L(S_SORT_NAME);
     case MI_SORT_RECENT:  return L(S_SORT_RECENT);
+    case MI_SORT_PLAYED:  return L(S_SORT_PLAYED);
     case MI_VIEW_ALL:
     case MI_VIEW_FOLDERS:
     case MI_VIEW_LOOSE:

@@ -13,7 +13,7 @@ wherever it can, but it doesn't copy the console in everything.
     <td width="50%"><img src="docs/screenshots/options.png" alt="Options of a game"><br><sub><b>Options</b> (START) – saved data, information, pin to or remove from Home, delete</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/library.png" alt="Library"><br><sub><b>Library</b> – everything on the card in one grid, sorted by name or by what you added last</sub></td>
+    <td width="50%"><img src="docs/screenshots/library.png" alt="Library"><br><sub><b>Library</b> – everything on the card in one grid, sorted by name, by when you added a game or by when you played it</sub></td>
     <td width="50%"><img src="docs/screenshots/saved-data.png" alt="Manage Saved Data"><br><sub><b>Manage Saved Data</b> – look through saves, mark several and delete them, with the space you get back</sub></td>
   </tr>
   <tr>
@@ -37,9 +37,10 @@ wherever it can, but it doesn't copy the console in everything.
   and counts only the time the PSP is awake. The times are added when psp5 starts next. To turn it off, turn off the two `psp5time.prx` lines in *Settings → Plugins*. Without ARK, or with those lines off, nothing is counted.
 - **Options** (START, or Confirm on ⋯). Manage Saved Data, Information, Delete, Remove from / Add to Home, Pin to / Unpin from Home.
 - **Library.** The last card of Games. It opens a grid with everything you have, games and apps together, a **Sort** button (by
-  name or by what you added last) and a **view** button (*All*, *In folders*, *Outside of folders* or *Both in and out of
+  name, by what you added last or by what you played last) and a **view** button (*All*, *In folders*, *Outside of folders* or *Both in and out of
   folders*; the folders are cards, Confirm opens one, Back goes back). Folders are the ones the Categories Lite plugin makes. The Library
-  remembers your sorting and view. You can pin the Library card like any other card.
+  remembers your sorting and view. You can pin the Library card like any other card. *Recently played* puts what you played last first (a folder goes by its best
+  game); something you have not played yet is sorted by when it was added. With ARK it also knows the games you started from the XMB (the helper plugin of *Time played* tells psp5).
 - **Manage Saved Data.** Lists the saves of all your games. Mark some, delete them and see how much room you get back.
   ARK's own save folder is locked and can't be deleted.
 - **Music.** Plays the MP3 files in `MUSIC` with title, artist and album art (from the file, or a `cover.jpg` / `folder.jpg`

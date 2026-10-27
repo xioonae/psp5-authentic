@@ -34,6 +34,7 @@
 #include "saves.h"
 #include "home.h"
 #include "playtime.h"
+#include "lastplayed.h"
 #include "helper.h"
 
 PSP_MODULE_INFO("psp5", PSP_MODULE_USER, 0, 1);
@@ -496,6 +497,7 @@ int main(int argc, char *argv[])
     Ui ui;
     helper_setup(); /* the plugin that counts the time played: written / replaced, and put in PLUGINS.TXT the first time */
     playtime_set_self(s_self);
+    lastplayed_load(DATA_DIR); /* when each game was played last (the plugin's files add the games that were started from the XMB) */
     playtime_load(DATA_DIR); /* adds the time that the plugin has kept since psp5 was last open */
     app_start(&list, &ui, !take_ingame_mark()); /* ingen startskärm efter ett spel */
     if (s_safe)
@@ -659,6 +661,7 @@ int main(int argc, char *argv[])
         if (action == UI_LAUNCH && ui_selected(&ui) >= 0) {
             Entry chosen = list.items[ui_selected(&ui)];
             home_note_launch(&chosen); /* the card becomes the newest one on Home */
+            lastplayed_note_launch(&chosen); /* ... and the one that was played last (Library, Recently played) */
             sound_wait(700);      /* låt startljudet klinga ut */
             app_stop(&list, &ui); /* frigör allt minne innan spelet laddas */
             start_confirmed();    /* ett spel som hänger sig räknas inte mot psp5 */

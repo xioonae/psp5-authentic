@@ -22,9 +22,12 @@ enum { MI_SAVES, MI_INFO, MI_DELETE, MI_DELETE_YES, MI_CANCEL,
        MI_REMOVE_YES, /* ... confirmed, for a pinned card */
        MI_ADD,        /* Add to Home (Library) */
        MI_PIN, MI_UNPIN,
-       MI_SORT_NAME, MI_SORT_RECENT, /* the sort popup of the Library */
+       MI_SORT_NAME, MI_SORT_RECENT, MI_SORT_PLAYED, /* the sort popup of the Library (SORT_*, in this order) */
        MI_VIEW_ALL, MI_VIEW_FOLDERS, MI_VIEW_LOOSE, MI_VIEW_BOTH, /* the view popup of the Library (LIB_VIEW_*, in this order) */
        MI_SLEEP, MI_SHUTDOWN, MI_RESTART, MI_RECOVERY /* the power popup: the same four as Settings > Power and USB */ };
+/* How the Library is sorted (Ui.lib_sort; the Sort button, kept in psp5.cfg): by name, by when a game was added (its file time), or by when it was played
+ * last, the one played most recently first (a game that has not been played counts from the time it was added) */
+enum { LIB_SORT_NAME, LIB_SORT_RECENT, LIB_SORT_PLAYED, LIB_SORT_COUNT };
 /* what the popup is for (menu_kind) */
 enum { MENU_CARD, MENU_SORT, MENU_POWER, MENU_VIEW };
 
@@ -82,7 +85,7 @@ typedef struct {
     float repeat_timer, repeat_held;
 
     /* biblioteket: rutnät med allt */
-    int lib_sort;        /* 0 = namn, 1 = senast tillagda */
+    int lib_sort;        /* LIB_SORT_NAME, LIB_SORT_RECENT (added) or LIB_SORT_PLAYED */
     int lib_view;        /* LIB_VIEW_*: what the Library shows (the view button) */
     int lib_open;        /* the folder that is open (its number in `folders`), or -1: the Library itself. Open, it shows that folder's games and apps. */
     char lib_open_name[FOLDER_NAME_MAX]; /* ... and its name, which is how it is found again when the list changes */

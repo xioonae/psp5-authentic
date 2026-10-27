@@ -9,7 +9,7 @@
  *   theme=ps5        (se theme.c)
  *   themeart=1       (spelens bilder bakom korten)
  *   batterypct=0     (the battery level as a number, e.g. "87%", between the clock and the battery)
- *   libsort=0        (the Library's Sort button: 0 = name, 1 = recently added)
+ *   libsort=0        (the Library's Sort button: 0 = name, 1 = recently added, 2 = recently played)
  *   libview=0        (the Library's view button: 0 = all games and apps, 1 = only folders, 2 = only what is outside folders, 3 = both)
  *   confirm=psp      (the button that confirms: psp = the PSP's own setting, or cross, circle, square, triangle; controls.h)
  *   back=psp         (the button that goes back: the same words)

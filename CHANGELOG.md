@@ -5,7 +5,18 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ## Unreleased
 
-Nothing yet.
+### Library
+
+- **New sorting: Recently played.** The Sort button has a third choice. The games, apps and folders you played last come first, the ones you played longest ago come last.
+  Something you have not played yet is sorted by when it was added to the PSP (like *Recently added*), so it takes its place among the played ones by that date. A folder goes by
+  the best game in it, and the disc is always first. It is kept in `psp5.cfg` like the other sortings.
+- **psp5 now remembers when you played each game** (`lastplayed.txt` in psp5's folder). It notes the time when psp5 starts a game, and with ARK the helper plugin of *Time played*
+  tells it about games you started from the XMB (psp5 learns it the next time it starts). Games you played before this version count as not played until you play them again.
+
+### Games
+
+- **Games you played from the XMB move to the front of Home** when psp5 starts, the one you played last in front (before, only the games started from psp5 did). Games you have not
+  played are ordered by when they were added, as before: Home is filled with the newest ones on the first start, and nothing else changes for them.
 
 ## 1.2.0 – Controls, new Settings pages, folders in the Library and time played
 
