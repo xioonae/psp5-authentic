@@ -293,6 +293,24 @@ static float sd_folder(const Shape *p, float px, float py)
     return fminf(body, tab);
 }
 
+/* The Wi-Fi sign in a box of side 2 r = 12 units: a square of 3 units in the bottom left corner and, round its middle, the upper
+ * right quarters of three rings (radii 4, 7 and 10 units, 2 thick: 1 between them), cut straight on the lines through the middle.
+ * It is one shape, so where the parts meet nothing is blended twice. (px, py) is measured from the middle of the box.
+ * At 12 pixels the arcs are too close together for smooth edges (they blur into grey stripes), so the distance is made so steep that
+ * a pixel is either in or out: every pixel is fully lit or not at all, like the battery's bars. The pixel centres of the usual
+ * size are whole pixels from the middle of the square (3, 4, 5 ... 5 away), so some are exactly on an edge (3-4-5 triangles); the
+ * arcs are 0.01 thinner and a pixel on a cut or an edge is out, so the picture does not depend on rounding. */
+static float sd_wifi(const Shape *p, float px, float py)
+{
+    float u = p->r / 6.0f;
+    float x = px + 4.5f * u, y = py - 4.5f * u; /* from the middle of the square */
+    float d = sd_rbox(x, y, 1.5f * u, 1.5f * u, 0.3f * u);
+    float cut = fmaxf(-x, y); /* inside where x >= 0 and y <= 0: up and to the right of the middle */
+    for (int i = 0; i < 3; i++)
+        d = fminf(d, fmaxf(fabsf(len2(x, y) - (4.0f + 3.0f * i) * u) - 0.99f * u, cut));
+    return d * 1000.0f + 0.5f; /* coverage = 0.5 - this: 1 inside by a hair, 0 from the edge outwards (a pixel exactly on the edge is out) */
+}
+
 /* The bolt: a zigzag 2 r high, drawn with the corners in this order (the units are 1/5.2 r). */
 static void bolt_polygon(float r, float *v)
 {
@@ -340,6 +358,8 @@ static float shape_distance(const Shape *p, float px, float py)
         return sd_library(&p->lib, px, py);
     case ICON_FOLDER:
         return sd_folder(p, px, py);
+    case ICON_WIFI:
+        return sd_wifi(p, px, py);
     default: /* ICON_GEAR */
         return fmaxf(sd_poly(p->gear, GEAR_PTS, px, py), -(len2(px, py) - 0.34f * p->r));
     }
