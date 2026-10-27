@@ -222,8 +222,18 @@ static void impose_find(void)
     s_impose_set = (void *)sctrlHENFindFunction("sceImpose_Driver", "sceImpose_driver", NID_IMPOSE_SET_PARAM);
 }
 
+#ifdef PSP5_TEST
+/* The test build (PPSSPP has no Impose service, and no ARK): the settings it shows start like this and a change is kept, so that the pages of
+ * Settings -> Display and Sound can be looked at and tried in the emulator. */
+static int s_test_impose[0x20] = { [IMPOSE_MAIN_VOLUME] = 18, [IMPOSE_BRIGHTNESS] = 3 };
+static int s_test_backlight = 120;
+#endif
+
 static int impose_get(int param)
 {
+#ifdef PSP5_TEST
+    return s_test_impose[param & 0x1F];
+#endif
     impose_find();
     if (!s_impose_get)
         return -1;
@@ -236,6 +246,10 @@ static int impose_get(int param)
 
 static int impose_set(int param, int value)
 {
+#ifdef PSP5_TEST
+    s_test_impose[param & 0x1F] = value;
+    return 0;
+#endif
     impose_find();
     if (!s_impose_set)
         return -1;
@@ -247,6 +261,15 @@ static int impose_set(int param, int value)
     return (int)a.ret1;
 }
 
+#ifdef PSP5_TEST
+int sys_backlight_off(void) { return s_test_backlight; }
+
+int sys_set_backlight_off(int seconds)
+{
+    s_test_backlight = seconds;
+    return s_test_backlight;
+}
+#else
 int sys_backlight_off(void) { return sceImposeGetBacklightOffTime(); }
 
 int sys_set_backlight_off(int seconds)
@@ -255,6 +278,7 @@ int sys_set_backlight_off(int seconds)
         sceImposeSetBacklightOffTime(seconds);
     return sceImposeGetBacklightOffTime(); /* what the PSP says now */
 }
+#endif
 
 /* The volume (0 to 30, what the volume buttons and the volume bar have) and the brightness (the XMB's levels; how many there are and from
  * which number they count is not known, so the caller shows whatever the PSP says). */

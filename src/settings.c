@@ -29,7 +29,7 @@
 #define LIST_TOP    58.0f
 #define LIST_BOTTOM 236.0f
 #define MAX_ITEMS   (MAX_PLUGINS + 4)
-#define PSP5_VERSION "1.1.0"
+#define PSP5_VERSION "1.2.0"
 
 #define TEXT_MAIN RGBA(238, 238, 242, 255)
 #define TEXT_DIM  RGBA(160, 162, 172, 255)
