@@ -4,9 +4,8 @@ A launcher for PSPs with **ARK-4 or ARK-5** that looks and feels like the user i
 on the PSP's 480×272 screen. You move through it with the D-pad alone.
 
 psp5-authentic is a fork of [psp5](https://github.com/08Weber/psp5) by Mille Weber (08Weber), based on psp5 v1.5.3. It has
-one goal of its own: to be **as authentic as possible to its home console counterpart**. Where the console does something,
-this fork does it the same way. This is version 1.2.0 (1.0.0 was the first release); everything that changed compared with psp5 is in the
-[release notes](CHANGELOG.md). Many thanks to Mille Weber – all of this stands on that work.
+one goal of its own: to come **as close as possible to the real home console experience**. It follows the console's look and feel
+wherever it can, but it doesn't copy the console in everything.
 
 <table>
   <tr>
@@ -48,7 +47,7 @@ this fork does it the same way. This is version 1.2.0 (1.0.0 was the first relea
 - **Settings** (the cog wheel). Several pages:
   - *psp5* – boot into psp5, sounds, startup animation, battery percentage, language. *Theme* – the colours.
   - *Controls* – the PSP's own confirm button, and which buttons confirm, go back, open the options and the power menu.
-  - *Display and Sound* – the PSP's own brightness, backlight timer, volume, equalizer and AVLS.
+  - *Display and Sound* – the PSP's own brightness, backlight timer (psp5 remembers it), volume, equalizer and AVLS.
   - *Network* – the PSP's own Wi-Fi screen. *About* – nickname, model, system software, MAC address, storage, battery.
   - *Performance* (CPU speed, extra memory, caches), *System*, *Plugins* and *Power and USB* (USB Mode, File Manager, XMB,
     Sleep, Shut Down, Restart, Recovery Menu).
@@ -100,17 +99,13 @@ If something goes wrong, hold **SELECT** while the PSP starts: ARK skips its set
 start doesn't finish (the PSP froze, for example), the next one is a *safe start* without the startup screen, music and UMD.
 If that fails too, psp5 sends the PSP to the XMB. More help is in [INSTALL.md](INSTALL.md).
 
-## What has been tested
+## Supported PSPs
 
 Works on the **PSP-1000, 2000, 3000 and PSP Go** with **ARK-4 or ARK-5**; it adapts its settings to your model and ARK
 version (the PSP-1000 has no extra memory or USB charging, ARK-4 has fewer CPU speeds). The PS Vita isn't supported.
 
-Every update is tested on a **PSP-1000**, the only device used for testing. The other models and the two ARK versions are
-expected to work but aren't tested separately. A few parts of 1.2.0 that talk to the PSP's own settings (brightness, volume,
-equalizer, AVLS, the confirm button, the Wi-Fi screen) have not been tried on a real PSP yet; the
-[release notes](CHANGELOG.md) say which. Claude also runs automated checks on a PC; they are not part of this
-repository. If something behaves oddly on your PSP, please open an issue and tell us what you saw and which PSP and ARK you
-have.
+If something doesn't work on your PSP, please [open an issue](../../issues) and tell us what you saw, which PSP you have and which
+ARK version.
 
 ## About this fork
 

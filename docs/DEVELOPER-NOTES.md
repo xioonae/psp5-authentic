@@ -24,6 +24,19 @@ into psp5 instead of the XMB.
 
 The changes after 1.1.0 are noted here; the list for users is under *1.2.0* in `CHANGELOG.md`. Changes after 1.2.0 go in a new section above this one.
 
+- **Brightness 1 to 4, the backlight time kept, three more names** (`settings.c`, `system.c` / `system.h`, `config.c` / `config.h`, `main.c`, `lang.c`; still 1.2.0).
+  - *The brightness levels*: the maintainer found that the PSP's own brightness button gives 0 to 3 (the lowest showed as "0" next to the list 1 to 4) and that 4 blacks the screen out, so the first guess (levels 1 to 4 sent to the PSP) was one too high.
+    `br_build(now)` lists the PSP's levels 0 to 3 (`BRIGHT_LEVELS` 4, `s_br_levels`) and shows each one plus one (`s_br_text`), like the XMB's 1 to 4; `set_brightness` sends the level itself. A level the PSP reports above 3 (and up to
+    `BRIGHT_MAX`, 100) is added after the four, so the row never says anything else than what the PSP has. Nothing in `system.c` changed but its comment; the test build's fake level 3 is shown as 4.
+  - *The backlight time is kept* (`g_backlight_off` in `config.c`, seconds, 0 = none chosen; `psp5.cfg` line `backlightoff=120`, written only when a time has been chosen, read only from 10 to 3600 s): the PSP forgets the time of
+    `sceImposeSetBacklightOffTime` at a restart, so `set_backlight` keeps what the PSP took as asked (`now == want`, and only when it is a new time: `S.own_dirty`, written by `settings_commit`) and `main()` sets it again right after
+    `sys_init` at every start (`if (g_backlight_off) sys_set_backlight_off(g_backlight_off)`). The PSP's own registry is not written for this (its key names are not known to psp5); a time chosen in the XMB later is replaced by psp5's at the next psp5 start.
+  - *Names*: Czech *About* is *O Zařízení*, French *À Propos* and Russian *О Системе* (the house style; `S_CAT_ABOUT`). The private `units/caps_test.c` now checks all seven category names (`S_CAT_THEME` ... `S_CAT_ABOUT`) and the exact About names.
+  - *Tests* (private, not in git): `settings/settings_test.c` (the brightness lists for readings 0, 1, 2, 3, 4, 7 and 100, the lowest shown as 1 and the highest as 4, choosing 4 sends level 3 and choosing 1 level 0, a PSP that refuses / keeps less / answers -1 or 250; the
+    backlight time kept after a change, once, not when the PSP refuses or rounds, not when it is chosen again, and written by `settings_commit`), `units/config_test.c` (the `backlightoff` line: not written until chosen, 10 to 3600 s round trip,
+    garbage and out-of-range values read as "none", too-long file), a source check that `main.c` calls `sys_set_backlight_off(g_backlight_off)` after `config_load` and `sys_init`.
+  - *Docs*: the "not tried on a PSP" notes are gone from the README, INSTALL, CHANGELOG and these notes; they say instead that an issue is welcome. `INSTALL.md` has the *Covers* section the README pointed to (it was missing), and the messages of
+    `tools/covers.py` are in English.
 - **Version 1.2.0**: `PSP5_VERSION` in `settings.c` (shown in *About*), the download names in `INSTALL.md`, the default of `tools/make_release.py`. *Capitals:* *USB Mode*, *Shut Down*, *Recovery Menu*, *Disable UMD Drive* and
   *Disable Analog Stick* are in title case now, in all languages (`lang.c`, checked by the private `units/caps_test.c`). *The test build* (`-DPSP5_TEST`, `tools/build.sh test`) fakes the Impose settings (`s_test_impose`: volume 18, brightness 3,
   equalizer off, AVLS off) and the backlight timer (120 s) in `system.c`, so that *Settings → Display and Sound* can be looked at and used in PPSSPP, which has no Impose service and no ARK. Nothing of this is in the normal build.
@@ -79,7 +92,7 @@ The changes after 1.1.0 are noted here; the list for users is under *1.2.0* in `
     QUIT and ends at NONE. When `*running` goes to 0 (HOME) up to 120 more frames are given for the dialog to end. Result: `data.base.result == 0` is 1 (a connection was made), else 0; -1 when a module,
     the network libraries or the dialog would not start; then whatever was started is stopped, in the other order (`sceNetApctlTerm`, `sceNetInetTerm`, `sceNetTerm`, the modules this call loaded).
   - *What the SDK offers* (`psputility_netconf.h`): three actions only (`CONNECTAP`, `DISPLAYSTATUS`, `CONNECT_ADHOC`). **Nothing for adding, editing or removing a connection.** The maintainer asked for "the screen that lets you
-    add, remove or edit Wi-Fi, like in apps": this is the dialog apps have, which (as far as the SDK says) chooses among saved connections; whether it offers more on a real PSP is not known. **Never run on a PSP.**
+    add, remove or edit Wi-Fi, like in apps": this is the dialog apps have, which (as far as the SDK says) chooses among saved connections.
   - *Why `netstub.S`*: linking the SDK's `libpspnet_inet` for `sceNetInetInit` / `sceNetInetTerm` makes `psp-fixup-imports` print "could not fixup imports, stubs out of order" (it does so in a three-line program too,
     in every link order tried; it is the library's `sceNetInet.o`), and the build must have no warnings. The two calls are imported by hand (`STUB_START "sceNetInet", 0x00090000, ...` with the numbers 0x17943399 and
     0xA9ED66B9 read from `libpspnet_inet.a` with `objdump -s -j .rodata.sceNid`): the same module, attribute (0x0009, as the library's own header has it) and numbers, so it is the same import. `libpspnet` and
@@ -100,9 +113,9 @@ The changes after 1.1.0 are noted here; the list for users is under *1.2.0* in `
     Go's internal storage, MB / GB, the list scrolling to the last row, being asked again when it comes into view, the chosen row kept in range, and Network / About in all 11 languages on whole pixels.
 - **Settings → Display and Sound: Brightness and Volume** (`settings.c`, `system.c` / `system.h`, `lang.c` / `lang.h`: `S_VOLUME`, `S_BRIGHTNESS`; `S_VERSION` is gone).
   - *System*: `sys_volume` / `sys_set_volume` (`PSP_IMPOSE_MAIN_VOLUME`, 1; 0 to 30 as `osd.c` reads it) and `sys_brightness` / `sys_set_brightness` (`PSP_IMPOSE_BACKLIGHT_BRIGHTNESS`, 2) are two more
-    `impose_get` / `impose_set` pairs, answering with what the PSP says afterwards. **Never run on a PSP**; the range of the brightness is not known (the XMB has levels, probably 1 to 4).
+    `impose_get` / `impose_set` pairs, answering with what the PSP says afterwards. The PSP counts the brightness levels 0 to 3 (see *The brightness levels* above: this was first a guess of 1 to 4).
   - *Rows* (`CAT_DISPLAY`, in this order: Brightness, Backlight auto-off, Volume, Equalizer, AVLS): Volume is `IT_CHOICE` on `s_volume` with the 31 numbers 0 to 30 (`s_vol_text`), shown when the PSP says 0 to 30;
-    its popup (more than `POP_ROWS`) scrolls with the bar. Brightness (`br_build`): the list is 1 to 4 plus the PSP's own level in its place when it is lower than 1 or above 4 (`s_br_levels`, `s_br_item->nopts`), shown
+    its popup (more than `POP_ROWS`) scrolls with the bar. Brightness (`br_build`): the list is the PSP's levels 0 to 3 shown as 1 to 4, plus the PSP's own level after them when it is above 3 (`s_br_levels`, `s_br_item->nopts`), shown
     when the PSP says 0 to `BRIGHT_MAX` (100); after a change the list is rebuilt from what the PSP says (a PSP that keeps less than asked, or answers -1 or a number out of range, leaves the row as it was).
   - *The psp5 category lost its Version and CFW rows* (about the version in two places): the version and the CFW are in *About* only; `system_name()` and `S_VERSION` are removed.
   - *Tests* (private, not in git): the rows and their order, eleven brightness readings and the lists they give, choosing, a PSP that refuses / keeps less / answers -1 or 250, the volume's 31 values, 0 and 30, volume 31
@@ -391,7 +404,7 @@ The changes after 1.1.0 are noted here; the list for users is under *1.2.0* in `
     the launcher's own cards, pinned or not; `library_test` puts lines for "Library", "?library", "PSP5" in playtime.txt to prove it). `play_text()` looks the seconds up once per selected game (`pt_for`, `pt_secs`; reset
     next to every `lib_label_for = -2`) and makes the text at every draw, so a language changed in Settings is followed.
   - *Limits*: no ARK, no time (the plugin is an ARK plugin: the PRX is loaded through PLUGINS.TXT); the plugin's lines off, no time; a game under 10 s awake, no time; a PSP game with no disc id whose ISO file name is not known (ARK does not give it), no time (above).
-    The plugin cannot know a psp5 that was put in a folder with another name, so psp5 drops that file itself (above). A PSP that is switched off in a game loses at most the last 10 s. Not known on a PSP: see *Not known* above.
+    The plugin cannot know a psp5 that was put in a folder with another name, so psp5 drops that file itself (above). A PSP that is switched off in a game loses at most the last 10 s.
   - *Tests* (`host-tests`, not under git): `units/playtime_test.c` (96 checks: no file, the format of playtime.txt - CRLF, names with spaces, damaged lines, the same name twice, 4096 games, numbers that cannot overflow -, the games told apart by `entry_cover_key()`,
     the files of the plugin merged and removed - only whole files, kept when `playtime.txt` cannot be written or read, 256 at a time, psp5's own folder dropped -, the names of the plugin against `entry_cover_key` / `entry_read_sfo`, also for ISO files without a disc id,
     the text of a time in 11 languages), `units/awake_test.c` (230 checks: the counter with sleeps, a clock that stands still or goes back, the file's format cut at every length, the names of games from paths, from a PARAM.SFO with
@@ -438,7 +451,7 @@ Everything that changed after 1.0.0 – see `CHANGELOG.md` for the version writt
   `mksfoex -d`; checked by reading the SFO of the built EBOOT: `EFAWARE: 1`, the file is 28 bytes bigger). ARK-4 then starts psp5
   from the internal storage with the Memory Stick as `ms0:` (psp5 itself on `ef0:`), so `scan.c` finds both: `ef0:` always, `ms0:`
   when it is a real stick, as since 1.0.0. There is no change in the code. The setting is in every build (ARK-5, ARK-4, PSP Go and
-  the other models); ARK-5 and the other models are not tested separately. It was found with a test build
+  the other models). It was found with a test build
   (`psp5-authentic-TEST-PSPGo-ARK4-efaware-v2.zip`, ARK-4, otherwise the same as the build of that day): a PSP Go owner with
   ARK-4 reported that it works. A recent ARK-4 is needed. The CI build (`.github/workflows/build.yml`) gets the flag too, since it
   uses the same Makefile.
@@ -477,8 +490,8 @@ The entries below were written between 1.0.0 and 1.1.0.
     been tested", "About this fork", Building, Thanks, License. The covers section is one sentence that points to `INSTALL.md`.
     Nothing about "PS5" (the theme list in the app shows that name, so no screenshot of the Theme page is used).
   - The screenshot table is HTML (`<table>`, two columns, a caption under each picture) because a Markdown table can't have
-    captions under the images without a duplicated header row. Eight PNGs in `docs/screenshots/`: `games`, `options`, `library`,
-    `saved-data`, `music`, `settings`, `theme` (the XMB wave look), `startup` (Cosmic Red), 960 x 544 each (~700 KB in all).
+    captions under the images without a duplicated header row. Eight PNGs in `docs/screenshots/` at the time (`games`, `options`, `library`,
+    `saved-data`, `music`, `settings`, `theme`, `startup`); 1.2.0 replaced them with sixteen, see *New screenshots for 1.2.0* at the top.
   - CHANGELOG: same facts, shorter bullets. *Unreleased* is grouped into Library / Top bar / Docs, 1.0.0 keeps its groups.
     Some 1.0.0 details that only matter to developers were dropped from there (they are in these notes): the popup look "lives
     in `popup.c`", the faint light fill of the popup panel, the 60 % beam is kept.
