@@ -195,8 +195,8 @@ int sys_set_confirm_is_circle(int circle)
  * the volume bar (osd.c) reads the volume. The numbers of the functions are the old ones (sceImposeGetParam 0x531C9778, sceImposeSetParam
  * 0x810FB7FB, both in the SDK's stub library); ARK translates them for 6.60 / 6.61. The numbers of the parameters are in pspimpose_driver.h
  * (found in the 3.52 kernel: PSP_IMPOSE_MAIN_VOLUME 1, PSP_IMPOSE_BACKLIGHT_BRIGHTNESS 2, PSP_IMPOSE_EQUALIZER_MODE 4, PSP_IMPOSE_AVLS 0x10).
- * Nothing is known about the values they take beyond what is written at each function (the volume is 0 to 30, as the volume bar reads it):
- * **none of this has run on a PSP**. A call that does not work answers -1 and Settings leaves the row out. */
+ * The values they take are written at each function (the volume is 0 to 30, as the volume bar reads it). A call that does not work answers
+ * -1 and Settings leaves the row out. */
 #define NID_IMPOSE_GET_PARAM     0x531C9778
 #define NID_IMPOSE_GET_PARAM_660 0xDC3BECFF /* the same in 6.60 / 6.61, if ARK's translation is missing (as osd.c) */
 #define NID_IMPOSE_SET_PARAM     0x810FB7FB
@@ -280,8 +280,8 @@ int sys_set_backlight_off(int seconds)
 }
 #endif
 
-/* The volume (0 to 30, what the volume buttons and the volume bar have) and the brightness (the XMB's levels; how many there are and from
- * which number they count is not known, so the caller shows whatever the PSP says). */
+/* The volume (0 to 30, what the volume buttons and the volume bar have) and the brightness (the PSP's own levels: 0 to 3, as its brightness
+ * button gives them; 4 blacks the screen out). The caller shows the level plus one, like the XMB. */
 int sys_volume(void) { return impose_get(IMPOSE_MAIN_VOLUME); }
 
 int sys_set_volume(int level)

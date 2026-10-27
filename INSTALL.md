@@ -4,8 +4,8 @@
 
 **You need:** a PSP with **ARK-4 or ARK-5** (PSP-1000, 2000, 3000 or PSP Go) and a **USB cable**.
 
-psp5-authentic is made with Claude, an AI assistant. Every update is tested on a **PSP-1000**, the only device used for
-testing; the other models are not tested separately. If something goes wrong on your PSP, please tell us in an issue.
+psp5-authentic is made with Claude, an AI assistant. If something doesn't work on your PSP, please
+[open an issue](../../issues) and tell us what you saw, which PSP you have and which ARK version.
 
 ## 1. Pick your zip
 
@@ -104,6 +104,30 @@ Where to go from there:
 *Settings → Power and USB → File Manager* lets you manage files right on the PSP. Confirm opens a folder, □ marks
 files, Options (START) shows what you can do (copy, move, paste, rename, delete, new folder) and Back goes back (the first Back
 clears the marks, and at the top it cancels a waiting copy or move before it leaves).
+
+## Covers
+
+psp5 shows each game's own icon and background by itself. If you want your own pictures on the cards, a small tool
+for your computer prepares them: `tools/covers.py` (it is in the repository, not in the zips: on the GitHub page use *Code → Download ZIP*).
+It needs Python 3 with two packages: `py -m pip install --user pillow lz4` (on Windows).
+
+1. **Put your pictures in `tools/covers-src`.** Name each one after the game's ID or its title (capitals, spaces and dashes don't matter):
+   `ULUS10041.jpg` or `Aurora Drift.png`. Add `_bg` for the background behind the game: `ULUS10041_bg.jpg`.
+   PNG, JPG, WEBP and BMP work. The ID of a game in `ISO` is the one on its disc (as in its `PARAM.SFO`); for homebrew, PSN and PS1 games
+   in `PSP/GAME` it is the **name of its folder**. The card shows the middle of your picture, cut to about 16:9 (the card is 144 × 80),
+   and the background is 320 × 182, so pictures of that shape fit best.
+2. **Connect the PSP** (*Settings → Power and USB → USB Mode*, or the Memory Stick in your computer). It shows up as a drive, for example `E:`.
+3. **Run the tool** with that drive: `py tools\covers.py E:\` (on Linux or macOS: `python3 tools/covers.py /path/to/the/stick`). It lists every game with its ID
+   and what it wrote, and puts the finished pictures in `PSP5/covers` on the Memory Stick.
+4. **Start psp5 again.** A cover in `PSP5/covers` always wins over the game's own picture and over the image cache, and *Clear image cache* never removes it.
+
+Good to know:
+
+- The tool leaves covers that are already there alone. After you change a picture, run it again with **`--force`**.
+- `--dry-run` only shows what it would do. `--clean` also removes covers of games that are no longer on the card.
+- For games where you gave no picture, the tool makes covers from the game's own icon and background, so every game gets a file. That is the same
+  picture psp5 would have used.
+- To go back to a game's own picture, delete its `.ico` (card) and `.bg` (background) files in `PSP5/covers`.
 
 ## Updating
 

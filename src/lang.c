@@ -610,7 +610,7 @@ static const char *const T[S_COUNT][NL] = {
                         "Le réseau n'a pas pu démarrer", "No se pudo iniciar la red", "Impossibile avviare la rete", "Het netwerk kon niet worden gestart",
                         "Não foi possível iniciar a rede", "Не удалось запустить сеть", "ネットワークを開始できませんでした", "Síť se nepodařilo spustit" },
     /* Settings > About (Claude's translations: not checked by native speakers) */
-    [S_CAT_ABOUT] = { "About", "Om", "Info", "À propos", "Acerca de", "Informazioni", "Over", "Sobre", "О системе", "情報", "O zařízení" },
+    [S_CAT_ABOUT] = { "About", "Om", "Info", "À Propos", "Acerca de", "Informazioni", "Over", "Sobre", "О Системе", "情報", "O Zařízení" },
     [S_DESC_ABOUT] = { "Information about this PSP and psp5. Nothing here can be changed.",
                        "Information om den här PSP:n och psp5. Inget här kan ändras.",
                        "Informationen über diese PSP und psp5. Hier lässt sich nichts ändern.",

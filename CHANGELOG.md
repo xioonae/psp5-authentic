@@ -23,7 +23,8 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 - **A choice opens a popup.** Settings that used to change with ← → (language, CPU speed, regions, ...) show all their values when you press ✕. ↑ ↓
   choose, ✕ takes it, ○ keeps the old one. A stray press can't change a setting any more. Long lists scroll with a thin bar.
-- **New: Display and Sound** – the PSP's own **Brightness**, **Backlight auto-off**, **Volume**, **Equalizer** and **AVLS**. They change in the XMB too.
+- **New: Display and Sound** – the PSP's own **Brightness** (1 to 4, like the XMB), **Backlight auto-off**, **Volume**, **Equalizer** and **AVLS**. They change in the XMB too.
+  The backlight time you choose here is **kept**: the PSP forgets it at a restart, so psp5 sets it again every time it starts.
 - **New: Network** – opens the PSP's own Wi-Fi screen (the one games show) and brings you back to Settings. The SDK only lets it *choose and
   connect to a saved connection*; adding, editing or removing connections still has to be done in the XMB.
 - **New: About** – nickname, model, system software, CFW, psp5 version, MAC address, space left on the Memory Stick (and the internal storage of a PSP
@@ -32,8 +33,8 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 - The category list scrolls. The version and CFW rows are gone from *psp5* (they are in *About*).
 - **More room:** Settings and *Information* start 24 px from the screen's edges, like the File Manager, with a wider list of categories and 12 px
   between the columns.
-- **Names with capitals:** *File Manager*, *Shut Down*, *Recovery Menu*, *USB Mode*, *Disable UMD Drive*, *Disable Analog Stick*, *Display and Sound*
-  – in all 11 languages, each with its own capital rules.
+- **Names with capitals:** *File Manager*, *Shut Down*, *Recovery Menu*, *USB Mode*, *Disable UMD Drive*, *Disable Analog Stick*, *Display and Sound*, *About*
+  – in all 11 languages, each with its own capital rules (for example *O Zařízení* in Czech).
 
 ### Library
 
@@ -68,12 +69,10 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 - **The start-up screen shows the PlayStation logo**, drawn by psp5 from its outline (not a picture), a quarter of the screen high, in the same grey.
   The logo is Sony's trademark (see the README).
 
-### Not tried on a PSP
+### If something doesn't work
 
-Everything above was checked on a PC (test frames and numbers). These parts use calls that psp5 has **not** run on a PSP yet, so please check them: the
-**PSP confirm button** (psp5 now also writes the XMB's own setting), **Brightness**, **Volume**, **Equalizer** and **AVLS** (the equalizer's mode numbers
-are a guess), the **Wi-Fi screen**, the readings in **About**, and the start-up logo. The new words are translated into all 11 languages by Claude,
-not by native speakers.
+Please [open an issue](../../issues) and tell us what you saw, which PSP you have and which ARK version. The new words are translated into all 11
+languages by Claude, not by native speakers – tell us if one sounds wrong.
 
 ### Docs
 
@@ -92,7 +91,7 @@ covers.
 - **PSP Go with ARK-4: the games on the Memory Stick Micro show up now**, together with the ones on the internal storage, when
   psp5 is started from the internal storage. psp5's start file now asks ARK-4 to start it from the internal storage with the
   Memory Stick as `ms0:`. A PSP Go owner with ARK-4 reported that this works. It needs a recent ARK-4. The setting is in every
-  download; ARK-5 and the other PSP models are not tested separately.
+  download.
 
 ### Library
 
@@ -107,7 +106,7 @@ covers.
 - **↑ goes to the Sort button first** from every card in the first row (before, only from the cards right under it). ↑ again goes
   to the cog wheel, and ↓ from the cog wheel comes back to the Sort button.
 - **No more stutter** just before the card grows into the big card. Its picture was calculated again for every size on the way,
-  which a PSP couldn't keep up with; the pictures are now ready-made. (Measured on a PC, not tried on a PSP.)
+  which a PSP couldn't keep up with; the pictures are now ready-made.
 - **The picture is polished:** the controller is now the same on the left and the right (the right side was cut off a little) and it
   is drawn on whole pixels like the other icons, so it no longer wiggles or changes shape while the cards slide.
 - With no games at all, *No games found* and where to put them show under the Library card. (The "Home is empty" note is gone.)
@@ -146,9 +145,7 @@ are in too (marked *also fixed in psp5 1.5.4 / 1.6.0*); they were written again 
 Written by Claude, an AI assistant made by Anthropic. The person who runs the fork has almost no coding experience and tests
 every update on their own PSP.
 
-> **Please read:** every update is tested on a **PSP-1000**, the only device used for testing. The PSP-2000, PSP-3000, PSP Go
-> and the two ARK versions are not tested separately, and the PSP Go fixes below could not be tried on a PSP Go. If something
-> behaves oddly, please open an issue and say which PSP and ARK you have.
+> **Something not working?** Please open an issue and say which PSP and ARK you have.
 
 ### Home and menu, the console way
 

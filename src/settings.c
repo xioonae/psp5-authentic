@@ -222,7 +222,7 @@ static unsigned char s_backlight, s_eq, s_avls; /* the row values: an index in t
 static unsigned char s_volume, s_bright;        /* the volume (0 .. 30, the list is the numbers), an index in the list of brightness levels */
 static char s_vol_text[VOLUME_MAX + 1][4];
 static const char *s_vol_opts[VOLUME_MAX + 1];
-static int s_br_levels[6], s_br_n;              /* the brightness levels in the list: 1 to 4 and the PSP's own, when it is none of those */
+static int s_br_levels[6], s_br_n;              /* the PSP's brightness levels in the list: 0 to 3 (shown as 1 to 4) and its own, when it is none of those */
 static char s_br_text[6][12];
 static const char *s_br_opts[6];
 static Item *s_br_item;                         /* its row, whose list changes when the PSP has a level that is not in it */
@@ -267,20 +267,21 @@ static void bl_build(int now)
     }
 }
 
-/* The brightness list: 1 to 4 like the XMB's (how many levels the PSP has, and whether it counts from 0 or 1, is not known: **not tried on a PSP**),
- * with the PSP's own level in it, in its place, when it is none of those, so the row never says anything else than what the PSP has. */
+/* The brightness list: the XMB's four levels, 1 to 4. The PSP counts them from 0 (its brightness button gives 0 to 3, and 4 blacks the
+ * screen out), so the list shows the PSP's level plus one and sets the level itself. A level of the PSP's that is none of the four is put in
+ * the list after them, so the row never says anything else than what the PSP has. */
+#define BRIGHT_LEVELS 4
+
 static void br_build(int now)
 {
     int n = 0;
-    if (now < 1)
-        s_br_levels[n++] = now;
-    for (int i = 1; i <= 4; i++)
+    for (int i = 0; i < BRIGHT_LEVELS; i++)
         s_br_levels[n++] = i;
-    if (now > 4)
+    if (now >= BRIGHT_LEVELS)
         s_br_levels[n++] = now;
     s_br_n = n;
     for (int i = 0; i < n; i++) {
-        snprintf(s_br_text[i], sizeof(s_br_text[i]), "%d", s_br_levels[i]);
+        snprintf(s_br_text[i], sizeof(s_br_text[i]), "%d", s_br_levels[i] + 1);
         s_br_opts[i] = s_br_text[i];
         if (s_br_levels[i] == now)
             s_bright = i;
@@ -305,8 +306,13 @@ static void set_volume(int level)
 
 static void set_backlight(int idx)
 {
-    int now = sys_set_backlight_off(s_bl_secs[idx]);
+    int want = s_bl_secs[idx];
+    int now = sys_set_backlight_off(want);
     bl_build(now >= 0 ? now : s_bl_secs[s_backlight]);
+    if (now == want && g_backlight_off != want) {
+        g_backlight_off = want; /* the PSP forgets the time at a restart: psp5 keeps it (psp5.cfg) and sets it again at every start */
+        S.own_dirty = 1;
+    }
 }
 static void set_eq(int mode)
 {

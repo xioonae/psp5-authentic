@@ -470,6 +470,8 @@ int main(int argc, char *argv[])
     art_init(DATA_DIR);
     config_load(DATA_DIR); /* ljud och språk */
     sys_init(s_self);
+    if (g_backlight_off)
+        sys_set_backlight_off(g_backlight_off); /* the time chosen in Settings: the PSP forgets it at a restart */
     osd_init(); /* volymindikatorn behöver ARK */
     testrun_init();
 
