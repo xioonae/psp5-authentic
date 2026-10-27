@@ -313,11 +313,17 @@ void boot_run(volatile int *running)
     init_scene();
 
     u64 start = sceKernelGetSystemTimeWide();
+#ifdef PSP5_TEST
+    int frame = 0; /* the test build counts frames (60 a second), so that a script's `wait` and `shot` land on the same moment of the intro every time */
+#endif
     int sound_started = 0;
     float skip_at = -1; /* tid då en knapp trycktes */
     u32 old = ~0u;      /* knappar som hålls vid start räknas inte */
     while (*running) {
         float t = (sceKernelGetSystemTimeWide() - start) / 1000000.0f;
+#ifdef PSP5_TEST
+        t = frame++ / 60.0f;
+#endif
         SceCtrlData pad;
         sceCtrlPeekBufferPositive(&pad, 1);
         u32 b = testrun_buttons(pad.Buttons);

@@ -24,6 +24,14 @@ into psp5 instead of the XMB.
 
 The changes after 1.1.0 are noted here; the list for users is under *1.2.0* in `CHANGELOG.md`. Changes after 1.2.0 go in a new section above this one.
 
+- **New screenshots for 1.2.0** (`docs/screenshots/`: 16 PNGs of 960 x 544, ~3 MB in all; `README.md`; `boot.c`). They replace the eight of 1.1.0 (`settings.png` is gone, `settings-controls`, `settings-display`, `settings-about` and
+  `settings-theme` are new, as are `startup-logo`, `library-folders`, `information`, `file-manager` and `power-menu`). The pictures are the 480 x 272 frames of PPSSPP's software renderer (`PPSSPPHeadless`, v1.20.4, built from source), enlarged 2 x with
+  Lanczos. The app is a `-DPSP5_TEST` build run over an invented memory stick (14 games and apps with drawn pictures, in folders too, ten saves, six MP3 files with album art, played times); the buttons come from `ms0:/PSP5/test.txt` as always
+  (`battery 82`, `charging 1`, `wifi 1`, `shot NAME` ...), and `psp5.cfg` sets `batterypct=1`, `theme=` / `themeart=` and `libview=`. Things the test build fakes are on the pictures: the clock is the time of the capture, the battery, the volume (18) and the
+  brightness (3) are test values, and the model in *About* is the one from `fake.txt`. The PPSSPP side (a few lines in its `Headless.cpp` that write the displayed frame to `NAME.ppm` when `NAME.req` appears, and one line in its flash0 reader, which
+  refused `sceIoOpen` with PPSSPP's own "quiet" flag, so no font could be read in the headless build) and the generator of the memory stick are **not in git**, like the tests.
+  - *The test build counts frames in the start-up screen* (`boot.c`, `#ifdef PSP5_TEST`): `t = frame / 60` instead of the clock, so that a script's `wait` and `shot` fall on the same moment of the intro every time (the real build uses the clock).
+    Nothing else changed in `boot.c`; the normal build is the same as before.
 - **Version 1.2.0**: `PSP5_VERSION` in `settings.c` (shown in *About*), the download names in `INSTALL.md`, the default of `tools/make_release.py`. *Capitals:* *USB Mode*, *Shut Down*, *Recovery Menu*, *Disable UMD Drive* and
   *Disable Analog Stick* are in title case now, in all languages (`lang.c`, checked by the private `units/caps_test.c`). *The test build* (`-DPSP5_TEST`, `tools/build.sh test`) fakes the Impose settings (`s_test_impose`: volume 18, brightness 3,
   equalizer off, AVLS off) and the backlight timer (120 s) in `system.c`, so that *Settings → Display and Sound* can be looked at and used in PPSSPP, which has no Impose service and no ARK. Nothing of this is in the normal build.
