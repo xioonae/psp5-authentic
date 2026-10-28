@@ -129,12 +129,22 @@ u32 lastplayed_now(void)
     return lastplayed_pack(&now);
 }
 
+/* the name of a game for the table; 0 = it has none: a disc without a disc ID (entry_cover_key() would call it "SYSDIR", like every other disc) */
+static int game_key(const Entry *e, char *key, int size)
+{
+    if (e->type == ENTRY_UMD && !e->game_id[0]) {
+        key[0] = 0; /* (an empty name is never in the table nor noted, whoever forgets to look at the answer) */
+        return 0;
+    }
+    entry_cover_key(e, key, size);
+    return 1;
+}
+
 u32 lastplayed_time(const Entry *e)
 {
     char key[KEY_LEN];
-    if (!s_n || e->type == ENTRY_UMD)
+    if (!s_n || !game_key(e, key, sizeof(key)))
         return 0;
-    entry_cover_key(e, key, sizeof(key));
     const Game *g = find(key);
     return g ? g->time : 0;
 }
@@ -150,8 +160,7 @@ void lastplayed_note(const char *key, u32 time)
 void lastplayed_note_launch(const Entry *e)
 {
     char key[KEY_LEN];
-    if (e->type == ENTRY_UMD)
+    if (!game_key(e, key, sizeof(key)))
         return;
-    entry_cover_key(e, key, sizeof(key));
     lastplayed_note(key, lastplayed_now());
 }

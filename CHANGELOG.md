@@ -16,8 +16,8 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ### Information
 
-- **New row: Last played** (date and time), right under *Modified*. It is there for every game and app psp5 knows a time for. Games you played before this version, games you
-  never played and the UMD disc have no such row.
+- **New row: Last played** (date and time), right under *Modified*. It is there for every game and app psp5 knows a time for, **also for the UMD disc in the drive** (by its disc ID,
+  from psp5 or from the XMB, like the time played, which the disc already had). Games you played before this version, games you never played and a disc without a disc ID have no such row.
 
 ### Settings
 

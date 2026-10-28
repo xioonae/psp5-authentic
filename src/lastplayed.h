@@ -26,14 +26,15 @@ u32 lastplayed_pack(const ScePspDateTime *t);
 /* The PSP's clock as a packed local time; 0 when it cannot be read or is not a date that fits. */
 u32 lastplayed_now(void);
 
-/* The last time the game was played, 0 when it is not known (never, or before psp5 knew). The disc has none. */
+/* The last time the game was played, 0 when it is not known (never, or before psp5 knew). The disc has one too, by its disc ID, the same as an ISO of
+ * the same game (a disc that has no disc ID has none). */
 u32 lastplayed_time(const Entry *e);
 
 /* The game with this key was played at `time`. Only a later time than the one known is kept; the file is written at once when something
  * changed. A time of 0 is ignored. */
 void lastplayed_note(const char *key, u32 time);
 
-/* psp5 starts the game: it was played now (the disc is not kept). */
+/* psp5 starts the game: it was played now (a disc that has no disc ID is not kept). */
 void lastplayed_note_launch(const Entry *e);
 
 #endif

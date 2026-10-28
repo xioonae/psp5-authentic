@@ -173,7 +173,7 @@ static void modified_row(const Entry *e)
     time_row(L(S_I_MODIFIED), e->file_time);
 }
 
-/* when psp5 (or the helper plugin) saw the game played last (lastplayed.c); nothing for a game that has no time, and for the disc */
+/* when psp5 (or the helper plugin) saw the game played last (lastplayed.c); nothing for a game that has no time (a disc without a disc ID has none) */
 static void last_played_row(const Entry *e)
 {
     time_row(L(S_I_LAST_PLAYED), lastplayed_time(e));
@@ -291,6 +291,7 @@ static void umd_rows(const Entry *e)
 {
     add_row(L(S_I_TYPE), L(S_I_UMD));
     add_row(L(S_I_LOCATION), L(S_I_UMD_DRIVE));
+    last_played_row(e);
     SceIoStat st;
     if (sceIoGetstat(UMD_ROOT "PSP_GAME/PARAM.SFO", &st) >= 0 && st.st_size > 0 && st.st_size <= MAX_SFO) {
         u8 *sfo = malloc(st.st_size);
