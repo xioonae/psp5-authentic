@@ -21,7 +21,7 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ### Settings
 
-- **Closing the File Manager brings you back to Settings → Power and USB**, on the *File Manager* row (before, to the main screen). The Wi-Fi screen already did this.
+- **Closing the File Manager or USB Mode brings you back to Settings → Power and USB**, on the row you came from (before, to the main screen). The Wi-Fi screen already did this.
 - **The switch is called *Show Game art*** now (it was *Game art in the background*), in all 11 languages.
 - **Three themes are gone:** *Starlight Blue*, *Chroma Indigo* and *Chroma Pearl* looked almost like *Cobalt Blue*, *Galactic Purple* and *Sterling Silver*. If you had chosen one of
   them, psp5 starts with the PS5 theme instead.

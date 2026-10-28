@@ -553,7 +553,7 @@ int main(int argc, char *argv[])
                 settings_commit();
                 if (run_action(action, &list, &ui)) {
                     app_start(&list, &ui, 0);
-                    if (settings_is_visit(action)) { /* the PSP's own screen, the File Manager: back in Settings, on the same row (not the main screen) */
+                    if (settings_is_visit(action)) { /* the PSP's own screen, the File Manager, USB Mode: back in Settings, on the same row (not the main screen) */
                         if (action == SA_WIFI && s_wifi_failed)
                             settings_notice(L(S_WIFI_FAILED));
                     } else {

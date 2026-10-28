@@ -605,7 +605,7 @@ void settings_open(void)
 
 int settings_is_visit(int action)
 {
-    return action == SA_WIFI || action == SA_FILES;
+    return action == SA_WIFI || action == SA_FILES || action == SA_USB;
 }
 
 void settings_notice(const char *msg)

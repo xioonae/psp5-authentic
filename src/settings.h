@@ -9,7 +9,7 @@ enum {
     SA_NONE, SA_CLOSE, SA_USB, SA_XMB, SA_RESTART, SA_SUSPEND, SA_SHUTDOWN, SA_RECOVERY, SA_CLEAR_CACHE, SA_FILES, SA_WIFI,
 };
 
-/* 1 = the action is a visit: when it is over psp5 comes back to Settings, on the same row (the PSP's own Wi-Fi screen, the File Manager), and not to the
+/* 1 = the action is a visit: when it is over psp5 comes back to Settings, on the same row (the PSP's own Wi-Fi screen, the File Manager, USB Mode), and not to the
  * main screen like after the others. */
 int settings_is_visit(int action);
 

@@ -17,7 +17,7 @@ wherever it can, but it doesn't copy the console in everything.
     <td width="50%"><img src="docs/screenshots/library-folders.png" alt="Library with folders"><br><sub><b>Folders</b> – the Library can show the folders as cards; the button at the top left chooses what you see</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/information.png" alt="Information"><br><sub><b>Information</b> – what a game or app is, where it is and how big it is</sub></td>
+    <td width="50%"><img src="docs/screenshots/information.png" alt="Information"><br><sub><b>Information</b> – what a game or app is, where it is, how big it is and when you played it last</sub></td>
     <td width="50%"><img src="docs/screenshots/saved-data.png" alt="Manage Saved Data"><br><sub><b>Manage Saved Data</b> – look through saves, mark several and delete them, with the space you get back</sub></td>
   </tr>
   <tr>
@@ -38,7 +38,7 @@ wherever it can, but it doesn't copy the console in everything.
   </tr>
 </table>
 
-*The screenshots were taken in the PPSSPP emulator with invented demo games, music and saves. The clock shows the time they were taken; the battery, volume and brightness are test values.*
+*The screenshots were taken in the PPSSPP emulator with invented demo games, music and saves. The clock, the dates, the battery, volume and brightness are test values.*
 
 ## What you get
 
