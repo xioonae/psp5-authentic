@@ -33,7 +33,7 @@ wherever it can, but it doesn't copy the console in everything.
     <td width="50%"><img src="docs/screenshots/settings-theme.png" alt="Settings, Theme"><br><sub><b>Settings → Theme</b> – highlight a theme to see it, Confirm to use it (here Cosmic Red)</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/theme.png" alt="Classic theme"><br><sub><b>Themes</b> – the classic looks of PS1 to PS4 too (here PS3, with the game art in the background turned off)</sub></td>
+    <td width="50%"><img src="docs/screenshots/theme.png" alt="Classic theme"><br><sub><b>Themes</b> – the classic looks of PS1 to PS4 too (here PS3, with <i>Show Game art</i> turned off)</sub></td>
     <td width="50%"><img src="docs/screenshots/power-menu.png" alt="Power menu"><br><sub><b>Power menu</b> (SELECT) – sleep, shut down, restart, recovery menu</sub></td>
   </tr>
 </table>
@@ -47,12 +47,12 @@ wherever it can, but it doesn't copy the console in everything.
 - **Time played.** A small clock with the time (*54h*, *45min* or *<1min*) on the right of the bottom row, in Games and in the Library.
   With ARK, psp5 installs a tiny helper plugin by itself (nothing to switch on). It runs inside every game (PSP games, ISOs, homebrew and PS1 games), **however you started it** (from psp5, from the XMB, with or without psp5 as ARK's launcher),
   and counts only the time the PSP is awake. The times are added when psp5 starts next. To turn it off, turn off the two `psp5time.prx` lines in *Settings → Plugins*. Without ARK, or with those lines off, nothing is counted.
-- **Options** (START, or Confirm on ⋯). Manage Saved Data, Information, Delete, Remove from / Add to Home, Pin to / Unpin from Home.
+- **Options** (START, or Confirm on ⋯). Manage Saved Data, Information (also when you played it last), Delete, Remove from / Add to Home, Pin to / Unpin from Home.
 - **Library.** The last card of Games. It opens a grid with everything you have, games and apps together, a **Sort** button (by
   name, by what you added last or by what you played last) and a **view** button (*All*, *In folders*, *Outside of folders* or *Both in and out of
   folders*; the folders are cards, Confirm opens one, Back goes back). Folders are the ones the Categories Lite plugin makes. The Library
-  remembers your sorting and view. You can pin the Library card like any other card. *Recently played* puts what you played last first (a folder goes by its best
-  game); something you have not played yet is sorted by when it was added. With ARK it also knows the games you started from the XMB (the helper plugin of *Time played* tells psp5).
+  remembers your sorting and view. You can pin the Library card like any other card. *Recently played* shows the games in the same order as the Games tab (what you played last
+  first; a folder goes by its best game); what you have not played yet comes last. With ARK it also knows the games you started from the XMB (the helper plugin of *Time played* tells psp5).
 - **Manage Saved Data.** Lists the saves of all your games. Mark some, delete them and see how much room you get back.
   ARK's own save folder is locked and can't be deleted.
 - **Music.** Plays the MP3 files in `MUSIC` with title, artist and album art (from the file, or a `cover.jpg` / `folder.jpg`
@@ -63,15 +63,15 @@ wherever it can, but it doesn't copy the console in everything.
   - *Display and Sound* – the PSP's own brightness, backlight timer (psp5 remembers it), volume, equalizer and AVLS.
   - *Network* – the PSP's own Wi-Fi screen. *About* – nickname, model, system software, MAC address, storage, battery.
   - *Performance* (CPU speed, extra memory, caches), *System*, *Plugins* and *Power and USB* (USB Mode, File Manager, XMB,
-    Sleep, Shut Down, Restart, Recovery Menu).
+    Sleep, Shut down, Restart, Recovery Menu).
 
   A setting with several values opens a popup when you press Confirm on it.
 - **Themes.** The colours of the console covers, each with the console's scene behind your games (a beam of light, golden
-  dust, haze), plus the classic looks of PS1 to PS4. Highlight a theme to preview it, Confirm to use it. You can turn the game art
-  in the background off, so the theme is always visible.
+  dust, haze), plus the classic looks of PS1 to PS4. Highlight a theme to preview it, Confirm to use it. You can turn *Show Game art*
+  off, so the theme is always visible.
 - **Startup.** A short intro like a console's, with a health notice, soft circles and golden dust in your theme's colours.
   It plays when the PSP starts and wakes up, not when you come back from a game. Any button skips it, and you can turn it off.
-- **Power menu** (SELECT, on every tab). Sleep, Shut Down, Restart, Recovery Menu – Confirm does it at once.
+- **Power menu** (SELECT, on every tab). Sleep, Shut down, Restart, Recovery Menu – Confirm does it at once.
 - **Volume, battery and Wi-Fi.** Pressing the volume buttons slides a volume bar in at the top. The battery has four bars that are lit
   from the right (one for each quarter); while the PSP charges, a bolt is shown left of the battery and the bars above the level come on
   one after the other. You can also show the battery percentage (*Settings → psp5*). A Wi-Fi sign is shown while the PSP's Wi-Fi switch is

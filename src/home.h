@@ -30,6 +30,11 @@ void home_load(const EntryList *list);
  * right, and HOME_LIBRARY for the Library card. Returns how many. */
 int home_build(const EntryList *list, int *out, int max);
 
+/* Where the game is in Home's list of the cards opened last, which is the order of the Games tab after the pinned cards: 0 = the newest,
+ * -1 = it is not in the list (never opened and not added by hand, taken off Home, or older than the forty remembered), and always for the
+ * disc. The Library's "Recently played" sorting goes by it first, so that the Library and the Games tab show the games in the same order. */
+int home_recent_rank(const Entry *e);
+
 /* HOME_SHOWN: the card (list index `index`) is in the Games tab now. HOME_PINNED: it is pinned. The disc counts as shown. */
 int home_state(const EntryList *list, int index);
 

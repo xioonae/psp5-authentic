@@ -6,11 +6,11 @@
 #include <psprtc.h>
 #include "scan.h"
 
-/* When each game and app was played last, for the Library's "Recently played" sort and for Home.
+/* When each game and app was played last: shown on the Information screen, and what the Library's "Recently played" sorting uses for the games that
+ * are not on Home's list of the cards opened last (ui.c, played_key()).
  *
  * A time is a packed local time, the same kind as Entry.file_time (scan_pack_time(): year since 1980, month, day, hour, minute, second in
- * one number that grows with time), so the time a game was played and the time it was added (its file time) can be compared directly.
- * 0 means "not known".
+ * one number that grows with time). 0 means "not known".
  *
  * Two things write them: psp5 itself when it starts a game (lastplayed_note_launch), and the time of the file that the helper plugin
  * keeps for a game (<data dir>/played/<key>.txt, written again every few seconds while the game runs) when psp5 adds that file to the
@@ -28,10 +28,6 @@ u32 lastplayed_now(void);
 
 /* The last time the game was played, 0 when it is not known (never, or before psp5 knew). The disc has none. */
 u32 lastplayed_time(const Entry *e);
-
-/* The time to sort a game by in "Recently played": the last time it was played, and when it has not been played, the time it was added
- * (its file time). */
-u32 lastplayed_sort_time(const Entry *e);
 
 /* The game with this key was played at `time`. Only a later time than the one known is kept; the file is written at once when something
  * changed. A time of 0 is ignored. */

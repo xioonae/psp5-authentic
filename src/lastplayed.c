@@ -139,12 +139,6 @@ u32 lastplayed_time(const Entry *e)
     return g ? g->time : 0;
 }
 
-u32 lastplayed_sort_time(const Entry *e)
-{
-    u32 t = lastplayed_time(e);
-    return t ? t : e->file_time;
-}
-
 void lastplayed_note(const char *key, u32 time)
 {
     if (!time || !key[0] || strlen(key) >= KEY_LEN)

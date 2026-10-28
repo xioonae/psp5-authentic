@@ -24,7 +24,7 @@ typedef struct {
     u32 dust;           /* bandet av gyllene damm (bara PS5:s färger, annars 0 = inget damm) */
 } Theme;
 
-enum { THEME_FIRST_CLASSIC = 12 }; /* PS1–PS4 kommer efter PS5:s färger */
+enum { THEME_FIRST_CLASSIC = 9 }; /* PS1–PS4 kommer efter PS5:s färger */
 
 /* Valt tema (index) och om spelens bilder visas bakom korten. Sparas i psp5.cfg. */
 extern unsigned char g_theme;

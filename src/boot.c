@@ -218,7 +218,7 @@ static void make_palette(Palette *p)
         peak = fmaxf(peak, top[c] * k);
     }
     if (peak > 160)
-        k *= 160 / peak; /* a light theme (silver, pearl) gets grey circles, not bright ones */
+        k *= 160 / peak; /* a light theme (silver) gets grey circles, not bright ones */
     for (int c = 0; c < 3; c++) {
         int accent = (th->accent >> (8 * c)) & 0xFF;
         p->big[c] = (int)(top[c] * k);

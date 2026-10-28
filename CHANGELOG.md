@@ -7,11 +7,25 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ### Library
 
-- **New sorting: Recently played.** The Sort button has a third choice. The games, apps and folders you played last come first, the ones you played longest ago come last.
-  Something you have not played yet is sorted by when it was added to the PSP (like *Recently added*), so it takes its place among the played ones by that date. A folder goes by
-  the best game in it, and the disc is always first. It is kept in `psp5.cfg` like the other sortings.
+- **New sorting: Recently played.** The Sort button has a third choice. It shows the games in the **same order as the Games tab**: the ones you played last first. After them come
+  the other games you have played, and last the games you have not played yet, the newest first. A folder goes by the best game in it, and the disc is always first. The cards you
+  pinned stand first in the Games tab only. It is kept in `psp5.cfg` like the other sortings.
 - **psp5 now remembers when you played each game** (`lastplayed.txt` in psp5's folder). It notes the time when psp5 starts a game, and with ARK the helper plugin of *Time played*
-  tells it about games you started from the XMB (psp5 learns it the next time it starts). Games you played before this version count as not played until you play them again.
+  tells it about games you started from the XMB (psp5 learns it the next time it starts). Games you played before this version have no time yet, but they keep their place in the
+  Games tab and in *Recently played*.
+
+### Information
+
+- **New row: Last played** (date and time), right under *Modified*. It is there for every game and app psp5 knows a time for. Games you played before this version, games you
+  never played and the UMD disc have no such row.
+
+### Settings
+
+- **Closing the File Manager brings you back to Settings → Power and USB**, on the *File Manager* row (before, to the main screen). The Wi-Fi screen already did this.
+- **The switch is called *Show Game art*** now (it was *Game art in the background*), in all 11 languages.
+- **Three themes are gone:** *Starlight Blue*, *Chroma Indigo* and *Chroma Pearl* looked almost like *Cobalt Blue*, *Galactic Purple* and *Sterling Silver*. If you had chosen one of
+  them, psp5 starts with the PS5 theme instead.
+- **Shut down** is written with a small d again (the other names keep their capitals).
 
 ### Games
 

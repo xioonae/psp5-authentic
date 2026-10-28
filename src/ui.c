@@ -129,10 +129,22 @@ static int top_tabs(const Ui *ui, int out[2])
     return 2;
 }
 
-/* the Library is sorted by name, by when a game was added (its file time) or by when it was played last (and when it has not been played, by when it
- * was added) – the disc always first */
+/* the Library is sorted by name, by when a game was added (its file time) or by when it was played – the disc always first */
 static const EntryList *s_sort_list;
-static const u32 *s_sort_time; /* for every entry of the list, the time to sort it by in "Recently played" (lastplayed_sort_time) */
+static const u64 *s_sort_time; /* for every entry of the list, what to sort it by in "Recently played" (played_key); a bigger one comes first */
+
+/* "Recently played" shows the games in the order of the Games tab (home.c): first those on Home's list of the cards opened last, the newest
+ * first, as the Games tab has them after the pinned cards (a pin only moves a card to the front of the Games tab, not of the Library); then
+ * the other games that have been played, the one played last first; last the games that have not been played, the one added last first.
+ * The three parts are the top 32 bits of the key: 3, 2 and 1. */
+static u64 played_key(const Entry *e)
+{
+    int rank = home_recent_rank(e);
+    if (rank >= 0)
+        return (3ull << 32) | (0xFFFFFFFFu - (u32)rank);
+    u32 played = lastplayed_time(e);
+    return played ? (2ull << 32) | played : (1ull << 32) | e->file_time;
+}
 static int cmp_name(const void *a, const void *b)
 {
     const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
@@ -155,16 +167,16 @@ static int cmp_played(const void *a, const void *b)
     const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
     if ((x->type == ENTRY_UMD) != (y->type == ENTRY_UMD))
         return x->type == ENTRY_UMD ? -1 : 1;
-    u32 tx = s_sort_time[*(const int *)a], ty = s_sort_time[*(const int *)b];
+    u64 tx = s_sort_time[*(const int *)a], ty = s_sort_time[*(const int *)b];
     if (tx != ty)
         return tx > ty ? -1 : 1;
     return cmp_name(a, b);
 }
 
 /* the folders in the order of the Sort button: by name (the folders are numbered in the order of their names), the one with the
- * newest game first, or the one with the game that was played last first */
+ * newest game first, or the one with the game that comes first in "Recently played" first */
 static const FolderSet *s_sort_folders;
-static const u32 *s_folder_time; /* for every folder, the newest of the sort times of its games */
+static const u64 *s_folder_time; /* for every folder, the biggest played_key of its games */
 static int cmp_folder_name(const void *a, const void *b)
 {
     return *(const int *)a - *(const int *)b;
@@ -178,7 +190,7 @@ static int cmp_folder_recent(const void *a, const void *b)
 }
 static int cmp_folder_played(const void *a, const void *b)
 {
-    u32 x = s_folder_time[*(const int *)a], y = s_folder_time[*(const int *)b];
+    u64 x = s_folder_time[*(const int *)a], y = s_folder_time[*(const int *)b];
     if (x != y)
         return x > y ? -1 : 1;
     return cmp_folder_name(a, b);
@@ -199,12 +211,12 @@ static void rebuild_library(Ui *ui)
     const EntryList *list = ui->list;
     int *t = v->idx ? malloc((list->count + 1) * sizeof(int)) : NULL;
     int n = 0, open = ui->lib_open, view = ui->lib_view, sort = ui->lib_sort;
-    u32 *times = NULL, *ftimes = NULL; /* "Recently played": the sort time of every game, and the newest of them in every folder */
+    u64 *times = NULL, *ftimes = NULL; /* "Recently played": the played_key of every game, and the biggest of them in every folder */
     if (!t)
         return;
     if (sort == LIB_SORT_PLAYED) {
-        times = malloc((list->count + 1) * sizeof(u32));
-        ftimes = calloc(fs->count + 1, sizeof(u32));
+        times = malloc((list->count + 1) * sizeof(u64));
+        ftimes = calloc(fs->count + 1, sizeof(u64));
         if (!times || !ftimes) {
             free(times);
             free(ftimes);
@@ -212,7 +224,7 @@ static void rebuild_library(Ui *ui)
             return;
         }
         for (int i = 0; i < list->count; i++) {
-            times[i] = lastplayed_sort_time(&list->items[i]);
+            times[i] = played_key(&list->items[i]);
             int f = i < fs->of_count ? fs->of[i] : -1;
             if (f >= 0 && f < fs->count && times[i] > ftimes[f])
                 ftimes[f] = times[i];

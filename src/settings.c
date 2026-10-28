@@ -603,6 +603,11 @@ void settings_open(void)
     memset(&S, 0, sizeof(S));
 }
 
+int settings_is_visit(int action)
+{
+    return action == SA_WIFI || action == SA_FILES;
+}
+
 void settings_notice(const char *msg)
 {
     snprintf(S.toast, sizeof(S.toast), "%s", msg);

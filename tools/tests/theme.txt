@@ -31,9 +31,6 @@ wait 14
 shot t-pink
 press down
 wait 14
-shot t-blue
-press down
-wait 14
 shot t-purple
 press down
 wait 14
@@ -46,13 +43,7 @@ wait 14
 shot t-silver
 press down
 wait 14
-shot t-indigo
-press down
-wait 14
 shot t-teal
-press down
-wait 14
-shot t-pearl
 press down
 wait 14
 shot t-ps1

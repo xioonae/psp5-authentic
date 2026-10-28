@@ -14,6 +14,7 @@
 #include "gameops.h"
 #include "iso.h"
 #include "lang.h"
+#include "lastplayed.h"
 #include "loader.h"
 #include "osd.h"
 #include "sfo.h"
@@ -158,13 +159,24 @@ static void location_rows(const Entry *e)
     }
 }
 
-static void modified_row(const Entry *e)
+/* a packed time (scan_pack_time()) as "2026-10-28 14:05"; no row when the time is not known (0) */
+static void time_row(const char *label, u32 t)
 {
-    u32 t = e->file_time;
     if (!t)
         return;
-    add_rowf(L(S_I_MODIFIED), "%04u-%02u-%02u %02u:%02u", (unsigned)((t >> 26) + 1980), (unsigned)((t >> 22) & 15),
+    add_rowf(label, "%04u-%02u-%02u %02u:%02u", (unsigned)((t >> 26) + 1980), (unsigned)((t >> 22) & 15),
              (unsigned)((t >> 17) & 31), (unsigned)((t >> 12) & 31), (unsigned)((t >> 6) & 63));
+}
+
+static void modified_row(const Entry *e)
+{
+    time_row(L(S_I_MODIFIED), e->file_time);
+}
+
+/* when psp5 (or the helper plugin) saw the game played last (lastplayed.c); nothing for a game that has no time, and for the disc */
+static void last_played_row(const Entry *e)
+{
+    time_row(L(S_I_LAST_PLAYED), lastplayed_time(e));
 }
 
 /* The few PARAM.SFO entries worth knowing, in this order, each with its own key as the label */
@@ -214,6 +226,7 @@ static void iso_rows(const Entry *e)
         }
     }
     modified_row(e);
+    last_played_row(e);
 
     IsoReader r;
     if (iso_open(&r, e->path) < 0)
@@ -256,6 +269,7 @@ static void pbp_rows(const Entry *e)
         S.measure_row = s_n - 1;
     }
     modified_row(e);
+    last_played_row(e);
 
     u32 h[2 + PBP_SECTIONS];
     memset(h, 0, sizeof(h));

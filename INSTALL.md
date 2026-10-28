@@ -59,7 +59,7 @@ The plugin keeps the seconds of each game in `PSP5/played`, and psp5 adds them t
 - To turn it off, open *Settings → Plugins* and turn off the two `psp5time.prx` lines (*Games* and *PS1*). psp5 leaves those lines as they are, so they stay off (it only adds them when there is no line for the plugin at all).
 - Without ARK, or with the lines off, nothing is counted. A game under 10 seconds is not counted. A PSP game that has no disc ID (some homebrew ISOs and CSOs) is counted under the name of its ISO file, as psp5 names it: renaming the file starts a new time for it.
 - When psp5 is updated, the plugin file is replaced by the one that comes with it.
-- The same plugin lets psp5 know **when** a game was played last, also when you started it from the XMB. The Library's Sort button uses it for *Recently played* (a game you have not played yet is placed by when it was added).
+- The same plugin lets psp5 know **when** a game was played last, also when you started it from the XMB. The Information screen shows it as *Last played*, and the Library's Sort button uses it for *Recently played* (the same order as the Games tab).
 
 ## Where your games go
 
@@ -82,7 +82,7 @@ Every screen uses the same few buttons for the same things:
 | ✕ | **Confirm**: start the game, open, choose, switch on or off (in Music: play / pause) |
 | ○ | **Back**: one step back, close a popup or a screen (it closes the Library) |
 | START | **Options**: of the selected game, card or file · on the Library card: pin / unpin · START again closes the options |
-| SELECT | **Power menu** on every tab: Sleep, Shut Down, Restart, Recovery Menu (Confirm does it at once, Back or SELECT closes) |
+| SELECT | **Power menu** on every tab: Sleep, Shut down, Restart, Recovery Menu (Confirm does it at once, Back or SELECT closes) |
 | L / R | **Switch tabs**: Games and Music (not in the Library: ○ closes it) · in a long list a page up / down |
 | □ △ | Extras on a few screens only: mark / select all in a list (*Manage Saved Data*, the File Manager), □ pauses the music |
 | HOME | Back to the XMB (not as custom launcher)|

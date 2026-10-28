@@ -1,7 +1,7 @@
 /* psp5 – made by Mille Weber */
 /* Färgteman. PS5 har inga egna färgteman, men konsolen säljs med skal i olika färger
- * (Midnight Black, Cosmic Red, Nova Pink, Starlight Blue, Galactic Purple, Deep Earth-
- * serien Volcanic Red/Cobalt Blue/Sterling Silver och Chroma-serien Indigo/Teal/Pearl),
+ * (Midnight Black, Cosmic Red, Nova Pink, Galactic Purple, Deep Earth-
+ * serien Volcanic Red/Cobalt Blue/Sterling Silver och Chroma Teal),
  * och inställningen Utseende låter hemskärmen se ut som PS1 (grå konsol och knapparnas
  * symboler), PS2 (mörka "torn" och glödande klot), PS3 (XMB-vågen) eller PS4 (blå
  * vågor och partiklar). Temana här bygger på dem – allt ritas i kod, inga bilder. */
@@ -25,8 +25,6 @@ static const Theme THEMES[] = {
       RGBA(255, 128, 128, 72), RGBA(210, 60, 72, 42), 0, C(238, 76, 88), C(62, 22, 28), DECO_SPOT, C(255, 196, 188), C(255, 140, 120) },
     { "pink", "Nova Pink", C(99, 33, 75), C(112, 40, 84), C(30, 10, 25),
       RGBA(255, 172, 214, 78), RGBA(232, 110, 172, 42), 0, C(246, 136, 190), C(70, 30, 56), DECO_SPOT, C(255, 208, 232), C(255, 160, 205) },
-    { "blue", "Starlight Blue", C(29, 61, 115), C(38, 70, 126), C(9, 19, 42),
-      RGBA(172, 212, 255, 82), RGBA(92, 152, 232, 44), 0, C(116, 176, 248), C(32, 52, 86), DECO_SPOT, C(196, 224, 255), C(150, 200, 255) },
     { "purple", "Galactic Purple", C(61, 35, 107), C(68, 40, 114), C(17, 9, 35),
       RGBA(204, 172, 255, 78), RGBA(142, 100, 222, 42), 0, C(176, 136, 244), C(50, 36, 80), DECO_SPOT, C(226, 208, 255), C(190, 160, 255) },
     { "volcanic", "Volcanic Red", C(97, 37, 21), C(106, 42, 22), C(28, 10, 6),
@@ -35,12 +33,8 @@ static const Theme THEMES[] = {
       RGBA(142, 172, 255, 82), RGBA(62, 104, 242, 44), 0, C(86, 136, 255), C(28, 40, 96), DECO_SPOT, C(188, 208, 255), C(130, 170, 255) },
     { "silver", "Sterling Silver", C(90, 94, 104), C(98, 102, 110), C(29, 31, 35),
       RGBA(236, 242, 252, 82), RGBA(172, 182, 198, 42), 0, C(214, 220, 230), C(64, 68, 76), DECO_SPOT, C(240, 244, 252), C(214, 222, 238) },
-    { "indigo", "Chroma Indigo", C(45, 39, 103), C(50, 44, 110), C(12, 11, 34),
-      RGBA(156, 144, 255, 78), RGBA(112, 92, 232, 42), RGBA(90, 210, 228, 44), C(138, 126, 252), C(40, 38, 80), DECO_SPOT, C(208, 200, 255), C(160, 150, 255) },
     { "teal", "Chroma Teal", C(17, 79, 85), C(22, 86, 92), C(5, 23, 25),
       RGBA(146, 244, 232, 78), RGBA(42, 182, 172, 42), RGBA(126, 126, 255, 40), C(66, 214, 204), C(20, 60, 62), DECO_SPOT, C(190, 248, 240), C(110, 230, 215) },
-    { "pearl", "Chroma Pearl", C(84, 80, 90), C(94, 90, 100), C(27, 25, 31),
-      RGBA(255, 242, 248, 86), RGBA(204, 192, 224, 42), RGBA(172, 222, 255, 44), C(238, 228, 242), C(64, 60, 70), DECO_SPOT, C(255, 240, 246), C(240, 214, 230) },
     /* PS1–PS4, som PS5:s Utseende */
     { "ps1", "PS1", C(108, 108, 116), C(116, 116, 124), C(46, 46, 52),
       RGBA(244, 244, 248, 56), RGBA(176, 176, 186, 30), 0, C(224, 224, 232), C(80, 80, 88), DECO_PS1, C(246, 246, 252), 0 },

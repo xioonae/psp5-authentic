@@ -270,6 +270,15 @@ int home_build(const EntryList *list, int *out, int max)
     return n;
 }
 
+int home_recent_rank(const Entry *e)
+{
+    Key key;
+    if (e->type == ENTRY_UMD)
+        return -1;
+    key_of(e, key);
+    return find_key(s_recent, s_nrecent, key);
+}
+
 int home_state(const EntryList *list, int index)
 {
     if (index < 0 || index >= list->count)
