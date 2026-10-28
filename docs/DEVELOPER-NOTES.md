@@ -39,6 +39,14 @@ The changes after 1.1.0 are noted here; the list for users is under *1.2.0* in `
     all caught but one that changes nothing (`sys_set_brightness(idx)` instead of `levels[idx]`: the level after the four is always the PSP's current one, which the popup never sends again); one hole was closed (an answer of exactly 100).
   - *Docs*: the "not tried on a PSP" notes are gone from the README, INSTALL, CHANGELOG and these notes; they say instead that an issue is welcome. `INSTALL.md` has the *Covers* section the README pointed to (it was missing), and the messages of
     `tools/covers.py` are in English.
+- **New screenshots for 1.2.0** (`docs/screenshots/`: 14 PNGs of 960 x 544, ~3 MB in all; `README.md`; `boot.c`). They replace the eight of 1.1.0 (`settings.png` is gone; `settings-controls`, `settings-display`, `settings-about` and
+  `settings-theme` are new, as are `library-folders`, `information`, `file-manager` and `power-menu`). The pictures are the 480 x 272 frames of PPSSPP's software renderer (`PPSSPPHeadless`, v1.20.4, built from source), enlarged 2 x with
+  Lanczos. The app is a `-DPSP5_TEST` build run over an invented memory stick (14 games and apps with drawn pictures, in folders too, ten saves, six MP3 files with album art, played times); the buttons come from `ms0:/PSP5/test.txt` as always
+  (`battery 82`, `charging 1`, `wifi 1`, `shot NAME` ...), and `psp5.cfg` sets `batterypct=1`, `theme=` / `themeart=` and `libview=`. Things the test build fakes are on the pictures: the clock is the time of the capture, the battery, the volume (18) and the
+  brightness (3) are test values, and the model in *About* is the one from `fake.txt`. The PPSSPP side (a few lines in its `Headless.cpp` that write the displayed frame to `NAME.ppm` when `NAME.req` appears, and one line in its flash0 reader, which
+  refused `sceIoOpen` with PPSSPP's own "quiet" flag, so no font could be read in the headless build) and the generator of the memory stick are **not in git**, like the tests.
+  - *The test build counts frames in the start-up screen* (`boot.c`, `#ifdef PSP5_TEST`): `t = frame / 60` instead of the clock, so that a script's `wait` and `shot` fall on the same moment of the intro every time (the real build uses the clock).
+    Nothing else changed in `boot.c`; the normal build is the same as before.
 - **Version 1.2.0**: `PSP5_VERSION` in `settings.c` (shown in *About*), the download names in `INSTALL.md`, the default of `tools/make_release.py`. *Capitals:* *USB Mode*, *Shut Down*, *Recovery Menu*, *Disable UMD Drive* and
   *Disable Analog Stick* are in title case now, in all languages (`lang.c`, checked by the private `units/caps_test.c`). *The test build* (`-DPSP5_TEST`, `tools/build.sh test`) fakes the Impose settings (`s_test_impose`: volume 18, brightness 3,
   equalizer off, AVLS off) and the backlight timer (120 s) in `system.c`, so that *Settings → Display and Sound* can be looked at and used in PPSSPP, which has no Impose service and no ARK. Nothing of this is in the normal build.
@@ -492,8 +500,7 @@ The entries below were written between 1.0.0 and 1.1.0.
     been tested", "About this fork", Building, Thanks, License. The covers section is one sentence that points to `INSTALL.md`.
     Nothing about "PS5" (the theme list in the app shows that name, so no screenshot of the Theme page is used).
   - The screenshot table is HTML (`<table>`, two columns, a caption under each picture) because a Markdown table can't have
-    captions under the images without a duplicated header row. Eight PNGs in `docs/screenshots/` at the time (`games`, `options`, `library`,
-    `saved-data`, `music`, `settings`, `theme`, `startup`); 1.2.0 replaced them with sixteen, see *New screenshots for 1.2.0* at the top.
+    captions under the images without a duplicated header row. Eight PNGs in `docs/screenshots/` at the time; 1.2.0 replaced them with fourteen, see *New screenshots for 1.2.0* at the top.
   - CHANGELOG: same facts, shorter bullets. *Unreleased* is grouped into Library / Top bar / Docs, 1.0.0 keeps its groups.
     Some 1.0.0 details that only matter to developers were dropped from there (they are in these notes): the popup look "lives
     in `popup.c`", the faint light fill of the popup panel, the 60 % beam is kept.
