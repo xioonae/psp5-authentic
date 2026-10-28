@@ -14,19 +14,31 @@ wherever it can, but it doesn't copy the console in everything.
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/library.png" alt="Library"><br><sub><b>Library</b> – everything on the card in one grid, sorted by name, by when you added a game or by when you played it</sub></td>
+    <td width="50%"><img src="docs/screenshots/library-folders.png" alt="Library with folders"><br><sub><b>Folders</b> – the Library can show the folders as cards; the button at the top left chooses what you see</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/information.png" alt="Information"><br><sub><b>Information</b> – what a game or app is, where it is and how big it is</sub></td>
     <td width="50%"><img src="docs/screenshots/saved-data.png" alt="Manage Saved Data"><br><sub><b>Manage Saved Data</b> – look through saves, mark several and delete them, with the space you get back</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/music.png" alt="Music"><br><sub><b>Music</b> – your MP3s with album art; the music keeps playing while you browse your games</sub></td>
-    <td width="50%"><img src="docs/screenshots/settings.png" alt="Settings"><br><sub><b>Settings</b> – psp5, themes, ARK options, plugins, power and USB</sub></td>
+    <td width="50%"><img src="docs/screenshots/file-manager.png" alt="File Manager"><br><sub><b>File Manager</b> – browse the Memory Stick, mark files and folders, then copy, move or delete them</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/theme.png" alt="Classic theme"><br><sub><b>Themes</b> – console colours and the classic looks of older consoles (here the XMB wave)</sub></td>
-    <td width="50%"><img src="docs/screenshots/startup.png" alt="Startup screen"><br><sub><b>Startup</b> – the circles and the golden dust take the colours of your theme (here Cosmic Red)</sub></td>
+    <td width="50%"><img src="docs/screenshots/settings-controls.png" alt="Settings, Controls"><br><sub><b>Settings → Controls</b> – the PSP's own confirm button, and which button does what in psp5</sub></td>
+    <td width="50%"><img src="docs/screenshots/settings-display.png" alt="Settings, Display and Sound"><br><sub><b>Settings → Display and Sound</b> – the PSP's brightness, backlight timer, volume, equalizer and AVLS</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/settings-about.png" alt="Settings, About"><br><sub><b>Settings → About</b> – model, system software, MAC address, storage and battery</sub></td>
+    <td width="50%"><img src="docs/screenshots/settings-theme.png" alt="Settings, Theme"><br><sub><b>Settings → Theme</b> – highlight a theme to see it, Confirm to use it (here Cosmic Red)</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/theme.png" alt="Classic theme"><br><sub><b>Themes</b> – the classic looks of PS1 to PS4 too (here PS3, with the game art in the background turned off)</sub></td>
+    <td width="50%"><img src="docs/screenshots/power-menu.png" alt="Power menu"><br><sub><b>Power menu</b> (SELECT) – sleep, shut down, restart, recovery menu</sub></td>
   </tr>
 </table>
 
-*The screenshots were taken in an emulator with invented demo games, music and saves.*
+*The screenshots were taken in the PPSSPP emulator with invented demo games, music and saves. The clock shows the time they were taken; the battery, volume and brightness are test values.*
 
 ## What you get
 
