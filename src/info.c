@@ -17,6 +17,7 @@
 #include "lastplayed.h"
 #include "loader.h"
 #include "osd.h"
+#include "power.h"
 #include "sfo.h"
 #include "sound.h"
 #include "system.h"
@@ -489,6 +490,7 @@ void info_draw(void)
                      clampf((LIST_BOTTOM - y) / (ROW_H * 0.6f), 0, 1);
         draw_row(&s_rows[i], y, i == S.sel, i == s_n - 1, i + 1 == S.sel, a * edge);
     }
+    power_draw(); /* the power popup of SELECT (main.c asks power.c) */
     osd_draw();
     if (a < 1)
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - a))));

@@ -18,5 +18,7 @@ int saves_update(const UiInput *in, float dt);
 void saves_draw(void);
 /* Stops the background reading (and a delete in progress) and frees everything. */
 void saves_close(void);
+/* 1 = a delete is running or a popup is open: SELECT does not open the power popup then (main.c, power.c). */
+int saves_modal(void);
 
 #endif

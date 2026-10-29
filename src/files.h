@@ -12,5 +12,7 @@ int files_update(const UiInput *in, float dt);
 void files_draw(void);
 /* Avbryter en pågående åtgärd och frigör allt */
 void files_close(void);
+/* 1 = a job is running or a popup is open: SELECT does not open the power popup then (main.c, power.c). */
+int files_modal(void);
 
 #endif

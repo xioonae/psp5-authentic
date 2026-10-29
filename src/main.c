@@ -35,6 +35,7 @@
 #include "home.h"
 #include "playtime.h"
 #include "lastplayed.h"
+#include "power.h"
 #include "helper.h"
 
 PSP_MODULE_INFO("psp5", PSP_MODULE_USER, 0, 1);
@@ -310,21 +311,37 @@ static void read_pad(UiInput *in, u32 *old)
     *old = pad.Buttons;
 }
 
-/* USB-läge: inget annat rör minneskortet medan datorn är ansluten. */
-static void usb_mode(void)
+/* The power popup of the SELECT button on the screens that are not Games, Library and Music (those have it in ui.c): SELECT opens it, unless `can_open` is 0 (the
+ * screen has a popup of its own or a job running); while it is open the screen gets no buttons (`in` is cleared, also for the press that closes it). Returns what the player
+ * chose (SA_SUSPEND, SA_SHUTDOWN, SA_RESTART, SA_RECOVERY), else SA_NONE. Call it every frame, before the screen's own update. */
+static int power_step(UiInput *in, float dt, int can_open)
+{
+    int act = power_frame(in, dt, can_open);
+    if (act != SA_NONE)
+        sound_wait(400); /* let the sound be heard before anything closes, as on the main screen */
+    return act;
+}
+
+/* USB-läge: inget annat rör minneskortet medan datorn är ansluten. Returns what the player chose in the power popup there (SA_*), else 0: USB is stopped first, and the caller does it. */
+static int usb_mode(void)
 {
     gfx_init();
     font_init(lang_needs_cjk());
     if (!sys_usb_start()) {
         gfx_term();
         font_term();
-        return;
+        return SA_NONE;
     }
+    power_reset();
+    int pending = SA_NONE;
     u32 old = ~0u; /* ignore the button that started the mode, whichever it is (the confirm button) */
     float t = 0;
     while (s_running) {
         UiInput in;
         read_pad(&in, &old);
+        pending = power_step(&in, 1 / 60.0f, 1);
+        if (pending != SA_NONE)
+            break;
         if (in.pressed & PSP_CTRL_CIRCLE) /* back */
             break;
         t += 1 / 60.0f;
@@ -348,6 +365,7 @@ static void usb_mode(void)
             gfx_button(x + bw / 2, y, 6.5f, btn, RGBA(236, 236, 240, 255), RGBA(20, 20, 26, 255));
             text_draw(x + bw + 5, y + 4.5f, 0.56f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, L(S_USB_EXIT));
         }
+        power_draw();
         osd_draw();
         gfx_end();
     }
@@ -355,6 +373,7 @@ static void usb_mode(void)
     s_sleeping = s_resumed = 0; /* viloläge under USB-läget: ingen startskärm efteråt */
     font_term();
     gfx_term();
+    return pending;
 }
 
 /* The PSP's own screen for choosing a Wi-Fi connection (wifi.c). Everything else is closed, as in the other modes. s_wifi_failed: the network could not be started. */
@@ -368,13 +387,16 @@ static void wifi_mode(void)
     gfx_term();
 }
 
-/* Filhanteraren: allt annat är stängt, så inget annat läser eller skriver filer under tiden. */
-static void files_mode(void)
+/* Filhanteraren: allt annat är stängt, så inget annat läser eller skriver filer under tiden. Returns what the player chose in the power popup there that leaves
+ * psp5 (SA_SHUTDOWN, SA_RESTART, SA_RECOVERY), else 0: the File Manager is closed first, and the caller does it (Sleep is done on the spot, as with the PSP's own switch). */
+static int files_mode(void)
 {
     gfx_init();
     font_init(lang_needs_cjk());
     sound_init();
     files_open();
+    power_reset();
+    int pending = SA_NONE;
     u32 old = ~0u; /* ignore the button that opened it, whichever it is (the confirm button) */
     u64 last = sceKernelGetSystemTimeWide();
     while (s_running) {
@@ -386,6 +408,14 @@ static void files_mode(void)
         if (dt > 0.05f)
             dt = 0.05f;
         osd_update(dt);
+        int pwr = power_step(&in, dt, !files_modal());
+        if (pwr == SA_SUSPEND) {
+            sys_suspend();
+            old = s_raw;
+        } else if (pwr != SA_NONE) {
+            pending = pwr;
+            break;
+        }
         if (files_update(&in, dt))
             break;
         files_draw();
@@ -395,6 +425,7 @@ static void files_mode(void)
     s_sleeping = s_resumed = 0;
     font_term();
     gfx_term();
+    return pending;
 }
 
 static void delete_dir_files(const char *dir)
@@ -415,6 +446,28 @@ static void delete_dir_files(const char *dir)
     sceIoDclose(d);
 }
 
+/* An action that leaves psp5 (everything of psp5 is stopped already): the system takes over. */
+static void leave_for(int action)
+{
+    switch (action) {
+    case SA_XMB:      sys_exit_xmb(); break;
+    case SA_RESTART:  sys_restart(); break;
+    case SA_SHUTDOWN: sys_shutdown(); break;
+    case SA_RECOVERY: sys_recovery(); break;
+    }
+    for (;;)
+        sceKernelDelayThread(100000); /* systemet tar över */
+}
+
+/* The File Manager or the USB screen is over and the player chose something in the power popup there (SA_NONE = nothing): Sleep comes back, the others leave psp5. */
+static void after_visit(int action)
+{
+    if (action == SA_SUSPEND)
+        sys_suspend();
+    else if (action != SA_NONE)
+        leave_for(action);
+}
+
 /* Utför en åtgärd från inställningarna. Returnerar 1 om appen ska byggas upp igen. */
 static int run_action(int action, EntryList *list, Ui *ui)
 {
@@ -430,11 +483,11 @@ static int run_action(int action, EntryList *list, Ui *ui)
         return 0;
     case SA_USB:
         app_stop(list, ui);
-        usb_mode();
+        after_visit(usb_mode());
         return 1; /* filer kan ha ändrats – skanna om */
     case SA_FILES:
         app_stop(list, ui);
-        files_mode();
+        after_visit(files_mode());
         return 1;
     case SA_WIFI:
         app_stop(list, ui);
@@ -447,14 +500,8 @@ static int run_action(int action, EntryList *list, Ui *ui)
     }
     /* resten lämnar psp5 – frigör allt först */
     app_stop(list, ui);
-    switch (action) {
-    case SA_XMB:      sys_exit_xmb(); break;
-    case SA_RESTART:  sys_restart(); break;
-    case SA_SHUTDOWN: sys_shutdown(); break;
-    case SA_RECOVERY: sys_recovery(); break;
-    }
-    for (;;)
-        sceKernelDelayThread(100000); /* systemet tar över */
+    leave_for(action);
+    return 0;
 }
 
 int main(int argc, char *argv[])
@@ -544,7 +591,10 @@ int main(int argc, char *argv[])
         }
 
         if (in_settings) {
+            int pwr = power_step(&in, dt, !settings_modal()); /* SELECT: the power popup, as on the main screen */
             int action = settings_update(&in, dt);
+            if (pwr != SA_NONE)
+                action = pwr;
             if (action == SA_CLOSE) {
                 in_settings = 0;
                 if (settings_commit())
@@ -577,8 +627,16 @@ int main(int argc, char *argv[])
          * UMD-uppdatering), bilder och bakgrund fortsätter laddas */
         if (in_info) {
             UiInput none = UI_NO_INPUT;
+            int pwr = power_step(&in, dt, 1);
             int close = info_update(&in, dt);
             ui_update(&ui, &none, dt);
+            if (pwr != SA_NONE) { /* chosen in the power popup (SELECT): Sleep comes back to this screen, the others leave psp5 */
+                if (pwr != SA_SUSPEND)
+                    info_close();
+                run_action(pwr, &list, &ui);
+                old = s_raw;
+                continue;
+            }
             if (close) {
                 info_close();
                 in_info = 0;
@@ -590,8 +648,16 @@ int main(int argc, char *argv[])
         }
         if (in_saves) { /* sparad data: samma sak, listan står still medan skärmen är öppen */
             UiInput none = UI_NO_INPUT;
+            int pwr = power_step(&in, dt, !saves_modal());
             int close = saves_update(&in, dt);
             ui_update(&ui, &none, dt);
+            if (pwr != SA_NONE) { /* chosen in the power popup (SELECT): Sleep comes back to this screen, the others leave psp5 */
+                if (pwr != SA_SUSPEND)
+                    saves_close();
+                run_action(pwr, &list, &ui);
+                old = s_raw;
+                continue;
+            }
             if (close) {
                 saves_close();
                 in_saves = 0;
@@ -621,6 +687,7 @@ int main(int argc, char *argv[])
             /* The menu works: switch on a paused launcher mode before Settings reads it, or "Boot psp5" shows as off until the
              * first game is started. */
             start_confirmed();
+            power_reset();
             settings_open();
             /* The sound comes after the reading (the font from flash0, ARK's files): heavy reading while it played made a
              * scratching noise for about 0.1 s. */
@@ -636,11 +703,13 @@ int main(int argc, char *argv[])
             continue;
         }
         if (action == UI_INFO && ui_selected(&ui) >= 0) {
+            power_reset();
             info_open(&list.items[ui_selected(&ui)], ui_selected(&ui));
             in_info = 1;
             continue;
         }
         if (action == UI_SAVES) {
+            power_reset();
             saves_open(&list);
             in_saves = 1;
             continue;

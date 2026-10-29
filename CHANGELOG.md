@@ -14,6 +14,12 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   tells it about games you started from the XMB (psp5 learns it the next time it starts). Games you played before this version have no time yet, but they keep their place in the
   Games tab and in *Recently played*.
 
+### Power menu
+
+- **SELECT opens the power menu on every screen**, not only in Games, Library and Music: also in *Settings*, *Information*, *Manage Saved Data*, the *File Manager* and the *USB* screen. Sleep keeps you where you are;
+  Shut down, Restart and Recovery menu close the screen first (from the USB screen USB is stopped first). It does not open while the screen has a popup of its own open or a job running (a copy, a move or a
+  delete), so nothing is left half done. The PSP's own Wi-Fi screen and the start-up screen are not psp5's and keep their own buttons.
+
 ### Information
 
 - **New row: Last played** (date and time), right under *Modified*. It is there for every game and app psp5 knows a time for, **also for the UMD disc in the drive** (by its disc ID,

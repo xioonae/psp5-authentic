@@ -82,7 +82,7 @@ Every screen uses the same few buttons for the same things:
 | ✕ | **Confirm**: start the game, open, choose, switch on or off (in Music: play / pause) |
 | ○ | **Back**: one step back, close a popup or a screen (it closes the Library) |
 | START | **Options**: of the selected game, card or file · on the Library card: pin / unpin · START again closes the options |
-| SELECT | **Power menu** on every tab: Sleep, Shut down, Restart, Recovery Menu (Confirm does it at once, Back or SELECT closes) |
+| SELECT | **Power menu** on every screen: Sleep, Shut down, Restart, Recovery Menu (Confirm does it at once, Back or SELECT closes). It does not open while a popup is open or a copy, move or delete is running. |
 | L / R | **Switch tabs**: Games and Music (not in the Library: ○ closes it) · in a long list a page up / down |
 | □ △ | Extras on a few screens only: mark / select all in a list (*Manage Saved Data*, the File Manager), □ pauses the music |
 | HOME | Back to the XMB (not as custom launcher)|

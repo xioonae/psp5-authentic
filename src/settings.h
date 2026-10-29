@@ -13,6 +13,9 @@ enum {
  * main screen like after the others. */
 int settings_is_visit(int action);
 
+/* 1 = a choice's popup is open: SELECT does not open the power popup then (main.c, power.c). */
+int settings_modal(void);
+
 /* Läser ARK-inställningar och plugins och visar första kategorin. */
 void settings_open(void);
 int settings_update(const UiInput *in, float dt);

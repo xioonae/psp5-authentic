@@ -71,7 +71,7 @@ wherever it can, but it doesn't copy the console in everything.
   off, so the theme is always visible.
 - **Startup.** A short intro like a console's, with a health notice, soft circles and golden dust in your theme's colours.
   It plays when the PSP starts and wakes up, not when you come back from a game. Any button skips it, and you can turn it off.
-- **Power menu** (SELECT, on every tab). Sleep, Shut down, Restart, Recovery Menu – Confirm does it at once.
+- **Power menu** (SELECT, on every screen: Games, Library, Music, Settings, Information, Manage Saved Data, the File Manager and the USB screen). Sleep, Shut down, Restart, Recovery Menu – Confirm does it at once.
 - **Volume, battery and Wi-Fi.** Pressing the volume buttons slides a volume bar in at the top. The battery has four bars that are lit
   from the right (one for each quarter); while the PSP charges, a bolt is shown left of the battery and the bars above the level come on
   one after the other. You can also show the battery percentage (*Settings → psp5*). A Wi-Fi sign is shown while the PSP's Wi-Fi switch is

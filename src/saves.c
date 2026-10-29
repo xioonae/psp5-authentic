@@ -28,6 +28,7 @@
 #include "image.h"
 #include "lang.h"
 #include "osd.h"
+#include "power.h"
 #include "popup.h"
 #include "sfo.h"
 #include "sound.h"
@@ -798,6 +799,11 @@ static void open_ask(void)
     sound_play(SND_SELECT);
 }
 
+int saves_modal(void)
+{
+    return W.thread >= 0 || S.ask || S.menu;
+}
+
 int saves_update(const UiInput *in, float dt)
 {
     S.time += dt;
@@ -1232,6 +1238,7 @@ void saves_draw(void)
         float ta = clampf(S.toast_time / 0.4f, 0, 1);
         popup_toast(S.toast, ta);
     }
+    power_draw(); /* the power popup of SELECT (main.c asks power.c) */
     osd_draw();
     if (a < 1)
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - a))));

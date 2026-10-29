@@ -19,6 +19,7 @@
 #include "system.h"
 #include "theme.h"
 #include "osd.h"
+#include "power.h"
 #include "popup.h"
 
 #define LIST_X   24.0f
@@ -860,6 +861,11 @@ static void finish_op(void)
     load(keep, s_sel); /* raderat: samma rad */
 }
 
+int files_modal(void)
+{
+    return W.thread >= 0 || s_menu != M_NONE;
+}
+
 int files_update(const UiInput *in, float dt)
 {
     s_time += dt;
@@ -1157,6 +1163,7 @@ static void draw_scene(void)
         float ta = clampf(s_toast_time / 0.4f, 0, 1);
         popup_toast(s_toast, ta);
     }
+    power_draw(); /* the power popup of SELECT (main.c asks power.c) */
     osd_draw();
     if (a < 1)
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - a))));

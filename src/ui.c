@@ -23,6 +23,7 @@
 #include "gameops.h"
 #include "home.h"
 #include "lastplayed.h"
+#include "power.h"
 #include "playtime.h"
 #include "popup.h"
 #include "config.h"
@@ -1872,6 +1873,10 @@ static void draw_menu(Ui *ui)
                   labels, colors, ui->menu_n, ui->menu_sel, smooth(ui->ask_anim));
         return;
     }
+    if (ui->menu_kind == MENU_POWER) { /* the same popup as on the other screens (power.c) */
+        power_popup_draw(ui->menu_sel, a);
+        return;
+    }
     float w = 200, h = MENU_EDGE + ui->menu_n * MENU_ITEM_H + MENU_EDGE;
     float x, y;
     if (ui->menu_kind == MENU_VIEW) { /* wide enough for the longest of the four views */
@@ -1885,9 +1890,6 @@ static void draw_menu(Ui *ui)
     } else if (ui->menu_kind == MENU_VIEW) { /* under the view button, whose left edge it shares */
         x = MARGIN - 9 - (1 - a) * 10;
         y = 66;
-    } else if (ui->menu_kind == MENU_POWER) { /* in the middle of the screen, rising into place like the questions */
-        x = (SCREEN_W - w) / 2;
-        y = (SCREEN_H - h) / 2 + (1 - a) * 10;
     } else { /* till höger om det valda kortet */
         x = MARGIN + BIG_W + 8 - (1 - a) * 10;
         y = ROW_Y;

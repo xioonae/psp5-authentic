@@ -18,6 +18,7 @@
 #include "controls.h"
 #include "theme.h"
 #include "osd.h"
+#include "power.h"
 #include "popup.h"
 
 #define TITLE_Y     34.0f
@@ -603,6 +604,11 @@ void settings_open(void)
     memset(&S, 0, sizeof(S));
 }
 
+int settings_modal(void)
+{
+    return S.pop != 0;
+}
+
 int settings_is_visit(int action)
 {
     return action == SA_WIFI || action == SA_FILES || action == SA_USB;
@@ -1115,6 +1121,7 @@ void settings_draw(void)
     draw_popup();
     if (S.toast_time > 0) /* as the toast of the other screens: 2.8 s, fading in and out */
         popup_toast(S.toast, clampf(S.toast_time / 0.4f, 0, 1) * clampf((2.8f - S.toast_time) / 0.2f, 0, 1));
+    power_draw(); /* the power popup of SELECT (main.c asks power.c) */
     osd_draw();
     /* in-toning */
     if (a < 1)
