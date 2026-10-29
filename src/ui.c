@@ -698,16 +698,17 @@ static void menu_build_view(Ui *ui, const UiInput *in)
 }
 
 /* Stänger menyn. Innehållet står kvar medan den tonas ut. */
-/* SELECT: the power popup, the same four choices in the same order as Settings > Power and USB */
+/* SELECT: the power popup, the same choices in the same order as on the other screens (power.c) */
 static void menu_build_power(Ui *ui, const UiInput *in)
 {
     ui->menu_kind = MENU_POWER;
-    ui->menu_n = 4;
-    ui->menu_item[0] = MI_SLEEP;
-    ui->menu_item[1] = MI_SHUTDOWN;
-    ui->menu_item[2] = MI_RESTART;
-    ui->menu_item[3] = MI_RECOVERY;
-    ui->menu_sel = 0;
+    ui->menu_n = POWER_CHOICES;
+    ui->menu_item[0] = MI_XMB;
+    ui->menu_item[1] = MI_SLEEP;
+    ui->menu_item[2] = MI_SHUTDOWN;
+    ui->menu_item[3] = MI_RESTART;
+    ui->menu_item[4] = MI_RECOVERY;
+    ui->menu_sel = POWER_OPEN_ON;
     ui->menu_stage = 0;
     ui->menu_dir = menu_dir_of(in);
 }
@@ -1181,10 +1182,10 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
                 menu_ask_remove(ui); /* a pinned card is unpinned too: ask first */
             } else {
                 menu_close(ui);
-                if (item >= MI_SLEEP && item <= MI_RECOVERY) { /* main.c does it, like the same four in Settings */
+                if (item >= MI_XMB && item <= MI_RECOVERY) { /* main.c does it, as on the other screens */
                     sound_play(SND_SELECT);
                     sound_wait(400); /* let the sound be heard before anything closes */
-                    return item == MI_SLEEP ? UI_SLEEP : item == MI_SHUTDOWN ? UI_SHUTDOWN : item == MI_RESTART ? UI_RESTART : UI_RECOVERY;
+                    return item == MI_XMB ? UI_XMB : item == MI_SLEEP ? UI_SLEEP : item == MI_SHUTDOWN ? UI_SHUTDOWN : item == MI_RESTART ? UI_RESTART : UI_RECOVERY;
                 }
                 if (item == MI_INFO || item == MI_SAVES) {
                     sound_play(SND_SELECT);
@@ -1848,11 +1849,7 @@ static const char *menu_label(int item)
     case MI_VIEW_LOOSE:
     case MI_VIEW_BOTH:    return view_label(item - MI_VIEW_ALL);
     case MI_CANCEL:       return L(S_F_CANCEL);
-    case MI_SLEEP:        return L(S_SLEEP);
-    case MI_SHUTDOWN:     return L(S_SHUTDOWN);
-    case MI_RESTART:      return L(S_RESTART);
-    case MI_RECOVERY:     return L(S_RECOVERY);
-    }
+    } /* (the names of the power popup are in power.c: power_popup_draw() draws it) */
     return L(S_F_DELETE); /* MI_DELETE, MI_DELETE_YES */
 }
 

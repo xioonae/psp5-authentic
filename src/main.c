@@ -313,7 +313,7 @@ static void read_pad(UiInput *in, u32 *old)
 
 /* The power popup of the SELECT button on the screens that are not Games, Library and Music (those have it in ui.c): SELECT opens it, unless `can_open` is 0 (the
  * screen has a popup of its own or a job running); while it is open the screen gets no buttons (`in` is cleared, also for the press that closes it). Returns what the player
- * chose (SA_SUSPEND, SA_SHUTDOWN, SA_RESTART, SA_RECOVERY), else SA_NONE. Call it every frame, before the screen's own update. */
+ * chose (SA_XMB, SA_SUSPEND, SA_SHUTDOWN, SA_RESTART, SA_RECOVERY), else SA_NONE. Call it every frame, before the screen's own update. */
 static int power_step(UiInput *in, float dt, int can_open)
 {
     int act = power_frame(in, dt, can_open);
@@ -450,7 +450,7 @@ static void delete_dir_files(const char *dir)
 static void leave_for(int action)
 {
     switch (action) {
-    case SA_XMB:      sys_exit_xmb(); break;
+    case SA_XMB:      sceIoRemove(START_MARK); sys_exit_xmb(); break; /* (the start guard goes, the launcher mode stays paused: sys_exit_xmb) */
     case SA_RESTART:  sys_restart(); break;
     case SA_SHUTDOWN: sys_shutdown(); break;
     case SA_RECOVERY: sys_recovery(); break;
@@ -695,9 +695,9 @@ int main(int argc, char *argv[])
             in_settings = 1;
             continue;
         }
-        if (action == UI_SLEEP || action == UI_SHUTDOWN || action == UI_RESTART || action == UI_RECOVERY) {
-            /* the power popup of the SELECT button: the same four actions as in Settings (only sleep comes back) */
-            run_action(action == UI_SLEEP ? SA_SUSPEND : action == UI_SHUTDOWN ? SA_SHUTDOWN : action == UI_RESTART ? SA_RESTART : SA_RECOVERY,
+        if (action == UI_XMB || action == UI_SLEEP || action == UI_SHUTDOWN || action == UI_RESTART || action == UI_RECOVERY) {
+            /* the power popup of the SELECT button, the same choices as on the other screens (only sleep comes back) */
+            run_action(action == UI_XMB ? SA_XMB : action == UI_SLEEP ? SA_SUSPEND : action == UI_SHUTDOWN ? SA_SHUTDOWN : action == UI_RESTART ? SA_RESTART : SA_RECOVERY,
                        &list, &ui);
             old = s_raw;
             continue;

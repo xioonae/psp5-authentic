@@ -86,8 +86,8 @@ static const char *const T[S_COUNT][NL] = {
                        "システム", "Systém" },
     [S_CAT_PLUGINS] = { "Plugins", "Plugins", "Plugins", "Plugins", "Plugins", "Plugin", "Plug-ins", "Plugins",
                         "Плагины", "プラグイン", "Pluginy" },
-    [S_CAT_POWER] = { "Power and USB", "Ström och USB", "Strom und USB", "Énergie et USB", "Energía y USB",
-                      "Energia e USB", "Stroom en USB", "Energia e USB", "Питание и USB", "電源とUSB", "Napájení a USB" },
+    [S_CAT_MEMORY] = { "Memory", "Minne", "Speicher", "Mémoire", "Memoria", "Memoria", "Geheugen",
+                       "Memória", "Память", "メモリー", "Paměť" },
     [S_DESC_PSP5] = {
         "ARK settings are saved in SETTINGS.TXT and apply after a restart. Hold SELECT while the PSP starts to skip them and go to the XMB.",
         "ARK-inställningar sparas i SETTINGS.TXT och gäller efter omstart. Håll SELECT när PSP:n startar för att hoppa över dem och komma till XMB.",

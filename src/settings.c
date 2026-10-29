@@ -60,7 +60,7 @@ typedef struct {
     int count;
 } Category;
 
-enum { CAT_PSP5, CAT_THEME, CAT_CONTROLS, CAT_DISPLAY, CAT_NETWORK, CAT_PERF, CAT_SYSTEM, CAT_PLUGINS, CAT_POWER, CAT_ABOUT, CAT_COUNT };
+enum { CAT_PSP5, CAT_THEME, CAT_CONTROLS, CAT_DISPLAY, CAT_NETWORK, CAT_PERF, CAT_SYSTEM, CAT_PLUGINS, CAT_MEMORY, CAT_ABOUT, CAT_COUNT };
 
 static Category s_cats[CAT_COUNT];
 static unsigned char s_plugin_on[MAX_PLUGINS];
@@ -576,16 +576,11 @@ static void build(int rebuild)
     if (!c->count)
         info(c, L(S_NO_PLUGINS), "");
 
-    c = &s_cats[CAT_POWER];
-    c->name = L(S_CAT_POWER);
-    action(c, L(S_USB_MODE), SA_USB);
+    /* Exit to XMB, Sleep, Shut down, Restart and Recovery menu are not here: they are the power popup of the SELECT button (power.c), on every screen */
+    c = &s_cats[CAT_MEMORY];
+    c->name = L(S_CAT_MEMORY);
     action(c, L(S_FILES), SA_FILES);
-    action(c, L(S_TO_XMB), SA_XMB);
-    /* the same four, in the same order, as the popup of the SELECT button (ui.c) */
-    action(c, L(S_SLEEP), SA_SUSPEND);
-    action(c, L(S_SHUTDOWN), SA_SHUTDOWN);
-    action(c, L(S_RESTART), SA_RESTART);
-    action(c, L(S_RECOVERY), SA_RECOVERY);
+    action(c, L(S_USB_MODE), SA_USB);
 
     c = &s_cats[CAT_ABOUT];
     c->name = L(S_CAT_ABOUT);

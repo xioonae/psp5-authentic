@@ -47,7 +47,7 @@ Then *Custom Launcher* in the XMB opens psp5, and your PSP can start straight in
 3. Copy `VBOOT.PBP` from the zip's `ARK_LAUNCHER` folder into `ARK_01234`.
 4. In psp5, open the settings (↑ to the top bar, → to the cog wheel, then Confirm) → *psp5* → turn on *Boot into psp5*, then restart the PSP.
 
-To get to the XMB from there: settings → *Power and USB* → *Exit to XMB*.
+To get to the XMB from there: press SELECT (the power menu, on every screen) and choose *Exit to XMB*.
 
 ## Time played
 
@@ -82,7 +82,7 @@ Every screen uses the same few buttons for the same things:
 | ✕ | **Confirm**: start the game, open, choose, switch on or off (in Music: play / pause) |
 | ○ | **Back**: one step back, close a popup or a screen (it closes the Library) |
 | START | **Options**: of the selected game, card or file · on the Library card: pin / unpin · START again closes the options |
-| SELECT | **Power menu** on every screen: Sleep, Shut down, Restart, Recovery Menu (Confirm does it at once, Back or SELECT closes). It does not open while a popup is open or a copy, move or delete is running. |
+| SELECT | **Power menu** on every screen: Exit to XMB, Sleep, Shut down, Restart, Recovery Menu (Confirm does it at once, Back or SELECT closes). It does not open while a popup is open or a copy, move or delete is running. |
 | L / R | **Switch tabs**: Games and Music (not in the Library: ○ closes it) · in a long list a page up / down |
 | □ △ | Extras on a few screens only: mark / select all in a list (*Manage Saved Data*, the File Manager), □ pauses the music |
 | HOME | Back to the XMB (not as custom launcher)|
@@ -102,7 +102,7 @@ Where to go from there:
 
 ## File Manager
 
-*Settings → Power and USB → File Manager* lets you manage files right on the PSP. Confirm opens a folder, □ marks
+*Settings → Memory → File Manager* lets you manage files right on the PSP. Confirm opens a folder, □ marks
 files, Options (START) shows what you can do (copy, move, paste, rename, delete, new folder) and Back goes back (the first Back
 clears the marks, and at the top it cancels a waiting copy or move before it leaves).
 
@@ -117,7 +117,7 @@ It needs Python 3 with two packages: `py -m pip install --user pillow lz4` (on W
    PNG, JPG, WEBP and BMP work. The ID of a game in `ISO` is the one on its disc (as in its `PARAM.SFO`); for homebrew, PSN and PS1 games
    in `PSP/GAME` it is the **name of its folder**. The card shows the middle of your picture, cut to about 16:9 (the card is 144 × 80),
    and the background is 320 × 182, so pictures of that shape fit best.
-2. **Connect the PSP** (*Settings → Power and USB → USB Mode*, or the Memory Stick in your computer). It shows up as a drive, for example `E:`.
+2. **Connect the PSP** (*Settings → Memory → USB Mode*, or the Memory Stick in your computer). It shows up as a drive, for example `E:`.
 3. **Run the tool** with that drive: `py tools\covers.py E:\` (on Linux or macOS: `python3 tools/covers.py /path/to/the/stick`). It lists every game with its ID
    and what it wrote, and puts the finished pictures in `PSP5/covers` on the Memory Stick.
 4. **Start psp5 again.** A cover in `PSP5/covers` always wins over the game's own picture and over the image cache, and *Clear image cache* never removes it.

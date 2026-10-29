@@ -34,7 +34,7 @@ wherever it can, but it doesn't copy the console in everything.
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/theme.png" alt="Classic theme"><br><sub><b>Themes</b> – the classic looks of PS1 to PS4 too (here PS3, with <i>Show Game art</i> turned off)</sub></td>
-    <td width="50%"><img src="docs/screenshots/power-menu.png" alt="Power menu"><br><sub><b>Power menu</b> (SELECT) – sleep, shut down, restart, recovery menu</sub></td>
+    <td width="50%"><img src="docs/screenshots/power-menu.png" alt="Power menu"><br><sub><b>Power menu</b> (SELECT) – exit to the XMB, sleep, shut down, restart, recovery menu</sub></td>
   </tr>
 </table>
 
@@ -62,8 +62,7 @@ wherever it can, but it doesn't copy the console in everything.
   - *Controls* – the PSP's own confirm button, and which buttons confirm, go back, open the options and the power menu.
   - *Display and Sound* – the PSP's own brightness, backlight timer (psp5 remembers it), volume, equalizer and AVLS.
   - *Network* – the PSP's own Wi-Fi screen. *About* – nickname, model, system software, MAC address, storage, battery.
-  - *Performance* (CPU speed, extra memory, caches), *System*, *Plugins* and *Power and USB* (USB Mode, File Manager, XMB,
-    Sleep, Shut down, Restart, Recovery Menu).
+  - *Performance* (CPU speed, extra memory, caches), *System*, *Plugins* and *Memory* (File Manager, USB Mode).
 
   A setting with several values opens a popup when you press Confirm on it.
 - **Themes.** The colours of the console covers, each with the console's scene behind your games (a beam of light, golden
@@ -71,12 +70,12 @@ wherever it can, but it doesn't copy the console in everything.
   off, so the theme is always visible.
 - **Startup.** A short intro like a console's, with a health notice, soft circles and golden dust in your theme's colours.
   It plays when the PSP starts and wakes up, not when you come back from a game. Any button skips it, and you can turn it off.
-- **Power menu** (SELECT, on every screen: Games, Library, Music, Settings, Information, Manage Saved Data, the File Manager and the USB screen). Sleep, Shut down, Restart, Recovery Menu – Confirm does it at once.
+- **Power menu** (SELECT, on every screen: Games, Library, Music, Settings, Information, Manage Saved Data, the File Manager and the USB screen). Exit to XMB, Sleep, Shut down, Restart, Recovery Menu – Confirm does it at once.
 - **Volume, battery and Wi-Fi.** Pressing the volume buttons slides a volume bar in at the top. The battery has four bars that are lit
   from the right (one for each quarter); while the PSP charges, a bolt is shown left of the battery and the bars above the level come on
   one after the other. You can also show the battery percentage (*Settings → psp5*). A Wi-Fi sign is shown while the PSP's Wi-Fi switch is
   on. At the very end of the top bar is the cog wheel.
-- **File Manager** (*Settings → Power and USB*). Browse the Memory Stick (and the internal storage on a PSP Go) and copy,
+- **File Manager** (*Settings → Memory*). Browse the Memory Stick (and the internal storage on a PSP Go) and copy,
   move, rename, delete or make folders.
 - **Sounds and languages.** Menu sounds (you can turn them off). 11 languages: psp5 follows the PSP's language; Swedish and
   Czech are picked under *Settings → psp5 → Language*.

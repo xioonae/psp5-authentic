@@ -16,8 +16,10 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ### Power menu
 
+- **New choice: Exit to XMB**, at the top of the power menu (SELECT). The power menu opens on *Sleep* as before, so SELECT and then Confirm is still Sleep; ↑ goes to *Exit to XMB*. The rows *Exit to XMB*, *Sleep*,
+  *Shut down*, *Restart* and *Recovery Menu* are **gone from Settings**: the power menu has them.
 - **SELECT opens the power menu on every screen**, not only in Games, Library and Music: also in *Settings*, *Information*, *Manage Saved Data*, the *File Manager* and the *USB* screen. Sleep keeps you where you are;
-  Shut down, Restart and Recovery menu close the screen first (from the USB screen USB is stopped first). It does not open while the screen has a popup of its own open or a job running (a copy, a move or a
+  Exit to XMB, Shut down, Restart and Recovery menu close the screen first (from the USB screen USB is stopped first). It does not open while the screen has a popup of its own open or a job running (a copy, a move or a
   delete), so nothing is left half done. The PSP's own Wi-Fi screen and the start-up screen are not psp5's and keep their own buttons.
 
 ### Information
@@ -27,7 +29,8 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ### Settings
 
-- **Closing the File Manager or USB Mode brings you back to Settings → Power and USB**, on the row you came from (before, to the main screen). The Wi-Fi screen already did this.
+- **New category: Memory**, with the *File Manager* and *USB Mode* (in that order). *Power and USB* is gone (its power rows are in the power menu, see above).
+- **Closing the File Manager or USB Mode brings you back to Settings → Memory**, on the row you came from (before, to the main screen). The Wi-Fi screen already did this.
 - **The switch is called *Show Game art*** now (it was *Game art in the background*), in all 11 languages.
 - **Three themes are gone:** *Starlight Blue*, *Chroma Indigo* and *Chroma Pearl* looked almost like *Cobalt Blue*, *Galactic Purple* and *Sterling Silver*. If you had chosen one of
   them, psp5 starts with the PS5 theme instead.

@@ -8,7 +8,7 @@
 #include "folders.h"
 
 enum { UI_NONE, UI_LAUNCH, UI_SETTINGS, UI_INFO, UI_DELETE, UI_SAVES,
-       UI_SLEEP, UI_SHUTDOWN, UI_RESTART, UI_RECOVERY /* the power popup of the SELECT button */ };
+       UI_XMB, UI_SLEEP, UI_SHUTDOWN, UI_RESTART, UI_RECOVERY /* the power popup of the SELECT button */ };
 /* Games is Home (home.h): the pinned cards, the ones opened last and, at the far right, the Library card. Music has the music.
  * Library is not a tab of the top bar: it is a screen of its own that the Library card opens (✕) and ○ closes. It shows everything,
  * and while it is open the top bar has only the word "Library" in it, in the place of Games (it cannot be selected). */
@@ -24,7 +24,7 @@ enum { MI_SAVES, MI_INFO, MI_DELETE, MI_DELETE_YES, MI_CANCEL,
        MI_PIN, MI_UNPIN,
        MI_SORT_NAME, MI_SORT_RECENT, MI_SORT_PLAYED, /* the sort popup of the Library (SORT_*, in this order) */
        MI_VIEW_ALL, MI_VIEW_FOLDERS, MI_VIEW_LOOSE, MI_VIEW_BOTH, /* the view popup of the Library (LIB_VIEW_*, in this order) */
-       MI_SLEEP, MI_SHUTDOWN, MI_RESTART, MI_RECOVERY /* the power popup: the same four as Settings > Power and USB */ };
+       MI_XMB, MI_SLEEP, MI_SHUTDOWN, MI_RESTART, MI_RECOVERY /* the power popup (power.c): Exit to XMB, Sleep, Shut down, Restart, Recovery menu */ };
 /* How the Library is sorted (Ui.lib_sort; the Sort button, kept in psp5.cfg): by name, by when a game was added (its file time), or by when it was played
  * last, the one played most recently first (a game that has not been played counts from the time it was added) */
 enum { LIB_SORT_NAME, LIB_SORT_RECENT, LIB_SORT_PLAYED, LIB_SORT_COUNT };

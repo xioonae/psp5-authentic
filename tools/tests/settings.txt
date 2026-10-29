@@ -64,7 +64,7 @@ press down
 wait 6
 press down
 wait 10
-shot 07-power
+shot 07-memory
 press circle
 wait 10
 press circle

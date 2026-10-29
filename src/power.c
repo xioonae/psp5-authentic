@@ -6,10 +6,10 @@
 #include "sound.h"
 
 #define POWER_W 200.0f
-#define CHOICES 4
+#define CHOICES POWER_CHOICES
 
-static const StrId NAMES[CHOICES] = { S_SLEEP, S_SHUTDOWN, S_RESTART, S_RECOVERY };
-static const int ACTIONS[CHOICES] = { SA_SUSPEND, SA_SHUTDOWN, SA_RESTART, SA_RECOVERY };
+static const StrId NAMES[CHOICES] = { S_TO_XMB, S_SLEEP, S_SHUTDOWN, S_RESTART, S_RECOVERY };
+static const int ACTIONS[CHOICES] = { SA_XMB, SA_SUSPEND, SA_SHUTDOWN, SA_RESTART, SA_RECOVERY };
 
 static int s_open, s_sel, s_dir;
 static float s_anim; /* 0..1: how much of it there is (it fades in and out) */
@@ -43,7 +43,7 @@ int power_is_open(void)
 void power_open(const UiInput *in)
 {
     s_open = 1;
-    s_sel = 0;
+    s_sel = POWER_OPEN_ON;
     s_dir = dir_of(in);
     sound_play(SND_SELECT);
 }
