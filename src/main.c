@@ -29,6 +29,7 @@
 #include "osd.h"
 #include "files.h"
 #include "wifi.h"
+#include "ftpscreen.h"
 #include "info.h"
 #include "gameops.h"
 #include "saves.h"
@@ -387,6 +388,57 @@ static void wifi_mode(void)
     gfx_term();
 }
 
+/* The FTP server (ftpscreen.c): everything else is closed, as in the other modes. Returns what the player chose in the power popup there (SA_*), else 0: the server and the
+ * network are stopped first, and the caller does it (as after USB Mode: a connection does not survive Sleep). */
+static int ftp_mode(void)
+{
+    gfx_init();
+    font_init(lang_needs_cjk());
+    sound_init();
+    ftpscreen_open();
+    power_reset();
+    int pending = SA_NONE;
+    u32 old = ~0u; /* ignore the button that started the mode, whichever it is (the confirm button) */
+    float t = 0;
+    u64 last = sceKernelGetSystemTimeWide();
+    while (s_running) {
+        UiInput in;
+        read_pad(&in, &old);
+        u64 now = sceKernelGetSystemTimeWide();
+        float dt = (now - last) / 1000000.0f;
+        last = now;
+        if (dt > 0.05f)
+            dt = 0.05f;
+        pending = power_step(&in, dt, 1);
+        if (pending != SA_NONE)
+            break;
+        if (ftpscreen_update(&in, dt, (unsigned)(now / 1000)))
+            break;
+        scePowerTick(PSP_POWER_TICK_SUSPEND); /* it must not go to sleep while a computer is connected (the screen's own backlight timer goes on) */
+        t += dt;
+        osd_update(dt);
+        ftpscreen_draw(t);
+        power_draw();
+        osd_draw();
+        /* between the pictures the server is asked a few times more (the wait for the next vertical blank is spent on it): a computer's next command is answered in a few
+         * milliseconds, not after the whole frame */
+        for (int k = 0; k < 4; k++) {
+            u64 spent = sceKernelGetSystemTimeWide() - now;
+            if (spent > 10000)
+                break;
+            sceKernelDelayThread(2000);
+            ftpscreen_poll((unsigned)(sceKernelGetSystemTimeWide() / 1000));
+        }
+        gfx_end();
+    }
+    ftpscreen_close();
+    sound_term();
+    s_sleeping = s_resumed = 0;
+    font_term();
+    gfx_term();
+    return pending;
+}
+
 /* Filhanteraren: allt annat är stängt, så inget annat läser eller skriver filer under tiden. Returns what the player chose in the power popup there that leaves
  * psp5 (SA_SHUTDOWN, SA_RESTART, SA_RECOVERY), else 0: the File Manager is closed first, and the caller does it (Sleep is done on the spot, as with the PSP's own switch). */
 static int files_mode(void)
@@ -493,6 +545,10 @@ static int run_action(int action, EntryList *list, Ui *ui)
         app_stop(list, ui);
         wifi_mode();
         return 1;
+    case SA_FTP:
+        app_stop(list, ui);
+        after_visit(ftp_mode());
+        return 1; /* files may have changed: scan again */
     case SA_CLEAR_CACHE:
         app_stop(list, ui);
         delete_dir_files(s_cache_dir);

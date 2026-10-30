@@ -4,7 +4,7 @@
 
 #include "ui.h"
 
-/* Filhanteraren (Inställningar → Ström och USB): bläddra på minneskortet (och internminnet
+/* Filhanteraren (Inställningar → Minne): bläddra på minneskortet (och internminnet
  * på PSP Go), kopiera, flytta, byt namn, radera och skapa mappar. Rör aldrig flash0. */
 void files_open(void);
 /* 1 = stäng filhanteraren */

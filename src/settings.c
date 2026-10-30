@@ -509,6 +509,7 @@ static void build(int rebuild)
     c->name = L(S_CAT_NETWORK);
     c->desc = L(S_DESC_NETWORK);
     action(c, L(S_WIFI_CONNECTION), SA_WIFI);
+    action(c, L(S_FTP_SERVER), SA_FTP);
 
     c = &s_cats[CAT_PERF];
     c->name = L(S_CAT_PERF);
@@ -606,7 +607,7 @@ int settings_modal(void)
 
 int settings_is_visit(int action)
 {
-    return action == SA_WIFI || action == SA_FILES || action == SA_USB;
+    return action == SA_WIFI || action == SA_FTP || action == SA_FILES || action == SA_USB;
 }
 
 void settings_notice(const char *msg)

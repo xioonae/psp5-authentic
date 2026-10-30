@@ -106,6 +106,19 @@ Where to go from there:
 files, Options (START) shows what you can do (copy, move, paste, rename, delete, new folder) and Back goes back (the first Back
 clears the marks, and at the top it cancels a waiting copy or move before it leaves).
 
+## FTP Server
+
+*Settings → Network → FTP Server* copies files to and from the PSP over Wi-Fi, for example your games to the `ISO` folder.
+
+1. Turn on the Wi-Fi switch of the PSP, and make sure it has a saved Wi-Fi connection (in the XMB: *Settings → Network Settings → Infrastructure Mode*).
+2. Open *FTP Server*. With one saved connection psp5 connects by itself; with several, choose one. Wait for the address, for example `192.168.1.23`.
+3. On your computer or phone, open an FTP program (FileZilla, WinSCP …) or the file manager (on Windows, type `ftp://192.168.1.23` in the address bar of Explorer). Use the address and port 21.
+   Any user name and password will do. Choose **passive mode** if your program asks (it is the default almost everywhere).
+4. You see the folder `ms0` (the Memory Stick) and, on a PSP Go, `ef0`. Nothing else of the PSP can be reached.
+5. When you are done, press Back on the PSP. The connection is closed.
+
+There is no password, so everyone on the same network can reach your Memory Stick while the screen is open. Use it at home, and close it when you are done. The PSP stays awake while it runs.
+
 ## Covers
 
 psp5 shows each game's own icon and background by itself. If you want your own pictures on the cards, a small tool

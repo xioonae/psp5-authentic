@@ -36,6 +36,10 @@ wherever it can, but it doesn't copy the console in everything.
     <td width="50%"><img src="docs/screenshots/theme.png" alt="Classic theme"><br><sub><b>Themes</b> – the classic looks of PS1 to PS4 too (here PS3, with <i>Show Game art</i> turned off)</sub></td>
     <td width="50%"><img src="docs/screenshots/power-menu.png" alt="Power menu"><br><sub><b>Power menu</b> (SELECT) – exit to the XMB, sleep, shut down, restart, recovery menu</sub></td>
   </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/ftp-server.png" alt="FTP Server"><br><sub><b>FTP Server</b> (Settings → Network) – copy files to and from your computer over Wi-Fi: the address to type, who is connected and the file that is going</sub></td>
+    <td width="50%"></td>
+  </tr>
 </table>
 
 *The screenshots were taken in the PPSSPP emulator with invented demo games, music and saves. The clock, the dates, the battery, volume and brightness are test values.*
@@ -61,7 +65,7 @@ wherever it can, but it doesn't copy the console in everything.
   - *psp5* – boot into psp5, sounds, startup animation, battery percentage, language. *Theme* – the colours.
   - *Controls* – the PSP's own confirm button, and which buttons confirm, go back, open the options and the power menu.
   - *Display and Sound* – the PSP's own brightness, backlight timer (psp5 remembers it), volume, equalizer and AVLS.
-  - *Network* – the PSP's own Wi-Fi screen. *About* – nickname, model, system software, MAC address, storage, battery.
+  - *Network* – the PSP's own Wi-Fi screen and the FTP Server. *About* – nickname, model, system software, MAC address, storage, battery.
   - *Performance* (CPU speed, extra memory, caches), *System*, *Plugins* and *Memory* (File Manager, USB Mode).
 
   A setting with several values opens a popup when you press Confirm on it.
@@ -77,6 +81,8 @@ wherever it can, but it doesn't copy the console in everything.
   on. At the very end of the top bar is the cog wheel.
 - **File Manager** (*Settings → Memory*). Browse the Memory Stick (and the internal storage on a PSP Go) and copy,
   move, rename, delete or make folders.
+- **FTP Server** (*Settings → Network → FTP Server*). Copy files to and from the PSP over Wi-Fi: psp5 connects to one of your saved Wi-Fi connections and shows the address to type
+  into an FTP program or the file manager of your computer. It shows who is connected and the file that is going. There is no password, so use it on your own network.
 - **Sounds and languages.** Menu sounds (you can turn them off). 11 languages: psp5 follows the PSP's language; Swedish and
   Czech are picked under *Settings → psp5 → Language*.
 - **Quick and careful.** Only the cards near your selection are loaded, and artwork is cached, so it opens fast after the
