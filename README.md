@@ -1,15 +1,15 @@
-# psp5-authentic
+# psp5 authentic
 
 A launcher for PSPs with **ARK-4 or ARK-5** that looks and feels like the user interface of a modern **home console** –
 on the PSP's 480×272 screen. You move through it with the D-pad alone.
 
-psp5-authentic is a fork of [psp5](https://github.com/08Weber/psp5) by Mille Weber (08Weber), based on psp5 v1.5.3. It has
+psp5 authentic is a fork of [psp5](https://github.com/08Weber/psp5), originally made by Mille Weber (08Weber) and forked by Xioonae, based on psp5 v1.5.3. It has
 one goal of its own: to come **as close as possible to the real home console experience**. It follows the console's look and feel
 wherever it can, but it doesn't copy the console in everything.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/games.png" alt="Games"><br><sub><b>Games</b> – the games you played last and the ones you pinned, with the Library as the last card</sub></td>
+    <td width="50%"><img src="docs/screenshots/games.png" alt="Games"><br><sub><b>Games</b> – the games you pinned, the ones you played last and then the newest you added, with the Library as the last card</sub></td>
     <td width="50%"><img src="docs/screenshots/options.png" alt="Options of a game"><br><sub><b>Options</b> (START) – saved data, information, pin to or remove from Home, delete</sub></td>
   </tr>
   <tr>
@@ -25,12 +25,16 @@ wherever it can, but it doesn't copy the console in everything.
     <td width="50%"><img src="docs/screenshots/file-manager.png" alt="File Manager"><br><sub><b>File Manager</b> – browse the Memory Stick, mark files and folders, then copy, move or delete them</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/settings-controls.png" alt="Settings, Controls"><br><sub><b>Settings → Controls</b> – the PSP's own confirm button, and which button does what in psp5</sub></td>
-    <td width="50%"><img src="docs/screenshots/settings-display.png" alt="Settings, Display and Sound"><br><sub><b>Settings → Display and Sound</b> – the PSP's brightness, backlight timer, volume, equalizer and AVLS</sub></td>
+    <td width="50%"><img src="docs/screenshots/settings.png" alt="Settings"><br><sub><b>Settings</b> – six pages, one list; Confirm opens one, Back goes back</sub></td>
+    <td width="50%"><img src="docs/screenshots/settings-system.png" alt="Settings, System"><br><sub><b>Settings → System</b> – console information, appearance, language, ARK's settings, performance and plugins</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/settings-about.png" alt="Settings, About"><br><sub><b>Settings → About</b> – model, system software, MAC address, storage and battery</sub></td>
-    <td width="50%"><img src="docs/screenshots/settings-theme.png" alt="Settings, Theme"><br><sub><b>Settings → Theme</b> – highlight a theme to see it, Confirm to use it (here Cosmic Red)</sub></td>
+    <td width="50%"><img src="docs/screenshots/settings-console-information.png" alt="Settings, Console Information"><br><sub><b>System → Console Information</b> – model, system software, MAC address, storage, battery, and where psp5 authentic comes from</sub></td>
+    <td width="50%"><img src="docs/screenshots/settings-appearance.png" alt="Settings, Appearance"><br><sub><b>System → Appearance</b> – highlight a theme to see it, Confirm to use it (here Cosmic Red)</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/settings-screen-sound.png" alt="Settings, Screen and Sound"><br><sub><b>Settings → Screen and Sound</b> – the PSP's brightness, backlight timer, volume, equalizer and AVLS</sub></td>
+    <td width="50%"><img src="docs/screenshots/settings-controls.png" alt="Settings, Controls"><br><sub><b>Settings → Controls</b> – the PSP's own confirm button, and which button does what in psp5 authentic</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/theme.png" alt="Classic theme"><br><sub><b>Themes</b> – the classic looks of PS1 to PS4 too (here PS3, with <i>Show Game art</i> turned off)</sub></td>
@@ -49,24 +53,26 @@ wherever it can, but it doesn't copy the console in everything.
 - **Games (Home).** The games and apps you pinned, the ones you played last and then the newest you added, up to ten cards in one row. The selected card is big, with its
   artwork behind it. ↓ selects the **Play** and **⋯** (options) buttons. A UMD in the drive shows up first.
 - **Time played.** A small clock with the time (*54h*, *45min* or *<1min*) on the right of the bottom row, in Games and in the Library.
-  With ARK, psp5 installs a tiny helper plugin by itself (nothing to switch on). It runs inside every game (PSP games, ISOs, homebrew and PS1 games), **however you started it** (from psp5, from the XMB, with or without psp5 as ARK's launcher),
-  and counts only the time the PSP is awake. The times are added when psp5 starts next. To turn it off, turn off the two `psp5time.prx` lines in *Settings → Plugins*. Without ARK, or with those lines off, nothing is counted.
+  With ARK, psp5 authentic installs a tiny helper plugin by itself (nothing to switch on). It runs inside every game (PSP games, ISOs, homebrew and PS1 games), **however you started it** (from psp5 authentic, from the XMB, with or without psp5 authentic as ARK's launcher),
+  and counts only the time the PSP is awake. The times are added when psp5 authentic starts next. To turn it off, turn off the two `psp5time.prx` lines in *Settings → System → Plugins*. Without ARK, or with those lines off, nothing is counted.
 - **Options** (START, or Confirm on ⋯). Manage Saved Data, Information (also when you played it last), Delete, Remove from / Add to Home, Pin to / Unpin from Home.
 - **Library.** The last card of Games. It opens a grid with everything you have, games and apps together, a **Sort** button (by
   name, by what you added last or by what you played last) and a **view** button (*All*, *In folders*, *Outside of folders* or *Both in and out of
   folders*; the folders are cards, Confirm opens one, Back goes back). Folders are the ones the Categories Lite plugin makes. The Library
   remembers your sorting and view. You can pin the Library card like any other card. *Recently played* shows the games in the same order as the Games tab (what you played last
-  first; a folder goes by its best game); what you have not played yet comes last. With ARK it also knows the games you started from the XMB (the helper plugin of *Time played* tells psp5).
+  first; a folder goes by its best game); what you have not played yet comes last. With ARK it also knows the games you started from the XMB (the helper plugin of *Time played* tells psp5 authentic).
 - **Manage Saved Data.** Lists the saves of all your games. Mark some, delete them and see how much room you get back.
   ARK's own save folder is locked and can't be deleted.
 - **Music.** Plays the MP3 files in `MUSIC` with title, artist and album art (from the file, or a `cover.jpg` / `folder.jpg`
   in the folder). It keeps playing while you browse your games.
-- **Settings** (the cog wheel). Several pages:
-  - *psp5* – boot into psp5, sounds, startup animation, battery percentage, language. *Theme* – the colours.
+- **Settings** (the cog wheel). One list at a time, like the console's: Confirm opens a page, Back goes back one. The first list has six pages:
+  - *psp5 authentic* – boot into psp5 authentic, sounds, startup animation, battery percentage, clear the image cache.
+  - *Network* – the PSP's own Wi-Fi screen and the FTP Server.
+  - *System* – *Console Information* (nickname, model, system software, MAC address, storage, battery, and where psp5 authentic comes from), *Appearance* (*Show Game art* and the themes),
+    *Language*, *ARK-5 Settings* or *ARK-4 Settings* (ARK's own options: USB charge, WPA2, hide pictures, regions ...), *Performance* (CPU speed, extra memory, caches) and *Plugins*.
+  - *Storage* – the File Manager and USB Mode.
+  - *Screen and Sound* – the PSP's own brightness, backlight timer (psp5 authentic remembers it), volume, equalizer and AVLS.
   - *Controls* – the PSP's own confirm button, and which buttons confirm, go back, open the options and the power menu.
-  - *Display and Sound* – the PSP's own brightness, backlight timer (psp5 remembers it), volume, equalizer and AVLS.
-  - *Network* – the PSP's own Wi-Fi screen and the FTP Server. *About* – nickname, model, system software, MAC address, storage, battery.
-  - *Performance* (CPU speed, extra memory, caches), *System*, *Plugins* and *Memory* (File Manager, USB Mode).
 
   A setting with several values opens a popup when you press Confirm on it.
 - **Themes.** The colours of the console covers, each with the console's scene behind your games (a beam of light, golden
@@ -77,16 +83,16 @@ wherever it can, but it doesn't copy the console in everything.
 - **Power menu** (SELECT, on every screen: Games, Library, Music, Settings, Information, Manage Saved Data, the File Manager and the USB screen). Exit to XMB, Sleep, Shut down, Restart, Recovery Menu – Confirm does it at once.
 - **Volume, battery and Wi-Fi.** Pressing the volume buttons slides a volume bar in at the top. The battery has four bars that are lit
   from the right (one for each quarter); while the PSP charges, a bolt is shown left of the battery and the bars above the level come on
-  one after the other. You can also show the battery percentage (*Settings → psp5*). A Wi-Fi sign is shown while the PSP's Wi-Fi switch is
+  one after the other. You can also show the battery percentage (*Settings → psp5 authentic*). A Wi-Fi sign is shown while the PSP's Wi-Fi switch is
   on. At the very end of the top bar is the cog wheel.
-- **File Manager** (*Settings → Memory*). Browse the Memory Stick (and the internal storage on a PSP Go) and copy,
+- **File Manager** (*Settings → Storage*). Browse the Memory Stick (and the internal storage on a PSP Go) and copy,
   move, rename, delete or make folders.
-- **FTP Server** (*Settings → Network → FTP Server*). Copy files to and from the PSP over Wi-Fi: the PSP's own Wi-Fi window opens so that you choose one of your saved connections, and psp5 shows the address to type
+- **FTP Server** (*Settings → Network → FTP Server*). Copy files to and from the PSP over Wi-Fi: the PSP's own Wi-Fi window opens so that you choose one of your saved connections, and psp5 authentic shows the address to type
   into an FTP program or the file manager of your computer. It shows who is connected and the file that is going. There is no password, so use it on your own network.
-- **Sounds and languages.** Menu sounds (you can turn them off). 11 languages: psp5 follows the PSP's language; Swedish and
-  Czech are picked under *Settings → psp5 → Language*.
+- **Sounds and languages.** Menu sounds (you can turn them off). 11 languages: psp5 authentic follows the PSP's language; Swedish and
+  Czech are picked under *Settings → System → Language*.
 - **Quick and careful.** Only the cards near your selection are loaded, and artwork is cached, so it opens fast after the
-  first start. psp5 never touches flash0 and you can always get back to the XMB.
+  first start. psp5 authentic never touches flash0 and you can always get back to the XMB.
 
 Games and apps use their own icon and background automatically. If you want your own covers, see *Covers* in
 [INSTALL.md](INSTALL.md).
@@ -115,7 +121,7 @@ also for the PSP Go.
 
 If something goes wrong, hold **SELECT** while the PSP starts: ARK skips its settings and you land in the normal XMB. If a
 start doesn't finish (the PSP froze, for example), the next one is a *safe start* without the startup screen, music and UMD.
-If that fails too, psp5 sends the PSP to the XMB. More help is in [INSTALL.md](INSTALL.md).
+If that fails too, psp5 authentic sends the PSP to the XMB. More help is in [INSTALL.md](INSTALL.md).
 
 ## Supported PSPs
 
@@ -127,17 +133,17 @@ ARK version.
 
 ## About this fork
 
-psp5-authentic is **Claude's work**: the code and the documentation are written by Claude, an AI assistant made by Anthropic.
+psp5 authentic is **Claude's work**: the code and the documentation are written by Claude, an AI assistant made by Anthropic.
 The person who runs the fork has almost no coding experience. They test every update on their own PSP and report back what
 they see, and the two of them work out the solutions together. So there will be bugs, and reports are what makes the project
 better.
 
-Everything you see is drawn by psp5 itself – no pictures of the interface are used. The start-up screen shows the PlayStation logo, drawn from its outline by
-psp5 (not a picture); it is Sony's trademark (see the notice at the end), and everything else is an own take on that style.
+Everything you see is drawn by psp5 authentic itself – no pictures of the interface are used. The start-up screen shows the PlayStation logo, drawn from its outline by
+psp5 authentic (not a picture); it is Sony's trademark (see the notice at the end), and everything else is an own take on that style.
 
 ## Building it yourself
 
-psp5 is written in C and built with the [pspdev](https://github.com/pspdev/pspdev) toolchain plus
+psp5 authentic is written in C and built with the [pspdev](https://github.com/pspdev/pspdev) toolchain plus
 [psp-cfw-sdk](https://github.com/pspdev/psp-cfw-sdk), which provides ARK's headers and libraries. With pspdev installed:
 
 ```sh
@@ -152,7 +158,7 @@ touches in the code is written down in [docs/DEVELOPER-NOTES.md](docs/DEVELOPER-
 ## Thanks
 
 - **Mille Weber (08Weber)**, who made [psp5](https://github.com/08Weber/psp5), the project this fork is based on (v1.5.3).
-- The [ARK-5](https://github.com/PSP-Arkfive) and [ARK-4](https://github.com/PSP-Archive/ARK-4) teams – psp5 starts games and
+- The [ARK-5](https://github.com/PSP-Arkfive) and [ARK-4](https://github.com/PSP-Archive/ARK-4) teams – psp5 authentic starts games and
   stores settings the same way their arkMenu does, and uses ARK's libraries through psp-cfw-sdk.
 - [pspdev](https://github.com/pspdev) for the toolchain, PSPSDK and packages.
 - intraFont, libpng, zlib, LZ4 and libcisoread.
@@ -161,8 +167,8 @@ touches in the code is written down in [docs/DEVELOPER-NOTES.md](docs/DEVELOPER-
 
 GPL-3.0 – see [LICENSE](LICENSE).
 
-psp5-authentic is a modified version of psp5 v1.5.3 by Mille Weber, changed in 2026. The copyright notices of the original
+psp5 authentic is a modified version of psp5 v1.5.3 by Mille Weber, changed in 2026 by Xioonae. The copyright notices of the original
 are kept in the source files; what was changed is listed in the [release notes](CHANGELOG.md).
 
-psp5 and psp5-authentic are unofficial fan projects (by Mille Weber, and a fork of it). They are not affiliated with or
+psp5 and psp5 authentic are unofficial fan projects (psp5 by Mille Weber, and psp5 authentic, a fork of it, by Xioonae). They are not affiliated with or
 endorsed by Sony Interactive Entertainment. "PSP" and "PlayStation" are trademarks of Sony Interactive Entertainment Inc.

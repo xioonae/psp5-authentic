@@ -842,7 +842,7 @@ static void session_open(Session *s, int ctl)
     s->fd = -1;
     s->last_active = s_now;
     snprintf(s->cwd, sizeof s->cwd, "/");
-    reply(s, "220 psp5 FTP server");
+    reply(s, "220 psp5 authentic FTP server");
 }
 
 /* The place in the input of the end of the first line (index of \n), -1 when it is not all there. */

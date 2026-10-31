@@ -1,10 +1,10 @@
-# Installing psp5-authentic
+# Installing psp5 authentic
 
-*psp5-authentic 1.2.0 – a fork of psp5 v1.5.3 by Mille Weber ([08Weber/psp5](https://github.com/08Weber/psp5))*
+*psp5 authentic 1.2.0 – a fork of psp5 (v1.5.3), originally made by Mille Weber ([08Weber/psp5](https://github.com/08Weber/psp5)), forked by Xioonae*
 
 **You need:** a PSP with **ARK-4 or ARK-5** (PSP-1000, 2000, 3000 or PSP Go) and a **USB cable**.
 
-psp5-authentic is made with Claude, an AI assistant. If something doesn't work on your PSP, please
+psp5 authentic is made with Claude, an AI assistant. If something doesn't work on your PSP, please
 [open an issue](../../issues) and tell us what you saw, which PSP you have and which ARK version.
 
 ## 1. Pick your zip
@@ -20,7 +20,7 @@ Not sure which ARK you have? In the XMB, press **SELECT**. ARK's menu shows *ARK
 
 You'll find them under [Releases](../../releases). Unzip the one you downloaded.
 
-psp5-authentic uses the same folders as psp5 (`PSP/GAME/PSP5` on the PSP and `PSP5` for its sounds and settings), so it
+psp5 authentic uses the same folders as psp5 (`PSP/GAME/PSP5` on the PSP and `PSP5` for its sounds and settings), so it
 replaces an installed psp5 and keeps its settings and covers (the image cache is rebuilt once).
 
 ## 2. Copy it to the PSP
@@ -28,38 +28,38 @@ replaces an installed psp5 and keeps its settings and covers (the image cache is
 1. On the PSP, open *Settings → USB Connection* and plug in the cable. The PSP shows up as a drive on your
    computer (for example `E:`).
 2. Copy the **`PSP` and `PSP5` folders** from the zip onto that drive. If your computer asks, say yes to merging
-   folders. (`PSP5` holds psp5's sounds; without it psp5 plays its built-in ones.)
+   folders. (`PSP5` holds psp5 authentic's sounds; without it psp5 authentic plays its built-in ones.)
 3. Eject the drive, unplug the cable and press Back (○) on the PSP.
 
-## 3. Start psp5
+## 3. Start psp5 authentic
 
-- **PSP-1000, 2000 or 3000:** *Game → Memory Stick → psp5*
-- **PSP Go:** *Game → System Storage → psp5*
+- **PSP-1000, 2000 or 3000:** *Game → Memory Stick → psp5 authentic*
+- **PSP Go:** *Game → System Storage → psp5 authentic*
 
-That's it! The first start takes a moment while psp5 finds your games. After that it opens fast.
+That's it! The first start takes a moment while psp5 authentic finds your games. After that it opens fast.
 
-## Optional: replace ARK's Custom Launcher with psp5
+## Optional: replace ARK's Custom Launcher with psp5 authentic
 
-Then *Custom Launcher* in the XMB opens psp5, and your PSP can start straight into psp5.
+Then *Custom Launcher* in the XMB opens psp5 authentic, and your PSP can start straight into psp5 authentic.
 
 1. Connect the PSP with USB and open `PSP/SAVEDATA/ARK_01234/`.
 2. Rename the `VBOOT.PBP` that's there to `VBOOT_ARKMENU.PBP`. That keeps ARK's own menu as a backup.
 3. Copy `VBOOT.PBP` from the zip's `ARK_LAUNCHER` folder into `ARK_01234`.
-4. In psp5, open the settings (↑ to the top bar, → to the cog wheel, then Confirm) → *psp5* → turn on *Boot into psp5*, then restart the PSP.
+4. In psp5 authentic, open the settings (↑ to the top bar, → to the cog wheel, then Confirm) → *psp5 authentic* → turn on *Boot into psp5 authentic*, then restart the PSP.
 
 To get to the XMB from there: press SELECT (the power menu, on every screen) and choose *Exit to XMB*.
 
 ## Time played
 
-There is nothing to set up. The first time psp5 starts on a PSP with ARK it puts a tiny helper plugin (`psp5time.prx`) in its `PSP5` folder and adds two lines for it to the
+There is nothing to set up. The first time psp5 authentic starts on a PSP with ARK it puts a tiny helper plugin (`psp5time.prx`) in its `PSP5` folder and adds two lines for it to the
 `PLUGINS.TXT` that ARK reads (one for PSP games and homebrew, one for PS1 games). Your other lines stay as they are. It counts from the next game you start, with no restart,
-**however you start the game** (from psp5, or from the XMB; psp5 does not have to be ARK's launcher), and only the time the PSP is awake: sleep and switched-off time are not counted.
-The plugin keeps the seconds of each game in `PSP5/played`, and psp5 adds them to the times it shows the next time it starts.
+**however you start the game** (from psp5 authentic, or from the XMB; psp5 authentic does not have to be ARK's launcher), and only the time the PSP is awake: sleep and switched-off time are not counted.
+The plugin keeps the seconds of each game in `PSP5/played`, and psp5 authentic adds them to the times it shows the next time it starts.
 
-- To turn it off, open *Settings → Plugins* and turn off the two `psp5time.prx` lines (*Games* and *PS1*). psp5 leaves those lines as they are, so they stay off (it only adds them when there is no line for the plugin at all).
-- Without ARK, or with the lines off, nothing is counted. A game under 10 seconds is not counted. A PSP game that has no disc ID (some homebrew ISOs and CSOs) is counted under the name of its ISO file, as psp5 names it: renaming the file starts a new time for it.
-- When psp5 is updated, the plugin file is replaced by the one that comes with it.
-- The same plugin lets psp5 know **when** a game was played last, also when you started it from the XMB. The Information screen shows it as *Last played*, and the Library's Sort button uses it for *Recently played* (the same order as the Games tab).
+- To turn it off, open *Settings → System → Plugins* and turn off the two `psp5time.prx` lines (*Games* and *PS1*). psp5 authentic leaves those lines as they are, so they stay off (it only adds them when there is no line for the plugin at all).
+- Without ARK, or with the lines off, nothing is counted. A game under 10 seconds is not counted. A PSP game that has no disc ID (some homebrew ISOs and CSOs) is counted under the name of its ISO file, as psp5 authentic names it: renaming the file starts a new time for it.
+- When psp5 authentic is updated, the plugin file is replaced by the one that comes with it.
+- The same plugin lets psp5 authentic know **when** a game was played last, also when you started it from the XMB. The Information screen shows it as *Last played*, and the Library's Sort button uses it for *Recently played* (the same order as the Games tab).
 
 ## Where your games go
 
@@ -69,8 +69,8 @@ The plugin keeps the seconds of each game in `PSP5/played`, and psp5 adds them t
 | Homebrew, PSN and PS1 games | `PSP/GAME` |
 | Music (`.mp3`) | `MUSIC` (sub-folders are fine) |
 
-On a PSP Go, psp5 looks in these folders on both the internal storage and a Memory Stick Micro. (With ARK-4 this needs a
-recent ARK-4 when psp5 is started from the internal storage.)
+On a PSP Go, psp5 authentic looks in these folders on both the internal storage and a Memory Stick Micro. (With ARK-4 this needs a
+recent ARK-4 when psp5 authentic is started from the internal storage.)
 
 ## Buttons
 
@@ -88,7 +88,7 @@ Every screen uses the same few buttons for the same things:
 | HOME | Back to the XMB (not as custom launcher)|
 
 By default ✕ confirms and ○ goes back (the other way round when the PSP itself is set to confirm with ○). **Settings → Controls** changes that:
-the PSP's own confirm button (this changes the XMB too), and which of ✕ ○ □ △ confirms and goes back in psp5, and whether START or SELECT
+the PSP's own confirm button (this changes the XMB too), and which of ✕ ○ □ △ confirms and goes back in psp5 authentic, and whether START or SELECT
 opens the options and the power menu. If you ever forget what you chose: the hints at the bottom of the File Manager and of *Manage Saved Data*
 show the buttons, and deleting the `confirm=`, `back=` and `options=` lines in `PSP5/psp5.cfg` gives you the usual ones again.
 
@@ -102,7 +102,7 @@ Where to go from there:
 
 ## File Manager
 
-*Settings → Memory → File Manager* lets you manage files right on the PSP. Confirm opens a folder, □ marks
+*Settings → Storage → File Manager* lets you manage files right on the PSP. Confirm opens a folder, □ marks
 files, Options (START) shows what you can do (copy, move, paste, rename, delete, new folder) and Back goes back (the first Back
 clears the marks, and at the top it cancels a waiting copy or move before it leaves).
 
@@ -121,7 +121,7 @@ There is no password, so everyone on the same network can reach your Memory Stic
 
 ## Covers
 
-psp5 shows each game's own icon and background by itself. If you want your own pictures on the cards, a small tool
+psp5 authentic shows each game's own icon and background by itself. If you want your own pictures on the cards, a small tool
 for your computer prepares them: `tools/covers.py` (it is in the repository, not in the zips: on the GitHub page use *Code → Download ZIP*).
 It needs Python 3 with two packages: `py -m pip install --user pillow lz4` (on Windows).
 
@@ -130,39 +130,39 @@ It needs Python 3 with two packages: `py -m pip install --user pillow lz4` (on W
    PNG, JPG, WEBP and BMP work. The ID of a game in `ISO` is the one on its disc (as in its `PARAM.SFO`); for homebrew, PSN and PS1 games
    in `PSP/GAME` it is the **name of its folder**. The card shows the middle of your picture, cut to about 16:9 (the card is 144 × 80),
    and the background is 320 × 182, so pictures of that shape fit best.
-2. **Connect the PSP** (*Settings → Memory → USB Mode*, or the Memory Stick in your computer). It shows up as a drive, for example `E:`.
+2. **Connect the PSP** (*Settings → Storage → USB Mode*, or the Memory Stick in your computer). It shows up as a drive, for example `E:`.
 3. **Run the tool** with that drive: `py tools\covers.py E:\` (on Linux or macOS: `python3 tools/covers.py /path/to/the/stick`). It lists every game with its ID
    and what it wrote, and puts the finished pictures in `PSP5/covers` on the Memory Stick.
-4. **Start psp5 again.** A cover in `PSP5/covers` always wins over the game's own picture and over the image cache, and *Clear image cache* never removes it.
+4. **Start psp5 authentic again.** A cover in `PSP5/covers` always wins over the game's own picture and over the image cache, and *Clear image cache* never removes it.
 
 Good to know:
 
 - The tool leaves covers that are already there alone. After you change a picture, run it again with **`--force`**.
 - `--dry-run` only shows what it would do. `--clean` also removes covers of games that are no longer on the card.
 - For games where you gave no picture, the tool makes covers from the game's own icon and background, so every game gets a file. That is the same
-  picture psp5 would have used.
+  picture psp5 authentic would have used.
 - To go back to a game's own picture, delete its `.ico` (card) and `.bg` (background) files in `PSP5/covers`.
 
 ## Updating
 
 Do steps 1 and 2 again with the new zip. Your settings and covers stay.
-If you replaced ARK's Custom Launcher with psp5 (see above), copy `ARK_LAUNCHER/VBOOT.PBP` again too.
+If you replaced ARK's Custom Launcher with psp5 authentic (see above), copy `ARK_LAUNCHER/VBOOT.PBP` again too.
 
 ## Help!
 
 - **Stuck, or something is broken?** Hold **SELECT** while you turn on the PSP. You'll land in the normal XMB.
 - **A game is missing?** Check that it's in the right folder (see *Where your games go*). ISO files can be one
   sub-folder deep, not more.
-- **Wrong or missing pictures?** Settings → *psp5* → *Clear image cache*.
+- **Wrong or missing pictures?** Settings → *psp5 authentic* → *Clear image cache*.
 - **A setting didn't change anything?** CPU speed, plugins and other ARK settings need a restart.
-- **psp5 says "Safe start"?** The last start didn't finish, for example because the PSP froze. psp5 then starts
+- **psp5 authentic says "Safe start"?** The last start didn't finish, for example because the PSP froze. psp5 authentic then starts
   without the startup screen and music. If that fails as well, the PSP goes to the XMB, so it can't get stuck.
-- **The HOME menu doesn't react in a game?** That menu belongs to the PSP and ARK, not psp5. Turn your plugins off
+- **The HOME menu doesn't react in a game?** That menu belongs to the PSP and ARK, not psp5 authentic. Turn your plugins off
   (settings → *Plugins*) and restart. To leave a game anyway, press **L + R + START + ↓** together.
 - **Want ARK's own menu back?** In `PSP/SAVEDATA/ARK_01234/`, delete `VBOOT.PBP` and rename
   `VBOOT_ARKMENU.PBP` back to `VBOOT.PBP`.
 
 ## Uninstall
 
-1. If psp5 is ARK's launcher, put ARK's menu back (see *Help!*).
+1. If psp5 authentic is ARK's launcher, put ARK's menu back (see *Help!*).
 2. Delete the folders `PSP/GAME/PSP5` and `PSP5`.

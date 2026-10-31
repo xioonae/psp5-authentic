@@ -65,6 +65,9 @@ void gfx_edge_ring(float x, float y, float w, float h, float r, int thin, u32 co
 void gfx_bolt(float cx, float cy, float r, u32 color);
 /* The Wi-Fi sign in a box of side 2 r centred on (cx, cy): a small square with three soft quarter circle arcs round it (r = 7 is 14 px) */
 void gfx_wifi(float cx, float cy, float r, u32 color);
+/* The cube of Settings' System row (see icons.c, ICON_CUBE) in a box of side 2 r centred on (cx, cy): three faces of their own brightness in one soft
+ * edged image, in the colour (and opacity) it is given: the top face as it is, the left one four fifths, the right one a half. */
+void gfx_cube(float cx, float cy, float r, u32 color);
 /* Mjukkantad triangel i rutan x, y, w, h: dir > 0 pekar åt höger (spetsen mitt på högra sidan), dir < 0 åt vänster */
 void gfx_triangle(float x, float y, float w, float h, int dir, u32 color);
 /* Musiknot i en ruta med sidan `size`, centrerad i (cx, cy) – en enda bild, så inget blandas dubbelt där delarna möts */

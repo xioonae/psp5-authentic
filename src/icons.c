@@ -372,6 +372,47 @@ static float shape_distance(const Shape *p, float px, float py)
     }
 }
 
+/* --- the cube ---
+ *
+ * A cube seen from a corner: a hexagon with its corners r above and below the middle and 0.875 r to each side (so the slanted edges rise 30
+ * degrees), cut into three faces that meet in the middle: the top, the left and the right one. A picture has one colour, so the faces
+ * get their own brightness as the opacity of the image (CUBE_TONE: the top one full, the left one four fifths, the right one a half): over a
+ * dark ground they look like three tones of the colour the picture is drawn in. Every pixel is sampled 8 x 8 times and gets the average
+ * of the tones of the faces its samples fall in, so the outline and the edges between the faces are soft to the same degree as the other icons. */
+static const int CUBE_TONE[3] = { 255, 199, 128 };
+
+static void cube_faces(float r, float f[3][8])
+{
+    const float w = 0.875f * r, h = 0.5f * r;
+    const float top[8] = { 0, -r, w, -h, 0, 0, -w, -h };
+    const float left[8] = { -w, -h, 0, 0, 0, r, -w, h };
+    const float right[8] = { 0, 0, w, -h, w, h, 0, r };
+    memcpy(f[0], top, sizeof(top));
+    memcpy(f[1], left, sizeof(left));
+    memcpy(f[2], right, sizeof(right));
+}
+
+static void cube_render(float r, float cx, float cy, int tw, int th, unsigned char *out)
+{
+    enum { SS = 8 };
+    float f[3][8];
+    cube_faces(r, f);
+    for (int y = 0; y < th; y++)
+        for (int x = 0; x < tw; x++) {
+            int sum = 0;
+            for (int j = 0; j < SS; j++)
+                for (int i = 0; i < SS; i++) {
+                    float px = x + (i + 0.5f) / SS - cx, py = y + (j + 0.5f) / SS - cy;
+                    for (int k = 0; k < 3; k++)
+                        if (sd_poly(f[k], 4, px, py) < 0) {
+                            sum += CUBE_TONE[k];
+                            break;
+                        }
+                }
+            out[y * tw + x] = (unsigned char)(sum / (float)(SS * SS) + 0.5f);
+        }
+}
+
 /* --- the logo of the boot screen ---
  *
  * The outline of the PlayStation logo, as three closed shapes (the P with its stem, the left swoosh, the right swoosh) whose corners are in
@@ -504,6 +545,10 @@ void icon_render(int kind, float w, float h, float r, float cx, float cy, int tw
 {
     if (kind == ICON_LOGO) {
         logo_render(w, h, cx, cy, tw, th, out);
+        return;
+    }
+    if (kind == ICON_CUBE) {
+        cube_render(r, cx, cy, tw, th, out);
         return;
     }
     Shape sh = { .kind = kind, .w = w, .h = h, .r = r };

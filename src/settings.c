@@ -1,7 +1,7 @@
 /* psp5 – made by Mille Weber */
-/* Inställningar i samma anda som PS5:s: mörk yta med ett strålkastarljus,
- * kategorier till vänster, alternativ till höger med tunna skiljelinjer
- * och en tunn ljus ram runt det valda. All grafik ritas här. */
+/* Settings in the spirit of the PS5's: a dark surface with a spotlight and one list at a time (as in the file manager: thin dividers,
+ * a thin light frame round the chosen row, a thin bar at the right when the list is longer than the screen). The first list has the
+ * categories; a category is a list of settings, and System is a list of pages of its own. ○ goes back one list. All graphics are drawn here. */
 #include <pspkernel.h>
 #include <pspctrl.h>
 #include <math.h>
@@ -22,21 +22,24 @@
 #include "popup.h"
 
 #define TITLE_Y     34.0f
-#define LEFT_X      24.0f  /* the same sides as the lists of the file manager and Manage Saved Data: 24 px from the edges of the screen */
-#define LEFT_W      136.0f
-#define RIGHT_X     172.0f /* 12 px after the left column */
-#define RIGHT_W     284.0f /* to 456 */
+#define LIST_X      24.0f  /* the same sides as the list of the file manager: 24 px from the edges of the screen */
+#define LIST_W      432.0f
 #define ROW_H       26.0f
+#define LIST_ROWS        7      /* rows shown at once; a longer list scrolls (as in the file manager and in Manage Saved Data) */
 #define LIST_TOP    58.0f
-#define LIST_BOTTOM 236.0f
+#define ICON_W      26.0f  /* the room of the icon in front of the label (the categories only) */
 #define MAX_ITEMS   (MAX_PLUGINS + 4)
 #define PSP5_VERSION "1.2.0"
+#define APP_NAME     "psp5 authentic"
 
 #define TEXT_MAIN RGBA(238, 238, 242, 255)
 #define TEXT_DIM  RGBA(160, 162, 172, 255)
 #define LIGHT     RGBA(236, 236, 240, 255)
 
-typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO, IT_THEME } ItemType;
+typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO, IT_THEME, IT_PAGE, IT_LANG } ItemType;
+
+/* the icons of the first list (drawn here, no image files) */
+enum { ICO_NONE, ICO_APP, ICO_NETWORK, ICO_SYSTEM, ICO_STORAGE, ICO_SCREEN, ICO_CONTROLS };
 
 typedef struct {
     const char *label;
@@ -44,7 +47,8 @@ typedef struct {
     unsigned char *value;        /* TOGGLE/CHOICE */
     const char *const *opts;     /* CHOICE */
     int nopts;
-    int action;                  /* ACTION: SA_*, THEME: temats index */
+    int action;                  /* ACTION: SA_*, THEME: temats index, LANG: the language, PAGE: the page it opens */
+    int icon;                    /* PAGE: ICO_* in front of the label (0 = none) */
     char info[48];               /* INFO-värde / undertext */
     int plugin;                  /* >0: plugin nr (1-baserat) */
     int own;                     /* psp5:s egen inställning (psp5.cfg) */
@@ -55,37 +59,31 @@ typedef struct {
 
 typedef struct {
     const char *name;
-    const char *desc;
     Item items[MAX_ITEMS];
     int count;
-} Category;
+} Category; /* a page: a list of rows */
 
-enum { CAT_PSP5, CAT_THEME, CAT_CONTROLS, CAT_DISPLAY, CAT_NETWORK, CAT_PERF, CAT_SYSTEM, CAT_PLUGINS, CAT_MEMORY, CAT_ABOUT, CAT_COUNT };
+/* The pages. PG_ROOT is the first list; the six rows of it open the pages after it; the rows of PG_SYSTEM open the six after that. */
+enum { PG_ROOT, PG_PSP5, PG_NETWORK, PG_SYSTEM, PG_STORAGE, PG_SCREEN, PG_CONTROLS, PG_INFO, PG_APPEAR, PG_LANG, PG_ARK, PG_PERF, PG_PLUGINS, PG_COUNT };
+static const signed char PARENT[PG_COUNT] = { -1, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM };
 
-static Category s_cats[CAT_COUNT];
+static Category s_cats[PG_COUNT];
+static char s_ark_name[48]; /* "ARK-5 Settings" or "ARK-4 Settings": the name of the page that has the settings of ARK itself */
 static unsigned char s_plugin_on[MAX_PLUGINS];
-/* Radbrytningen mäter texten många gånger – gör den bara när texten byts, inte varje bildruta */
-static const char *s_wrapped; /* texten som s_desc håller, NULL = inget */
-static int s_wrapped_n;
-
 static struct {
-    int cat, item[CAT_COUNT];
-    int cat_top;        /* the first category shown (more categories than fit: the list scrolls) */
-    float cat_scroll;
-    int focus;          /* 0 = kategorier, 1 = alternativ */
-    float scroll, open, time;
+    int page, item[PG_COUNT]; /* the page shown, and the row chosen on each page (kept when the page is left) */
+    int top[PG_COUNT];  /* the first row shown on each page: it moves only when the chosen row would leave the screen */
+    float scroll, open, time; /* scroll: the first row shown, on its way to top[page] */
     int cfw_dirty, plugins_dirty, own_dirty;
     int repeat_dir;
     float repeat_timer;
-    int stick_x;        /* the analog stick sideways as it was last time: -1, 0 or 1 */
     /* the popup of a choice (✕ on it): the list of values, the one chosen, and the first one shown when there are more than fit */
-    int pop, pop_cat, pop_item, pop_sel, pop_top;
+    int pop, pop_page, pop_item, pop_sel, pop_top;
     float pop_anim, pop_scroll;
     char toast[96];     /* a message that is shown for a moment (settings_notice) */
     float toast_time;
 } S;
 
-#define VIS_CATS 6 /* the categories shown at once in the left column */
 #define POP_ROWS 8 /* the most values a popup shows at once; a longer list scrolls (the 14 regions, the 11 languages) */
 
 /* valtexter byggs om när språket ändras */
@@ -335,7 +333,7 @@ static const char *model_name(void)
          : m == 4 ? "PSP Go" : m == 10 ? "PSP E1000" : "PSP";
 }
 
-/* --- About: what the PSP says about itself (nothing here can be changed) --- */
+/* --- Console Information: what the PSP says about itself, and where psp5 authentic comes from (nothing here can be changed) --- */
 
 static void fmt_bytes(char *out, int size, unsigned long long b)
 {
@@ -372,7 +370,9 @@ static void fill_about(Category *c)
         snprintf(v, sizeof(v), "ARK-%d", sys_ark_version());
         info(c, "CFW", v);
     }
-    info(c, "psp5", PSP5_VERSION);
+    info(c, APP_NAME, PSP5_VERSION);
+    info(c, L(S_ABOUT_ORIGINAL), "08Weber"); /* psp5 authentic is a fork of psp5, which Mille Weber (08Weber) made */
+    info(c, L(S_ABOUT_FORK), "Xioonae");
     if (a.has_mac) {
         snprintf(v, sizeof(v), "%02X:%02X:%02X:%02X:%02X:%02X", a.mac[0], a.mac[1], a.mac[2], a.mac[3], a.mac[4], a.mac[5]);
         info(c, L(S_ABOUT_MAC), v);
@@ -401,17 +401,47 @@ static void fill_about(Category *c)
     }
 }
 
-/* rebuild = 1: menyn byggs om (t.ex. nytt språk) utan att tappa osparade val */
+/* a row that opens another page */
+static void page_row(Category *c, int page, int icon)
+{
+    Item *it = add(c, s_cats[page].name, IT_PAGE);
+    it->action = page;
+    it->icon = icon;
+}
+
+/* rebuild = 1: the menu is built again (a new language, say) without losing the choices that are not saved yet */
 static void build(int rebuild)
 {
     build_options();
     memset(s_cats, 0, sizeof(s_cats));
-    s_wrapped = NULL; /* nytt språk eller typsnitt: bryt om beskrivningarna */
     Category *c;
+    int ark = sys_ark_version();
+    snprintf(s_ark_name, sizeof(s_ark_name), L(S_CAT_ARK), ark == 4 || ark == 5 ? (ark == 4 ? "ARK-4" : "ARK-5") : "ARK");
 
-    c = &s_cats[CAT_PSP5];
-    c->name = "psp5";
-    c->desc = L(S_DESC_PSP5);
+    /* the names first: the rows that open a page are named after it */
+    s_cats[PG_PSP5].name = APP_NAME;
+    s_cats[PG_NETWORK].name = L(S_CAT_NETWORK);
+    s_cats[PG_SYSTEM].name = L(S_CAT_SYSTEM);
+    s_cats[PG_STORAGE].name = L(S_CAT_STORAGE);
+    s_cats[PG_SCREEN].name = L(S_CAT_SCREEN_SOUND);
+    s_cats[PG_CONTROLS].name = L(S_CAT_CONTROLS);
+    s_cats[PG_INFO].name = L(S_CAT_INFO);
+    s_cats[PG_APPEAR].name = L(S_CAT_APPEARANCE);
+    s_cats[PG_LANG].name = L(S_LANGUAGE);
+    s_cats[PG_ARK].name = s_ark_name;
+    s_cats[PG_PERF].name = L(S_CAT_PERF);
+    s_cats[PG_PLUGINS].name = L(S_CAT_PLUGINS);
+
+    c = &s_cats[PG_ROOT];
+    c->name = L(S_SETTINGS);
+    page_row(c, PG_PSP5, ICO_APP);
+    page_row(c, PG_NETWORK, ICO_NETWORK);
+    page_row(c, PG_SYSTEM, ICO_SYSTEM);
+    page_row(c, PG_STORAGE, ICO_STORAGE);
+    page_row(c, PG_SCREEN, ICO_SCREEN);
+    page_row(c, PG_CONTROLS, ICO_CONTROLS);
+
+    c = &s_cats[PG_PSP5];
     toggle(c, L(S_BOOT_PSP5), &g_cfw.launcher);
     toggle(c, L(S_SOUNDS), &g_sound_on);
     c->items[c->count - 1].own = 1;
@@ -419,48 +449,27 @@ static void build(int rebuild)
     c->items[c->count - 1].own = 1;
     toggle(c, L(S_BATTERY_PCT), &g_battery_pct);
     c->items[c->count - 1].own = 1;
-    choice(c, L(S_LANGUAGE), &g_lang_setting, OPT_LANG, LANG_COUNT);
-    c->items[c->count - 1].own = 1;
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE);
 
-    c = &s_cats[CAT_THEME];
-    c->name = L(S_CAT_THEME);
-    c->desc = L(S_DESC_THEME);
-    toggle(c, L(S_THEME_ART), &g_theme_art);
-    c->items[c->count - 1].own = 1;
-    for (int i = 0; i < theme_count() && c->count < MAX_ITEMS; i++) {
-        Item *it = add(c, theme_get(i)->name, IT_THEME);
-        it->action = i;
-        it->own = 1;
-    }
+    c = &s_cats[PG_NETWORK];
+    action(c, L(S_WIFI_CONNECTION), SA_WIFI);
+    action(c, L(S_FTP_SERVER), SA_FTP);
 
-    c = &s_cats[CAT_CONTROLS];
-    c->name = L(S_CAT_CONTROLS);
-    c->desc = L(S_DESC_CONTROLS);
-    s_psp_circle = sys_confirm_is_circle() ? 1 : 0;
-    controls_psp_assignment(s_psp_circle); /* (what the PSP says may have changed since the start: the XMB, a game) */
-    {
-        Item *it;
-        choice(c, L(S_CTL_PSP_ASSIGN), &s_psp_circle, OPT_PSP_CONFIRM, 2);
-        it = &c->items[c->count - 1];
-        it->glyph = glyph_psp; it->set = set_psp; it->immediate = 1;
-        choice(c, L(S_CTL_CONFIRM), &g_ctl_confirm, OPT_BUTTON, CTL_COUNT);
-        it = &c->items[c->count - 1];
-        it->glyph = glyph_confirm; it->set = set_confirm; it->own = 1;
-        choice(c, L(S_BACK), &g_ctl_back, OPT_BUTTON, CTL_COUNT);
-        it = &c->items[c->count - 1];
-        it->glyph = glyph_back; it->set = set_back; it->own = 1;
-        /* Options and the power menu are one setting seen from both sides: START / SELECT, either way round */
-        choice(c, L(S_OPTIONS), &g_ctl_options, OPT_START_SELECT, 2);
-        c->items[c->count - 1].own = 1;
-        choice(c, L(S_CTL_POWER), &g_ctl_options, OPT_SELECT_START, 2);
-        c->items[c->count - 1].own = 1;
-    }
+    c = &s_cats[PG_SYSTEM];
+    page_row(c, PG_INFO, 0);
+    page_row(c, PG_APPEAR, 0);
+    page_row(c, PG_LANG, 0);
+    page_row(c, PG_ARK, 0);
+    page_row(c, PG_PERF, 0);
+    page_row(c, PG_PLUGINS, 0);
 
-    c = &s_cats[CAT_DISPLAY];
-    c->name = L(S_CAT_DISPLAY_SOUND);
-    c->desc = L(S_DESC_DISPLAY_SOUND);
+    /* Exit to XMB, Sleep, Shut down, Restart and Recovery menu are not here: they are the power popup of the SELECT button (power.c), on every screen */
+    c = &s_cats[PG_STORAGE];
+    action(c, L(S_FILES), SA_FILES);
+    action(c, L(S_USB_MODE), SA_USB);
+
+    c = &s_cats[PG_SCREEN];
     s_bl_item = s_br_item = NULL;
     {
         Item *it;
@@ -505,41 +514,49 @@ static void build(int rebuild)
             info(c, L(S_UNAVAILABLE), "");
     }
 
-    c = &s_cats[CAT_NETWORK];
-    c->name = L(S_CAT_NETWORK);
-    c->desc = L(S_DESC_NETWORK);
-    action(c, L(S_WIFI_CONNECTION), SA_WIFI);
-    action(c, L(S_FTP_SERVER), SA_FTP);
-
-    c = &s_cats[CAT_PERF];
-    c->name = L(S_CAT_PERF);
-    c->desc = L(S_DESC_PERF);
-    /* ARK-4 har bara Auto/133/222/333 och på/av för extra minne och minneskortscache;
-     * PSP-1000 har varken extra minne eller USB-laddning (som i arkMenu) */
-    int ark4 = sys_ark_version() == 4, psp1000 = sys_is_psp1000(), go = sys_model() == 4;
-    if (ark4) {
-        if (g_cfw.clock_game > CLOCK_333) g_cfw.clock_game = CLOCK_333;
-        if (g_cfw.clock_vsh > CLOCK_333) g_cfw.clock_vsh = CLOCK_333;
-        if (g_cfw.highmem > 1) g_cfw.highmem = 1;
-        if (g_cfw.mscache > 1) g_cfw.mscache = 1;
+    c = &s_cats[PG_CONTROLS];
+    s_psp_circle = sys_confirm_is_circle() ? 1 : 0;
+    controls_psp_assignment(s_psp_circle); /* (what the PSP says may have changed since the start: the XMB, a game) */
+    {
+        Item *it;
+        choice(c, L(S_CTL_PSP_ASSIGN), &s_psp_circle, OPT_PSP_CONFIRM, 2);
+        it = &c->items[c->count - 1];
+        it->glyph = glyph_psp; it->set = set_psp; it->immediate = 1;
+        choice(c, L(S_CTL_CONFIRM), &g_ctl_confirm, OPT_BUTTON, CTL_COUNT);
+        it = &c->items[c->count - 1];
+        it->glyph = glyph_confirm; it->set = set_confirm; it->own = 1;
+        choice(c, L(S_BACK), &g_ctl_back, OPT_BUTTON, CTL_COUNT);
+        it = &c->items[c->count - 1];
+        it->glyph = glyph_back; it->set = set_back; it->own = 1;
+        /* Options and the power menu are one setting seen from both sides: START / SELECT, either way round */
+        choice(c, L(S_OPTIONS), &g_ctl_options, OPT_START_SELECT, 2);
+        c->items[c->count - 1].own = 1;
+        choice(c, L(S_CTL_POWER), &g_ctl_options, OPT_SELECT_START, 2);
+        c->items[c->count - 1].own = 1;
     }
-    int nclock = ark4 ? CLOCK_333 + 1 : N(OPT_CLOCK);
-    choice(c, L(S_CPU_GAME), &g_cfw.clock_game, OPT_CLOCK, nclock);
-    choice(c, L(S_CPU_XMB), &g_cfw.clock_vsh, OPT_CLOCK, nclock);
-    if (!psp1000) {
-        if (ark4)
-            toggle(c, L(S_EXTRA_MEM), &g_cfw.highmem);
-        else
-            choice(c, L(S_EXTRA_MEM), &g_cfw.highmem, OPT_HIGHMEM, N(OPT_HIGHMEM));
-    }
-    if (ark4)
-        toggle(c, L(S_MS_CACHE), &g_cfw.mscache);
-    else
-        choice(c, L(S_MS_CACHE), &g_cfw.mscache, OPT_MSCACHE, N(OPT_MSCACHE));
-    choice(c, L(S_ISO_CACHE), &g_cfw.infernocache, OPT_INFERNO, N(OPT_INFERNO));
 
-    c = &s_cats[CAT_SYSTEM];
-    c->name = L(S_CAT_SYSTEM);
+    c = &s_cats[PG_INFO];
+    fill_about(c);
+
+    c = &s_cats[PG_APPEAR];
+    toggle(c, L(S_THEME_ART), &g_theme_art);
+    c->items[c->count - 1].own = 1;
+    for (int i = 0; i < theme_count() && c->count < MAX_ITEMS; i++) {
+        Item *it = add(c, theme_get(i)->name, IT_THEME);
+        it->action = i;
+        it->own = 1;
+    }
+
+    c = &s_cats[PG_LANG];
+    for (int i = 0; i < LANG_COUNT; i++) {
+        Item *it = add(c, OPT_LANG[i], IT_LANG);
+        it->action = i;
+        it->own = 1;
+    }
+
+    /* ARK's own settings (SETTINGS.TXT): what the old System category had */
+    c = &s_cats[PG_ARK];
+    int ark4 = ark == 4, psp1000 = sys_is_psp1000(), go = sys_model() == 4;
     if (!psp1000)
         toggle(c, L(S_USB_CHARGE), &g_cfw.usbcharge);
     toggle(c, L(S_WPA2), &g_cfw.wpa2);
@@ -562,9 +579,31 @@ static void build(int rebuild)
     choice(c, L(S_UMD_REGION), &g_cfw.regionchange, OPT_UMDREG, N(OPT_UMDREG));
     choice(c, L(S_XMB_REGION), &g_cfw.vshregion, OPT_VSHREG, N(OPT_VSHREG));
 
-    c = &s_cats[CAT_PLUGINS];
-    c->name = L(S_CAT_PLUGINS);
-    c->desc = L(S_DESC_PLUGINS);
+    c = &s_cats[PG_PERF];
+    /* ARK-4 har bara Auto/133/222/333 och på/av för extra minne och minneskortscache;
+     * PSP-1000 har varken extra minne eller USB-laddning (som i arkMenu) */
+    if (ark4) {
+        if (g_cfw.clock_game > CLOCK_333) g_cfw.clock_game = CLOCK_333;
+        if (g_cfw.clock_vsh > CLOCK_333) g_cfw.clock_vsh = CLOCK_333;
+        if (g_cfw.highmem > 1) g_cfw.highmem = 1;
+        if (g_cfw.mscache > 1) g_cfw.mscache = 1;
+    }
+    int nclock = ark4 ? CLOCK_333 + 1 : N(OPT_CLOCK);
+    choice(c, L(S_CPU_GAME), &g_cfw.clock_game, OPT_CLOCK, nclock);
+    choice(c, L(S_CPU_XMB), &g_cfw.clock_vsh, OPT_CLOCK, nclock);
+    if (!psp1000) {
+        if (ark4)
+            toggle(c, L(S_EXTRA_MEM), &g_cfw.highmem);
+        else
+            choice(c, L(S_EXTRA_MEM), &g_cfw.highmem, OPT_HIGHMEM, N(OPT_HIGHMEM));
+    }
+    if (ark4)
+        toggle(c, L(S_MS_CACHE), &g_cfw.mscache);
+    else
+        choice(c, L(S_MS_CACHE), &g_cfw.mscache, OPT_MSCACHE, N(OPT_MSCACHE));
+    choice(c, L(S_ISO_CACHE), &g_cfw.infernocache, OPT_INFERNO, N(OPT_INFERNO));
+
+    c = &s_cats[PG_PLUGINS];
     for (int i = 0; i < plugins_count() && c->count < MAX_ITEMS; i++) {
         Plugin *p = plugins_get(i);
         if (!rebuild)
@@ -576,17 +615,6 @@ static void build(int rebuild)
     }
     if (!c->count)
         info(c, L(S_NO_PLUGINS), "");
-
-    /* Exit to XMB, Sleep, Shut down, Restart and Recovery menu are not here: they are the power popup of the SELECT button (power.c), on every screen */
-    c = &s_cats[CAT_MEMORY];
-    c->name = L(S_CAT_MEMORY);
-    action(c, L(S_FILES), SA_FILES);
-    action(c, L(S_USB_MODE), SA_USB);
-
-    c = &s_cats[CAT_ABOUT];
-    c->name = L(S_CAT_ABOUT);
-    c->desc = L(S_DESC_ABOUT);
-    fill_about(c);
 }
 
 void settings_open(void)
@@ -638,7 +666,8 @@ int settings_commit(void)
 /* --- uppdatering --- */
 
 /* The analog stick as a direction on each axis: -1, 0 or 1. It counts when it is pushed far (as in the other menus:
- * below 40, above 215) and only along the axis it is pushed furthest, so a diagonal push is one move, not two. */
+ * below 40, above 215) and only along the axis it is pushed furthest, so a diagonal push is one move, not two. Only up and down do
+ * anything in Settings (← and → are not used any more), but a push that is mostly sideways must not move the list. */
 static void stick_dir(const UiInput *in, int *dx, int *dy)
 {
     *dx = in->lx < 40 ? -1 : in->lx > 215 ? 1 : 0;
@@ -687,12 +716,9 @@ static void mark_dirty(const Item *it)
         S.cfw_dirty = 1;
 }
 
-/* Övre kanten för rad i i den högra listan (innan scroll). */
-static float row_y(const Category *c, int i);
-
 static float smooth(float t) { t = clampf(t, 0, 1); return t * t * (3 - 2 * t); }
 
-/* A new value for a choice. A new language changes every text, so the menu is built again. */
+/* A new value for a choice. */
 static void choice_set(Item *it, int v)
 {
     if (it->set)
@@ -700,22 +726,27 @@ static void choice_set(Item *it, int v)
     else
         *it->value = v;
     mark_dirty(it);
-    if (it->value == &g_lang_setting) {
-        lang_apply();
-        if (lang_needs_cjk())
-            font_ensure_cjk();
-        build(1);
-    }
+}
+
+/* A new language changes every text, so the menu is built again (the page, the row and the unsaved choices stay). */
+static void set_language(const Item *it)
+{
+    g_lang_setting = it->action;
+    mark_dirty(it);
+    lang_apply();
+    if (lang_needs_cjk())
+        font_ensure_cjk();
+    build(1);
 }
 
 /* ✕ on a choice opens a popup with all its values (the way the other popups work), the current one chosen. No arrow changes a value
  * any more, so a stray press while moving through the list can't change a setting. */
-static void pop_open(int cat, int item)
+static void pop_open(int page, int item)
 {
-    const Item *it = &s_cats[cat].items[item];
+    const Item *it = &s_cats[page].items[item];
     int vis = it->nopts < POP_ROWS ? it->nopts : POP_ROWS;
     S.pop = 1;
-    S.pop_cat = cat;
+    S.pop_page = page;
     S.pop_item = item;
     S.pop_sel = *it->value;
     S.pop_top = (int)clampf(S.pop_sel - vis / 2, 0, it->nopts - vis);
@@ -725,7 +756,7 @@ static void pop_open(int cat, int item)
 /* The popup: ↑ ↓ choose (a held direction repeats), ✕ takes the value, ○ closes it and keeps the old one. */
 static void pop_update(int move, u32 p)
 {
-    Item *it = &s_cats[S.pop_cat].items[S.pop_item];
+    Item *it = &s_cats[S.pop_page].items[S.pop_item];
     int vis = it->nopts < POP_ROWS ? it->nopts : POP_ROWS;
     if (move) {
         int next = (int)clampf(S.pop_sel + move, 0, it->nopts - 1);
@@ -748,6 +779,23 @@ static void pop_update(int move, u32 p)
     }
 }
 
+/* The page comes into view: the chosen row is kept (and is on the list), and the list starts where it was, or just enough further on to show the row. */
+static void page_enter(int page)
+{
+    const Category *c = &s_cats[page];
+    int *sel = &S.item[page], *top = &S.top[page];
+    if (page == PG_INFO) /* what it shows is asked of the PSP when it comes into view (the battery changes) */
+        fill_about(&s_cats[PG_INFO]);
+    if (*sel >= c->count)
+        *sel = c->count ? c->count - 1 : 0;
+    if (*sel < *top)
+        *top = *sel;
+    if (*sel > *top + LIST_ROWS - 1)
+        *top = *sel - (LIST_ROWS - 1);
+    S.page = page;
+    S.scroll = *top;
+}
+
 int settings_update(const UiInput *in, float dt)
 {
     S.open = clampf(S.open + dt * 5.0f, 0, 1);
@@ -755,186 +803,80 @@ int settings_update(const UiInput *in, float dt)
     if (S.toast_time > 0)
         S.toast_time -= dt;
 
-    Category *c = &s_cats[S.cat];
-    int *sel = &S.item[S.cat];
+    Category *c = &s_cats[S.page];
+    int *sel = &S.item[S.page];
     u32 p = in->pressed;
     int sx, sy;
     stick_dir(in, &sx, &sy);
-    if (sx != S.stick_x) { /* a push of the stick sideways is one press of ← / →, like on the D-pad */
-        if (sx < 0)
-            p |= PSP_CTRL_LEFT;
-        else if (sx > 0)
-            p |= PSP_CTRL_RIGHT;
-        S.stick_x = sx;
-    }
     int move = vertical(in, sy, dt);
 
     S.pop_anim = clampf(S.pop_anim + (S.pop ? 7 : -7) * dt, 0, 1);
     if (S.pop) { /* a choice's popup is open: it gets all the buttons (the list behind it goes on scrolling into place) */
         pop_update(move, p);
         S.pop_scroll = approach(S.pop_scroll, S.pop_top, 14.0f, dt);
-    } else if (S.focus == 0) {
-        if (move) {
-            int cat = (int)clampf(S.cat + move, 0, CAT_COUNT - 1);
-            if (cat != S.cat) {
-                sound_play(SND_MOVE);
-                if (cat == CAT_ABOUT) { /* what it shows is asked of the PSP when it comes into view (the battery changes) */
-                    fill_about(&s_cats[CAT_ABOUT]);
-                    if (S.item[CAT_ABOUT] >= s_cats[CAT_ABOUT].count)
-                        S.item[CAT_ABOUT] = s_cats[CAT_ABOUT].count - 1;
-                }
-            }
-            S.cat = cat;
-        }
-        if ((p & (PSP_CTRL_CROSS | PSP_CTRL_RIGHT)) && c->count) {
-            S.focus = 1;
-            sound_play(SND_SELECT);
-        }
-        if (p & PSP_CTRL_CIRCLE) { /* back */
-            sound_play(SND_BACK);
-            return SA_CLOSE;
-        }
     } else {
-        Item *it = &c->items[*sel];
-        if (move) {
+        if (move && c->count) {
             int next = (int)clampf(*sel + move, 0, c->count - 1);
             if (next != *sel)
                 sound_play(SND_MOVE);
             *sel = next;
-            it = &c->items[*sel];
         }
-        if ((p & PSP_CTRL_CROSS) && it->type == IT_CHOICE) {
-            pop_open(S.cat, *sel);
+        Item *it = c->count ? &c->items[*sel] : NULL;
+        if (it && (p & PSP_CTRL_CROSS) && it->type == IT_PAGE) {
             sound_play(SND_SELECT);
-        } else if ((p & PSP_CTRL_CROSS) && it->type == IT_THEME) {
+            page_enter(it->action);
+            sel = &S.item[S.page];
+        } else if (it && (p & PSP_CTRL_CROSS) && it->type == IT_CHOICE) {
+            pop_open(S.page, *sel);
+            sound_play(SND_SELECT);
+        } else if (it && (p & PSP_CTRL_CROSS) && it->type == IT_THEME) {
             if (g_theme != it->action) {
                 g_theme = it->action;
                 mark_dirty(it);
             }
             sound_play(SND_SELECT);
-        } else if ((p & PSP_CTRL_CROSS) && it->type == IT_TOGGLE) {
+        } else if (it && (p & PSP_CTRL_CROSS) && it->type == IT_LANG) {
+            if (g_lang_setting != it->action)
+                set_language(it);
+            sound_play(SND_SELECT);
+        } else if (it && (p & PSP_CTRL_CROSS) && it->type == IT_TOGGLE) {
             if (it->set)
                 it->set(!*it->value);
             else
                 *it->value = !*it->value;
             mark_dirty(it);
             sound_play(SND_SELECT);
-        } else if ((p & PSP_CTRL_CROSS) && it->type == IT_ACTION) {
+        } else if (it && (p & PSP_CTRL_CROSS) && it->type == IT_ACTION) {
             sound_play(SND_SELECT);
             sound_wait(400); /* låt ljudet höras innan något stängs */
             return it->action;
-        } else if (p & (PSP_CTRL_CIRCLE | PSP_CTRL_LEFT)) {
-            S.focus = 0;
+        } else if (p & PSP_CTRL_CIRCLE) { /* back: up one list, and out of Settings from the first one */
             sound_play(SND_BACK);
+            if (PARENT[S.page] < 0)
+                return SA_CLOSE;
+            page_enter(PARENT[S.page]);
+            sel = &S.item[S.page];
         }
     }
 
-    /* håll vald rad synlig */
-    float target = 0;
-    if (S.focus == 1 && c->count) {
-        float y = row_y(c, *sel);
-        float visible = LIST_BOTTOM - LIST_TOP - ROW_H;
-        if (y > visible)
-            target = y - visible;
-    }
-    S.scroll = approach(S.scroll, target, 14.0f, dt);
-    if (S.cat < S.cat_top) /* the left column scrolls when there are more categories than fit */
-        S.cat_top = S.cat;
-    if (S.cat > S.cat_top + VIS_CATS - 1)
-        S.cat_top = S.cat - (VIS_CATS - 1);
-    S.cat_scroll = approach(S.cat_scroll, S.cat_top, 14.0f, dt);
+    /* the list moves only when the chosen row would leave the screen (the file manager's way): the first row shown follows it */
+    int *top = &S.top[S.page];
+    if (*sel < *top)
+        *top = *sel;
+    if (*sel > *top + LIST_ROWS - 1)
+        *top = *sel - (LIST_ROWS - 1);
+    S.scroll += (*top - S.scroll) * clampf(dt * 16, 0, 1);
     return SA_NONE;
 }
 
 /* --- ritning --- */
 
-#define MAX_DESC_LINES 6
-static char s_desc[MAX_DESC_LINES][160];
-
-/* Radbryter beskrivningen till högerspaltens bredd. */
-/* Längd i byte på UTF-8-tecknet som börjar i p */
-static int utf8_len(const char *p)
-{
-    unsigned char c = (unsigned char)*p;
-    return c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
-}
-
-/* Radbryter beskrivningen till högerspaltens bredd. Bryter vid mellanslag, och
- * mellan enskilda tecken när ett "ord" inte får plats (japanska har inga mellanslag). */
-static int wrap_desc_now(const char *text)
-{
-    const float max_w = RIGHT_W - 8;
-    int lines = 0;
-    char line[sizeof(s_desc[0])] = "";
-    const char *p = text;
-    while (*p && lines < MAX_DESC_LINES) {
-        while (*p == ' ')
-            p++;
-        if (!*p)
-            break;
-        /* nästa ord */
-        const char *end = p;
-        while (*end && *end != ' ')
-            end += utf8_len(end);
-        char test[sizeof(line) * 2];
-        snprintf(test, sizeof(test), "%s%s%.*s", line, line[0] ? " " : "", (int)(end - p), p);
-        if (text_width(0.56f, 0, test) <= max_w && strlen(test) < sizeof(line)) {
-            snprintf(line, sizeof(line), "%s", test);
-            p = end;
-            continue;
-        }
-        if (line[0]) { /* ordet får inte plats – ny rad */
-            snprintf(s_desc[lines++], sizeof(s_desc[0]), "%s", line);
-            line[0] = 0;
-            continue;
-        }
-        /* ordet är bredare än raden: ta så många tecken som får plats */
-        int n = 0;
-        while (p + n < end) {
-            int l = utf8_len(p + n);
-            snprintf(test, sizeof(test), "%.*s", n + l, p);
-            if (n && (text_width(0.56f, 0, test) > max_w || n + l >= (int)sizeof(line)))
-                break;
-            n += l;
-        }
-        snprintf(s_desc[lines++], sizeof(s_desc[0]), "%.*s", n, p);
-        p += n;
-    }
-    if (line[0] && lines < MAX_DESC_LINES)
-        snprintf(s_desc[lines++], sizeof(s_desc[0]), "%s", line);
-    return lines;
-}
-
-static int wrap_desc(const char *text)
-{
-    if (text != s_wrapped) {
-        s_wrapped_n = wrap_desc_now(text);
-        s_wrapped = text;
-    }
-    return s_wrapped_n;
-}
-
-static float desc_line_h(void)
-{
-    return lang_needs_cjk() ? 15.0f : 13.0f;
-}
-
-static float desc_height(const Category *c)
-{
-    return c->desc ? wrap_desc(c->desc) * desc_line_h() + 10 : 0;
-}
-
-static float row_y(const Category *c, int i)
-{
-    return desc_height(c) + i * ROW_H;
-}
-
 /* Temat som visas: det markerade i temalistan (förhandsvisning), annars det valda */
 static const Theme *shown_theme(void)
 {
-    const Category *c = &s_cats[CAT_THEME];
-    const Item *it = &c->items[S.item[CAT_THEME]];
-    if (S.cat == CAT_THEME && S.focus == 1 && S.item[CAT_THEME] < c->count && it->type == IT_THEME)
+    const Category *c = &s_cats[PG_APPEAR];
+    const Item *it = &c->items[S.item[PG_APPEAR]];
+    if (S.page == PG_APPEAR && S.item[PG_APPEAR] < c->count && it->type == IT_THEME)
         return theme_get(it->action);
     return theme_cur();
 }
@@ -951,10 +893,49 @@ static void draw_toggle(float x, float y, int on, u32 on_color, float a)
     gfx_circle(on ? x + 19 : x + 7, y + 7, 5, fade(on ? LIGHT : RGBA(196, 196, 202, 255), a));
 }
 
-static void draw_item(const Item *it, float y, int selected, const Theme *shown, float a)
+/* The icon of a category, in a box of 16 x 16 round (cx, cy) */
+static void draw_icon(int icon, float cx, float cy, float a)
 {
-    float right = RIGHT_X + RIGHT_W - 8;
+    u32 hi = fade(LIGHT, a), mid = fade(RGBA(186, 188, 198, 255), a), lo = fade(RGBA(120, 122, 134, 255), a), dark = fade(RGBA(38, 40, 48, 255), a);
+    switch (icon) {
+    case ICO_APP: /* the PlayStation logo of the start screen, 12 high and as wide as it is, in the middle */
+        gfx_logo((int)cx - icon_logo_width(12) / 2, (int)cy - 6, 12, hi);
+        break;
+    case ICO_NETWORK:
+        gfx_wifi(cx, cy, 7, hi);
+        break;
+    case ICO_SYSTEM: /* a cube: three faces, soft edged */
+        gfx_cube(cx, cy, 8, hi);
+        break;
+    case ICO_STORAGE: /* a drive: a can with a lighter lid */
+        gfx_round_rect(cx - 6, cy + 1, 12, 7, 3, lo);
+        gfx_rect(cx - 6, cy - 4, 12, 8, lo);
+        gfx_round_rect(cx - 6, cy - 8, 12, 7, 3, hi);
+        break;
+    case ICO_SCREEN: /* a screen on its foot */
+        gfx_round_rect(cx - 8, cy - 7, 16, 11, 2, hi);
+        gfx_rect(cx - 6, cy - 5, 12, 7, dark);
+        gfx_rect(cx - 1, cy + 4, 2, 3, mid);
+        gfx_rect(cx - 4, cy + 7, 8, 1, mid);
+        break;
+    case ICO_CONTROLS: /* a controller: the pad, two buttons */
+        gfx_round_rect(cx - 8, cy - 4, 16, 9, 4, hi);
+        gfx_rect(cx - 6, cy - 1, 5, 3, dark);
+        gfx_rect(cx - 5, cy - 2, 3, 5, dark);
+        gfx_circle(cx + 2, cy - 1, 1, dark);
+        gfx_circle(cx + 5, cy + 1, 1, dark);
+        break;
+    }
+}
+
+static void draw_item(const Item *it, float y, const Theme *shown, float a)
+{
+    float right = LIST_X + LIST_W - 10, left = LIST_X + 8;
     char value[64] = "";
+    if (it->icon) {
+        draw_icon(it->icon, LIST_X + 8 + 10, y + ROW_H / 2, a);
+        left += ICON_W;
+    }
     switch (it->type) {
     case IT_TOGGLE:
         draw_toggle(right - 26, y + 6, *it->value != 0, theme_toggle_on(shown), a);
@@ -974,11 +955,13 @@ static void draw_item(const Item *it, float y, int selected, const Theme *shown,
     case IT_INFO:
         snprintf(value, sizeof(value), "%s", it->info);
         break;
-    case IT_THEME: {
+    case IT_THEME:
         /* liten förhandsvisning, och en bock för temat som används */
         theme_swatch(theme_get(it->action), right - 40, y + 5, 40, 16, a);
         right -= 48;
-        if (it->action == g_theme) {
+        /* fall through */
+    case IT_LANG:
+        if ((it->type == IT_THEME ? it->action == g_theme : it->action == g_lang_setting)) {
             float cx = right - 6, cy = y + 13;
             float xy[6] = { cx - 5, cy, cx - 1.5f, cy + 3.5f, cx + 5, cy - 4 };
             u32 col[3] = { fade(LIGHT, a), fade(LIGHT, a), fade(LIGHT, a) };
@@ -986,19 +969,19 @@ static void draw_item(const Item *it, float y, int selected, const Theme *shown,
             right -= 16;
         }
         break;
-    }
     case IT_ACTION:
-        break; /* an action has no value to show */
+    case IT_PAGE:
+        break; /* an action, or a page, has no value to show */
     }
     float value_w = 0;
     if (value[0]) {
-        float vs = text_fit(0.58f, 0.46f, 0, RIGHT_W * 0.55f, value);
+        float vs = text_fit(0.58f, 0.46f, 0, LIST_W * 0.55f, value);
         value_w = text_width(vs, 0, value) + 12;
         text_draw(right, y + 17, vs, 0, fade(TEXT_DIM, a), ALIGN_RIGHT, value);
     }
     /* långa etiketter (t.ex. tyska, japanska) krymper i stället för att krocka med värdet */
-    float ls = text_fit(0.62f, 0.48f, 0, right - value_w - (RIGHT_X + 8), it->label);
-    text_draw(RIGHT_X + 8, y + 17, ls, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, it->label);
+    float ls = text_fit(it->icon ? 0.7f : 0.62f, 0.48f, 0, right - value_w - left, it->label);
+    text_draw(left, y + 17, ls, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, it->label);
 }
 
 /* The popup of a choice, in the middle of the screen and rising into place like the power popup: the values one under the other, the
@@ -1008,7 +991,7 @@ static void draw_popup(void)
     float a = smooth(S.pop_anim);
     if (a <= 0)
         return;
-    const Item *it = &s_cats[S.pop_cat].items[S.pop_item];
+    const Item *it = &s_cats[S.pop_page].items[S.pop_item];
     int n = it->nopts, vis = n < POP_ROWS ? n : POP_ROWS, bar = n > vis;
     float w = 200;
     for (int k = 0; k < n; k++) {
@@ -1054,64 +1037,42 @@ void settings_draw(void)
 {
     float a = S.open;
     float slide = (1 - a) * 10;
-    const Category *c = &s_cats[S.cat];
+    const Category *c = &s_cats[S.page];
 
     gfx_begin(RGBA(20, 20, 24, 255));
     const Theme *shown = shown_theme();
     draw_background(shown);
-    text_draw(LEFT_X + 4 + slide, TITLE_Y, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_SETTINGS));
-
-    /* kategorier (more than fit: the column scrolls, the rows at its ends fade, and a small arrow says there are more) */
-    for (int i = 0; i < CAT_COUNT; i++) {
-        float y = LIST_TOP + (i - S.cat_scroll) * 30;
-        float edge = clampf((y - (LIST_TOP - ROW_H)) / ROW_H, 0, 1) * clampf((LIST_TOP + VIS_CATS * 30 - y) / ROW_H, 0, 1);
-        if (edge <= 0)
-            continue;
-        float ca = a * edge;
-        int selected = i == S.cat;
-        float ta = selected ? 1.0f : S.focus ? 0.42f : 0.8f;
-        if (selected && S.focus == 0) {
-            gfx_rect(LEFT_X, y, LEFT_W, ROW_H, RGBA(255, 255, 255, (int)(16 * ca)));
-            gfx_frame(LEFT_X, y, LEFT_W, ROW_H, 1, fade(RGBA(232, 232, 236, 230), ca));
-        }
-        float cs = text_fit(0.66f, 0.5f, 0, LEFT_W - 16, s_cats[i].name);
-        text_draw(LEFT_X + 8 + slide, y + 17.5f, cs, 0, fade(TEXT_MAIN, ca * ta), ALIGN_LEFT, s_cats[i].name);
-    }
-    for (int dir = -1; dir <= 1; dir += 2) { /* ˄ above and ˅ below, when there are more categories that way */
-        if (dir < 0 ? S.cat_top <= 0 : S.cat_top + VIS_CATS >= CAT_COUNT)
-            continue;
-        float cx = LEFT_X + LEFT_W / 2, cy = dir < 0 ? LIST_TOP - 8 : LIST_TOP + VIS_CATS * 30 + 4;
-        float xy[6] = { cx - 5, cy - dir * 2, cx, cy + dir * 2, cx + 5, cy - dir * 2 };
-        u32 col[3] = { fade(TEXT_DIM, a), fade(TEXT_DIM, a), fade(TEXT_DIM, a) };
-        gfx_stroke(xy, col, 3, 1.6f);
+    /* the title: Settings on the first list, else where you are (System > Appearance) */
+    {
+        char title[96];
+        if (S.page == PG_ROOT)
+            snprintf(title, sizeof(title), "%s", L(S_SETTINGS));
+        else if (PARENT[S.page] == PG_ROOT)
+            snprintf(title, sizeof(title), "%s", c->name);
+        else
+            snprintf(title, sizeof(title), "%s > %s", s_cats[PARENT[S.page]].name, c->name);
+        text_draw(LIST_X + 4 + slide, TITLE_Y, text_fit(0.95f, 0.6f, 0, LIST_W - 8, title), 0, fade(TEXT_MAIN, a), ALIGN_LEFT, title);
     }
 
-    /* alternativ */
-    float top = LIST_TOP - S.scroll;
-    if (c->desc) {
-        int n = wrap_desc(c->desc);
-        for (int l = 0; l < n; l++) {
-            float y = top + l * desc_line_h() + 9;
-            if (y > LIST_TOP - 4 && y < LIST_BOTTOM)
-                text_draw(RIGHT_X + 8 + slide, y, 0.56f, 0, fade(TEXT_DIM, a), ALIGN_LEFT, s_desc[l]);
+    /* the rows: as in the file manager, a frame round the chosen one, a thin line between the others, the rows that are partly out of the list cut */
+    int sel = S.item[S.page];
+    gfx_clip(0, LIST_TOP - 2, SCREEN_W, LIST_ROWS * ROW_H + 4);
+    for (int i = (int)S.scroll; i < c->count && i <= (int)S.scroll + LIST_ROWS; i++) {
+        float y = LIST_TOP + (i - S.scroll) * ROW_H;
+        if (i == sel) {
+            gfx_rect(LIST_X, y, LIST_W, ROW_H, RGBA(255, 255, 255, (int)(16 * a)));
+            gfx_frame(LIST_X, y, LIST_W, ROW_H, 1, fade(RGBA(232, 232, 236, 230), a));
+        } else if (i < c->count - 1 && i + 1 != sel) {
+            float x0 = LIST_X + (c->items[i].icon ? 8 + ICON_W : 4);
+            gfx_rect(x0, y + ROW_H - 1, LIST_X + LIST_W - 4 - x0, 1, RGBA(255, 255, 255, (int)(26 * a)));
         }
+        draw_item(&c->items[i], y, shown, a);
     }
-    for (int i = 0; i < c->count; i++) {
-        float y = top + row_y(c, i);
-        if (y < LIST_TOP - ROW_H || y > LIST_BOTTOM)
-            continue;
-        /* tona ut rader som glider ut ur listan */
-        float edge = clampf((y - (LIST_TOP - ROW_H * 0.6f)) / (ROW_H * 0.6f), 0, 1) *
-                     clampf((LIST_BOTTOM - y) / (ROW_H * 0.6f), 0, 1);
-        float ra = a * edge;
-        int selected = S.focus == 1 && i == S.item[S.cat];
-        if (selected) {
-            gfx_rect(RIGHT_X, y, RIGHT_W, ROW_H, RGBA(255, 255, 255, (int)(16 * ra)));
-            gfx_frame(RIGHT_X, y, RIGHT_W, ROW_H, 1, fade(RGBA(232, 232, 236, 230), ra));
-        } else if (i < c->count - 1 && !(S.focus == 1 && i + 1 == S.item[S.cat])) {
-            gfx_rect(RIGHT_X + 4, y + ROW_H - 1, RIGHT_W - 8, 1, RGBA(255, 255, 255, (int)(26 * ra)));
-        }
-        draw_item(&c->items[i], y, selected, shown, ra);
+    gfx_clip_reset();
+    if (c->count > LIST_ROWS) { /* the bar at the right: where the shown part is in the whole list (the file manager's) */
+        float h = LIST_ROWS * ROW_H, th = clampf(h * LIST_ROWS / c->count, 12, h);
+        float ty = LIST_TOP + (h - th) * S.scroll / (c->count - LIST_ROWS);
+        gfx_round_rect(LIST_X + LIST_W + 6, ty, 3, th, 1.5f, fade(RGBA(255, 255, 255, 70), a));
     }
 
     draw_popup();

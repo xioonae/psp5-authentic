@@ -624,6 +624,35 @@ void gfx_wifi(float cx, float cy, float r, u32 color)
     }
 }
 
+/* a quad in one colour (the corners go 1, 2, 4, 3: gfx_quad draws a strip) */
+static void flat_quad(const float *xy, u32 color)
+{
+    const u32 c[4] = { color, color, color, color };
+    gfx_quad(xy, c);
+}
+
+/* The cube in a box of side 2 r centred on (cx, cy): one image like the cog wheel (see cube_render in icons.c). The old way, when there is no room for
+ * the image, is three flat faces of the same brightnesses. */
+void gfx_cube(float cx, float cy, float r, u32 color)
+{
+    IconBox b;
+    float rq = quarter(r);
+    icon_box(ICON_CUBE, cx, cy, 0, 0, rq, &b);
+    const Texture *tex = icon_get(ICON_CUBE, 0, 0, rq, &b);
+    if (tex) {
+        icon_blit(tex, &b, color);
+        return;
+    }
+    const float w = 0.875f * r, h = 0.5f * r;
+    const float top[8] = { cx, cy - r, cx + w, cy - h, cx - w, cy - h, cx, cy };
+    const float left[8] = { cx - w, cy - h, cx, cy, cx - w, cy + h, cx, cy + r };
+    const float right[8] = { cx, cy, cx + w, cy - h, cx, cy + r, cx + w, cy + h };
+    const u32 a = (color >> 24) & 255;
+    flat_quad(top, color);
+    flat_quad(left, COLOR_ALPHA(color, a * 199 / 255));
+    flat_quad(right, COLOR_ALPHA(color, a * 128 / 255));
+}
+
 /* The straight back edge is put on a whole pixel line (it moves by half a pixel at most, and the width is
  * a whole number of pixels), so only the two slanted sides need smoothing. */
 void gfx_triangle(float x, float y, float w, float h, int dir, u32 color)

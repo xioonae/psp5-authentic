@@ -1,16 +1,16 @@
 # Changelog
 
-All notable changes of **psp5-authentic**, a fork of [psp5](https://github.com/08Weber/psp5) by Mille Weber (08Weber).
+All notable changes of **psp5 authentic**, a fork of [psp5](https://github.com/08Weber/psp5), originally made by Mille Weber (08Weber) and forked by Xioonae.
 Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ## Unreleased
 
 ### Network
 
-- **New: FTP Server** (*Settings → Network → FTP Server*). Copy files to and from the PSP over Wi-Fi: type the address that psp5 shows into an FTP program or into the file manager of your
+- **New: FTP Server** (*Settings → Network → FTP Server*). Copy files to and from the PSP over Wi-Fi: type the address that psp5 authentic shows into an FTP program or into the file manager of your
   computer. The screen is made like USB Mode: it shows the address, whether a computer is connected, and the file that is being sent or received. ○ stops it, and you are back in Settings
   on the same row.
-  - psp5 opens the PSP's own Wi-Fi window (the one games show, the same as *Settings → Network → Wi-Fi connection*). Choose one of your saved connections there (the ones from the XMB: *Settings → Network Settings*); psp5
+  - psp5 authentic opens the PSP's own Wi-Fi window (the one games show, the same as *Settings → Network → Wi-Fi connection*). Choose one of your saved connections there (the ones from the XMB: *Settings → Network Settings*); psp5 authentic
     then starts the server. If the Wi-Fi switch is off, the screen says so and opens the window when you switch it on. If you close the window without choosing (or a connection fails or is lost), the screen says that the
     FTP server is not running: ✕ *Start* opens the window again, ○ goes back.
   - The computer sees `ms0` (the Memory Stick) and, on a PSP Go, `ef0`. Nothing else of the PSP can be reached (not flash0, not flash1).
@@ -23,8 +23,8 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 - **New sorting: Recently played.** The Sort button has a third choice. It shows the games in the **same order as the Games tab**: the ones you played last first. After them come
   the other games you have played, and last the games you have not played yet, the newest first. A folder goes by the best game in it, and the disc is always first. The cards you
   pinned stand first in the Games tab only. It is kept in `psp5.cfg` like the other sortings.
-- **psp5 now remembers when you played each game** (`lastplayed.txt` in psp5's folder). It notes the time when psp5 starts a game, and with ARK the helper plugin of *Time played*
-  tells it about games you started from the XMB (psp5 learns it the next time it starts). Games you played before this version have no time yet, but they keep their place in the
+- **psp5 authentic now remembers when you played each game** (`lastplayed.txt` in psp5 authentic's folder). It notes the time when psp5 authentic starts a game, and with ARK the helper plugin of *Time played*
+  tells it about games you started from the XMB (psp5 authentic learns it the next time it starts). Games you played before this version have no time yet, but they keep their place in the
   Games tab and in *Recently played*.
 
 ### Power menu
@@ -33,21 +33,35 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   *Shut down*, *Restart* and *Recovery Menu* are **gone from Settings**: the power menu has them.
 - **SELECT opens the power menu on every screen**, not only in Games, Library and Music: also in *Settings*, *Information*, *Manage Saved Data*, the *File Manager* and the *USB* screen. Sleep keeps you where you are;
   Exit to XMB, Shut down, Restart and Recovery menu close the screen first (from the USB screen USB is stopped first). It does not open while the screen has a popup of its own open or a job running (a copy, a move or a
-  delete), so nothing is left half done. The PSP's own Wi-Fi screen and the start-up screen are not psp5's and keep their own buttons.
+  delete), so nothing is left half done. The PSP's own Wi-Fi screen and the start-up screen are not psp5 authentic's and keep their own buttons.
 
 ### Information
 
-- **New row: Last played** (date and time), right under *Modified*. It is there for every game and app psp5 knows a time for, **also for the UMD disc in the drive** (by its disc ID,
-  from psp5 or from the XMB, like the time played, which the disc already had). Games you played before this version, games you never played and a disc without a disc ID have no such row.
+- **New row: Last played** (date and time), right under *Modified*. It is there for every game and app psp5 authentic knows a time for, **also for the UMD disc in the drive** (by its disc ID,
+  from psp5 authentic or from the XMB, like the time played, which the disc already had). Games you played before this version, games you never played and a disc without a disc ID have no such row.
 
 ### Settings
 
-- **New category: Memory**, with the *File Manager* and *USB Mode* (in that order). *Power and USB* is gone (its power rows are in the power menu, see above).
-- **Closing the File Manager or USB Mode brings you back to Settings → Memory**, on the row you came from (before, to the main screen). The Wi-Fi screen already did this.
+- **Settings look like the console's.** One list at a time instead of two columns: the first list has six pages, each with an icon, and Confirm opens one; Back goes back one list, and Back on the first list closes
+  Settings. The list scrolls like the file manager's and Manage Saved Data's: the highlight moves down the rows you can see and the list only moves when the highlight would leave the screen (before, the list kept the
+  highlight on the last row and moved with every step, both up and down). A thin bar at the right shows where you are in a long list. The short description at the top of each page is gone. **← and → do nothing in Settings any more** (the D-pad and the analog stick sideways): with one list at a time they had nothing left to do; ✕ opens, ○ goes back, ↑ ↓ move.
+- **New order and names.** The first list is *psp5 authentic*, *Network*, *System*, *Storage* (was *Memory*), *Screen and Sound* (was *Display and Sound*) and *Controls*. The new names are in all 11 languages.
+- **System** is a list of six pages that were categories of their own: *Console Information* (was *About*), *Appearance* (was *Theme*), *Language* (it was a row in the *psp5* category; now a page with the 11 languages, Confirm chooses one),
+  *ARK-5 Settings* or *ARK-4 Settings* (the old *System* category: USB charge, WPA2, hide pictures and so on; it is called after the ARK your PSP has), *Performance* and *Plugins*.
+- **The title says where you are**, for example *System > Appearance*.
+- **Console Information** says where the app comes from: *Made by 08Weber* and *Forked by Xioonae*, under the version number.
+- **New category: Storage**, with the *File Manager* and *USB Mode* (in that order). *Power and USB* is gone (its power rows are in the power menu, see above).
+- **Closing the File Manager or USB Mode brings you back to Settings → Storage**, on the row you came from (before, to the main screen). The Wi-Fi screen already did this.
 - **The switch is called *Show Game art*** now (it was *Game art in the background*), in all 11 languages.
 - **Three themes are gone:** *Starlight Blue*, *Chroma Indigo* and *Chroma Pearl* looked almost like *Cobalt Blue*, *Galactic Purple* and *Sterling Silver*. If you had chosen one of
-  them, psp5 starts with the PS5 theme instead.
+  them, psp5 authentic starts with the PS5 theme instead.
 - **Shut down** is written with a small d again (the other names keep their capitals).
+
+### The name
+
+- **The app is called psp5 authentic** wherever you can see it: its name in the XMB (*Game → Memory Stick*) and the picture next to it, the texts of the menus in all 11 languages (*Boot into psp5 authentic*,
+  *psp5 authentic is ARK's launcher*), the greeting of the FTP server, and the documents. The folders and files (`PSP/GAME/PSP5`, `PSP5`, `psp5.cfg`, `psp5time.prx`) keep their names, so an installed version keeps
+  its settings, play times and covers.
 
 ### Games
 
@@ -55,7 +69,7 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   order of the Library's *Recently played* (the ones you played before, then the ones added last). A game you copy onto the PSP shows up on Home by itself, without waiting to be played.
   *Remove from Home* still works: a game you take off does not come back until you start it, add it or pin it again, and the next game fills its place. (Games you took off
   Home with an earlier version were not written down, so they can show up again: take them off once more.)
-- **Games you played from the XMB move to the front of Home** when psp5 starts, the one you played last in front (before, only the games started from psp5 did).
+- **Games you played from the XMB move to the front of Home** when psp5 authentic starts, the one you played last in front (before, only the games started from psp5 authentic did).
 
 ## 1.2.0 – Controls, new Settings pages, folders in the Library and time played
 

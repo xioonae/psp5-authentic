@@ -4,11 +4,11 @@
     py tools/make_release.py 1.2.0
 
 Makes release/psp5-authentic-v<version>-ARK5.zip, -ARK4.zip, -PSPGo-ARK5.zip and -PSPGo-ARK4.zip with
-    PSP/GAME/PSP5/EBOOT.PBP     - psp5 as a normal app
+    PSP/GAME/PSP5/EBOOT.PBP     - psp5 authentic as a normal app
     ARK_LAUNCHER/VBOOT.PBP      - the same file, to replace ARK's launcher (see INSTALL.md)
-    PSP5/sounds/*.wav           - recorded interface sounds from res/sounds (if they are missing psp5 plays its built-in ones)
+    PSP5/sounds/*.wav           - recorded interface sounds from res/sounds (if they are missing psp5 authentic plays its built-in ones)
     READ ME.txt                 - a short note on which PSP and ARK the zip is for
-The PSP Go zips have the same EBOOT - psp5 detects the internal storage (ef0:) by itself.
+The PSP Go zips have the same EBOOT - psp5 authentic detects the internal storage (ef0:) by itself.
 Build first with tools/build.sh (ARK-5) and tools/build.sh ark4 (ARK-4).
 """
 import os
@@ -17,18 +17,18 @@ import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-README = """psp5-authentic v{version} for {ark}
-A fork of psp5 v1.5.3 by Mille Weber - https://github.com/08Weber/psp5
+README = """psp5 authentic v{version} for {ark}
+A fork of psp5 v1.5.3, originally made by Mille Weber (https://github.com/08Weber/psp5), forked by Xioonae
 
 This zip is for PSPs running {ark} (PSP-1000, PSP-2000 and PSP-3000).
 {other}
 
 Install:
   1. Copy the PSP and PSP5 folders onto your PSP's memory stick (merge folders).
-     (PSP5 holds the sounds. Without it psp5 plays its built-in sounds instead.)
-  2. Start psp5 from Game -> Memory Stick.
+     (PSP5 holds the sounds. Without it psp5 authentic plays its built-in sounds instead.)
+  2. Start psp5 authentic from Game -> Memory Stick.
 
-Optional - use psp5 as ARK's launcher:
+Optional - use psp5 authentic as ARK's launcher:
   rename PSP/SAVEDATA/ARK_01234/VBOOT.PBP to VBOOT_ARKMENU.PBP, then copy
   ARK_LAUNCHER/VBOOT.PBP from this zip into PSP/SAVEDATA/ARK_01234/.
 
@@ -38,8 +38,8 @@ Stuck? Hold SELECT while turning on the PSP - ARK then starts the normal XMB.
 Full guide: INSTALL.md in the project's repository.
 """
 
-README_GO = """psp5-authentic v{version} for the PSP Go with {ark}
-A fork of psp5 v1.5.3 by Mille Weber - https://github.com/08Weber/psp5
+README_GO = """psp5 authentic v{version} for the PSP Go with {ark}
+A fork of psp5 v1.5.3, originally made by Mille Weber (https://github.com/08Weber/psp5), forked by Xioonae
 
 This zip is for the PSP Go (PSP-N1000) running {ark}.
 {other}
@@ -47,13 +47,13 @@ This zip is for the PSP Go (PSP-N1000) running {ark}.
 Install:
   1. Connect the PSP Go with USB (Settings -> USB Connection).
   2. Copy the PSP and PSP5 folders onto the PSP Go's internal storage (merge folders).
-     (PSP5 holds the sounds. Without it psp5 plays its built-in sounds instead.)
-  3. Start psp5 from Game -> System Storage.
+     (PSP5 holds the sounds. Without it psp5 authentic plays its built-in sounds instead.)
+  3. Start psp5 authentic from Game -> System Storage.
 
 Games: ISO/CSO/ZSO/DAX in ISO, homebrew, PSN and PS1 games in PSP/GAME, music in MUSIC -
 on the internal storage or on a Memory Stick Micro (M2).
 
-Optional - use psp5 as ARK's launcher:
+Optional - use psp5 authentic as ARK's launcher:
   rename PSP/SAVEDATA/ARK_01234/VBOOT.PBP to VBOOT_ARKMENU.PBP, then copy
   ARK_LAUNCHER/VBOOT.PBP from this zip into PSP/SAVEDATA/ARK_01234/
   (on the internal storage).
