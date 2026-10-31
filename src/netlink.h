@@ -2,16 +2,9 @@
 #ifndef NETLINK_H
 #define NETLINK_H
 
-/* Connects the PSP to one of its saved Wi-Fi connections (the ones made in the XMB: Settings > Network Settings > Infrastructure Mode), without any screen of the system's:
- * psp5 shows the list and the progress itself (ftpscreen.c). Nothing here waits; the screen asks every frame. Everything that was started is stopped again by
- * netlink_stop(), so the PSP is not left connected. */
-
-#define NETLINK_MAX 32 /* the most connections that are listed */
-
-typedef struct {
-    int id;        /* the number of the connection (1 ...) */
-    char name[48]; /* its name, as it was saved */
-} NetConn;
+/* Starts and stops the network libraries and watches the connection that the PSP's own Wi-Fi window (wifi.c, wifi_connect) has made: the player chooses the saved
+ * connection there, the system connects. Nothing here waits; the screen asks every frame (ftpscreen.c). Everything that was started is stopped again by netlink_stop(),
+ * so the PSP is not left connected. */
 
 enum { LINK_CONNECTING, LINK_UP, LINK_FAILED };
 
@@ -21,14 +14,11 @@ int netlink_switch_on(void);
 /* Starts the network libraries. 1 = it is done (or was), 0 = it could not be (no memory, the modules would not load). Call netlink_stop() in any case afterwards. */
 int netlink_start(void);
 
-/* The saved connections, in the PSP's order; returns how many (at most `max`). The libraries must be started. */
-int netlink_connections(NetConn *out, int max);
+/* The libraries are started and the system's window has connected the PSP: from now on netlink_state() watches that connection. */
+void netlink_attach(void);
 
-/* Starts connecting to the connection `id`. 1 = it was started (ask netlink_state() every frame), 0 = no. `now_ms` = a clock in milliseconds. */
-int netlink_connect(int id, unsigned now_ms);
-
-/* LINK_CONNECTING while it joins and asks for an address (a minute at most), LINK_UP when the PSP has its address (netlink_ip()), LINK_FAILED when it could not connect or when
- * the connection was lost afterwards. */
+/* LINK_CONNECTING while the connection is not there yet (a minute at most), LINK_UP when the PSP has its address (netlink_ip()), LINK_FAILED when there is no connection
+ * or when it was lost afterwards. `now_ms` = a clock in milliseconds. */
 int netlink_state(unsigned now_ms);
 
 /* The address of the PSP, "192.168.1.23" ("" while there is none). */

@@ -10,7 +10,8 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 - **New: FTP Server** (*Settings → Network → FTP Server*). Copy files to and from the PSP over Wi-Fi: type the address that psp5 shows into an FTP program or into the file manager of your
   computer. The screen is made like USB Mode: it shows the address, whether a computer is connected, and the file that is being sent or received. ○ stops it, and you are back in Settings
   on the same row.
-  - psp5 connects to one of your saved Wi-Fi connections (the ones from the XMB: *Settings → Network Settings*). With one connection it connects by itself; with several you choose.
+  - psp5 opens the PSP's own Wi-Fi window (the one games show, the same as *Settings → Network → Wi-Fi connection*). Choose one of your saved connections there (the ones from the XMB: *Settings → Network Settings*); psp5
+    then starts the server. If the Wi-Fi switch is off, the screen says so and opens the window when you switch it on.
   - The computer sees `ms0` (the Memory Stick) and, on a PSP Go, `ef0`. Nothing else of the PSP can be reached (not flash0, not flash1).
   - **There is no password:** any user name and password work, so use it on your own network. It uses passive mode, which FTP programs, Windows Explorer and curl do by default.
   - Download, upload, resume, rename, delete and new folders work. Up to three computers can be connected at the same time. The PSP does not go to sleep while it runs.

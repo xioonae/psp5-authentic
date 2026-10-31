@@ -81,7 +81,7 @@ wherever it can, but it doesn't copy the console in everything.
   on. At the very end of the top bar is the cog wheel.
 - **File Manager** (*Settings → Memory*). Browse the Memory Stick (and the internal storage on a PSP Go) and copy,
   move, rename, delete or make folders.
-- **FTP Server** (*Settings → Network → FTP Server*). Copy files to and from the PSP over Wi-Fi: psp5 connects to one of your saved Wi-Fi connections and shows the address to type
+- **FTP Server** (*Settings → Network → FTP Server*). Copy files to and from the PSP over Wi-Fi: the PSP's own Wi-Fi window opens so that you choose one of your saved connections, and psp5 shows the address to type
   into an FTP program or the file manager of your computer. It shows who is connected and the file that is going. There is no password, so use it on your own network.
 - **Sounds and languages.** Menu sounds (you can turn them off). 11 languages: psp5 follows the PSP's language; Swedish and
   Czech are picked under *Settings → psp5 → Language*.

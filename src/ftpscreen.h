@@ -4,22 +4,20 @@
 
 #include "ui.h"
 
-/* The screen, in the style of USB Mode: the PSP connects to a saved Wi-Fi connection (the list is shown when there are several), starts the FTP server (ftp.c) and shows the
- * address to type on the computer, whether a computer is connected and the file that is going. ○ stops it. main.c runs it in its own loop (ftp_mode): it asks for the
- * buttons, calls ftpscreen_update() and ftpscreen_draw() every frame and ftpscreen_close() when it is over. */
+/* The screen, in the style of USB Mode: the PSP's own Wi-Fi window opens (the one games show; the player chooses a saved connection there and the system connects),
+ * then the FTP server (ftp.c) starts and the screen shows the address to type on the computer, whether a computer is connected and the file that is going. ○ stops it.
+ * main.c runs it in its own loop (ftp_mode): it asks for the buttons, calls ftpscreen_update() and ftpscreen_draw() every frame and ftpscreen_close() when it is over. */
 
 typedef enum {
-    FTPS_START,      /* the first frame: the Wi-Fi switch, the network libraries, the connections */
-    FTPS_SWITCH_OFF, /* the Wi-Fi switch of the PSP is off (waits until it is on) */
-    FTPS_NO_CONN,    /* there is no saved connection */
-    FTPS_CHOOSE,     /* the list of the connections */
-    FTPS_CONNECTING, /* joining the network */
+    FTPS_START,      /* the first frames, before the PSP's window opens (it takes a moment) */
+    FTPS_SWITCH_OFF, /* the window did not give a connection and the Wi-Fi switch of the PSP is off (waits until it is on, then opens the window again) */
+    FTPS_CONNECTING, /* the window has made the connection: waiting for the address */
     FTPS_RUNNING,    /* the server runs */
     FTPS_FAILED,     /* a message and nothing more: the network could not be started, the connection failed or was lost, the server could not start */
 } FtpScreenPhase;
 
-/* Before the screen is shown. */
-void ftpscreen_open(void);
+/* Before the screen is shown. `running` = main.c's flag that becomes 0 when the PSP is to quit (HOME): the PSP's window ends when it does. */
+void ftpscreen_open(volatile int *running);
 /* Every frame, with the buttons (the screen is not asked for the power popup's buttons: main.c clears them while it is open). `now_ms` = a clock in milliseconds.
  * Returns 1 when the screen is to close (○). */
 int ftpscreen_update(const UiInput *in, float dt, unsigned now_ms);

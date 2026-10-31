@@ -395,7 +395,7 @@ static int ftp_mode(void)
     gfx_init();
     font_init(lang_needs_cjk());
     sound_init();
-    ftpscreen_open();
+    ftpscreen_open(&s_running);
     power_reset();
     int pending = SA_NONE;
     u32 old = ~0u; /* ignore the button that started the mode, whichever it is (the confirm button) */

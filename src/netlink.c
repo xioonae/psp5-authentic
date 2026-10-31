@@ -1,9 +1,8 @@
-/* psp5-authentic – the connection to a Wi-Fi network (see netlink.h): the network libraries are started the way a game does it, and the access point is joined with
- * sceNetApctlConnect (the calls of the PSP's own connection menu, without its screen). */
+/* psp5-authentic – the connection to a Wi-Fi network (see netlink.h): the network libraries are started the way a game does it; the PSP's own window (wifi.c) joins the
+ * access point. */
 #include <pspkernel.h>
 #include <psputility.h>
 #include <psputility_netmodules.h>
-#include <psputility_netparam.h>
 #include <pspnet.h>
 #include <pspnet_inet.h>
 #include <pspnet_apctl.h>
@@ -14,13 +13,11 @@
 
 #define MODULE_ALREADY_LOADED 0x80111102 /* the answer of a load that was done before (wifi.c has the same) */
 #define JOIN_MS 60000                    /* a connection that is not made in a minute has failed */
-#define START_MS 8000                    /* the state of the connection stays "none" for a moment after sceNetApctlConnect */
-#define LAST_ID 100                      /* the connections are numbered from 1 (there can be gaps); this many are looked at */
 
 static int s_common = -1, s_inet_mod = -1, s_net = -1, s_inet = -1, s_apctl = -1; /* what was started (>= 0) */
-static int s_connecting;                                                         /* sceNetApctlConnect was called */
+static int s_connecting;                                                         /* netlink_attach() was called */
 static unsigned s_since;
-static int s_seen;                                                               /* the state has been something else than "none" */
+static int s_fresh;                                                              /* the clock has not been read since netlink_attach() */
 static int s_up;
 static char s_ip[16];
 
@@ -42,35 +39,14 @@ int netlink_start(void)
     return 1;
 }
 
-int netlink_connections(NetConn *out, int max)
-{
-    int n = 0;
-    for (int id = 1; id <= LAST_ID && n < max; id++) {
-        netData d;
-        if (sceUtilityCheckNetParam(id) != 0)
-            continue;
-        memset(&d, 0, sizeof d);
-        if (sceUtilityGetNetParam(id, PSP_NETPARAM_NAME, &d) != 0)
-            continue;
-        out[n].id = id;
-        snprintf(out[n].name, sizeof out[n].name, "%s", d.asString);
-        if (!out[n].name[0])
-            snprintf(out[n].name, sizeof out[n].name, "%d", id);
-        n++;
-    }
-    return n;
-}
-
-int netlink_connect(int id, unsigned now_ms)
+void netlink_attach(void)
 {
     if (s_apctl < 0)
-        return 0;
+        return;
+    s_connecting = 1;
     s_up = 0;
-    s_seen = 0;
+    s_fresh = 1; /* (the minute is counted from the first question: the window may have been open for a long time) */
     s_ip[0] = 0;
-    s_since = now_ms;
-    s_connecting = sceNetApctlConnect(id) >= 0;
-    return s_connecting;
 }
 
 /* "a.b.c.d" of the PSP's address as the connection gave it; 0 when it is not an address. */
@@ -88,29 +64,26 @@ int netlink_state(unsigned now_ms)
     int st = 0;
     if (!s_connecting || sceNetApctlGetState(&st) < 0)
         return LINK_FAILED;
+    if (s_fresh) {
+        s_since = now_ms;
+        s_fresh = 0;
+    }
     if (st == PSP_NET_APCTL_STATE_GOT_IP) {
         SceNetApctlInfo info;
         memset(&info, 0, sizeof info);
         if (sceNetApctlGetInfo(PSP_NET_APCTL_INFO_IP, &info) >= 0 && parse_ip(info.ip)) {
             snprintf(s_ip, sizeof s_ip, "%s", info.ip);
             s_up = 1;
-            s_seen = 1;
             return LINK_UP;
         }
         return now_ms - s_since > JOIN_MS ? LINK_FAILED : LINK_CONNECTING; /* (the address is not there yet) */
     }
-    if (s_up) { /* it was up: the connection is lost */
+    if (s_up || st == PSP_NET_APCTL_STATE_DISCONNECTED) { /* it was up and is gone, or it is not there */
         s_up = 0;
         s_ip[0] = 0;
         return LINK_FAILED;
     }
-    if (st != PSP_NET_APCTL_STATE_DISCONNECTED) {
-        s_seen = 1;
-        return now_ms - s_since > JOIN_MS ? LINK_FAILED : LINK_CONNECTING;
-    }
-    if (s_seen || now_ms - s_since > START_MS) /* it began and is "none" again, or it never began */
-        return LINK_FAILED;
-    return LINK_CONNECTING;
+    return now_ms - s_since > JOIN_MS ? LINK_FAILED : LINK_CONNECTING; /* joining */
 }
 
 const char *netlink_ip(void)
@@ -129,7 +102,6 @@ void netlink_stop(void)
         sceNetApctlDisconnect();
     s_connecting = 0;
     s_up = 0;
-    s_seen = 0;
     s_ip[0] = 0;
     if (s_apctl >= 0)
         sceNetApctlTerm();

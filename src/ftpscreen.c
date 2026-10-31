@@ -6,25 +6,22 @@
 #include "ftpscreen.h"
 #include "ftp.h"
 #include "netlink.h"
+#include "wifi.h"
 #include "gameops.h"
 #include "controls.h"
 #include "gfx.h"
 #include "lang.h"
-#include "popup.h"
 #include "sound.h"
 #include "theme.h"
 
 #define LIGHT RGBA(238, 238, 242, 255)
 #define GREY  RGBA(160, 162, 172, 255)
 #define GREEN RGBA(120, 220, 150, 255)
-#define VISIBLE 5       /* connections that show at once in the list */
-#define LIST_W 280.0f
 
 static FtpScreenPhase s_phase;
-static NetConn s_conn[NETLINK_MAX];
-static int s_nconn, s_sel, s_top, s_dir;
+static volatile int *s_running;
 static StrId s_msg;              /* what FTPS_FAILED says */
-static int s_start_wait;         /* frames to show the first picture before the network is started (it takes a moment) */
+static int s_start_wait;         /* frames to show the first picture before the PSP's window opens (it takes a moment) */
 static float s_switch_wait;      /* the Wi-Fi switch is looked at now and then while it is off */
 static FtpStatus s_status;
 
@@ -42,45 +39,33 @@ static void fail(StrId msg)
     sound_play(SND_ERROR);
 }
 
-void ftpscreen_open(void)
+void ftpscreen_open(volatile int *running)
 {
     s_phase = FTPS_START;
-    s_nconn = s_sel = s_top = s_dir = 0;
+    s_running = running;
     s_switch_wait = 0;
     s_start_wait = 2;
     memset(&s_status, 0, sizeof s_status);
 }
 
-/* the first step: the switch, the libraries, the list of the connections; one connection is joined at once */
-static void start(unsigned now_ms)
+/* The PSP's own window, in which the player chooses the saved connection and the system connects. Returns 1 when the screen is to close (the window was closed). */
+static int window(void)
 {
-    if (!netlink_switch_on()) {
+    int r = wifi_connect(s_running);
+    if (r > 0) {
+        s_phase = FTPS_CONNECTING;
+        return 0;
+    }
+    if (!netlink_switch_on()) { /* the window had nothing to connect to because the switch is off: ask for it, and open the window again when it is on */
         s_phase = FTPS_SWITCH_OFF;
         s_switch_wait = 0;
-        return;
+        return 0;
     }
-    if (!netlink_start()) {
+    if (r < 0) {
         fail(S_WIFI_FAILED);
-        return;
+        return 0;
     }
-    s_nconn = netlink_connections(s_conn, NETLINK_MAX);
-    s_sel = s_top = 0;
-    if (s_nconn <= 0) {
-        s_phase = FTPS_NO_CONN;
-    } else if (s_nconn == 1) {
-        if (netlink_connect(s_conn[0].id, now_ms))
-            s_phase = FTPS_CONNECTING;
-        else
-            fail(S_FTP_CONN_FAILED);
-    } else {
-        s_phase = FTPS_CHOOSE;
-    }
-}
-
-/* -1 = up, 1 = down, 0 = neither (the D-pad or the analog stick, as everywhere) */
-static int dir_of(const UiInput *in)
-{
-    return ((in->held & PSP_CTRL_UP) || in->ly < 40) ? -1 : ((in->held & PSP_CTRL_DOWN) || in->ly > 215) ? 1 : 0;
+    return 1;
 }
 
 int ftpscreen_update(const UiInput *in, float dt, unsigned now_ms)
@@ -93,40 +78,17 @@ int ftpscreen_update(const UiInput *in, float dt, unsigned now_ms)
     case FTPS_START:
         if (s_start_wait > 0)
             s_start_wait--;
-        else
-            start(now_ms);
+        else if (window())
+            return 1;
         break;
     case FTPS_SWITCH_OFF:
         s_switch_wait += dt;
         if (s_switch_wait >= 0.5f) {
             s_switch_wait = 0;
-            if (netlink_switch_on())
-                start(now_ms);
+            if (netlink_switch_on() && window())
+                return 1;
         }
         break;
-    case FTPS_CHOOSE: {
-        int dir = dir_of(in);
-        if (dir && dir != s_dir) {
-            int next = s_sel + dir;
-            if (next >= 0 && next < s_nconn) {
-                s_sel = next;
-                sound_play(SND_MOVE);
-            }
-        }
-        s_dir = dir;
-        if (s_sel < s_top)
-            s_top = s_sel;
-        if (s_sel >= s_top + VISIBLE)
-            s_top = s_sel - VISIBLE + 1;
-        if (in->pressed & PSP_CTRL_CROSS) {
-            sound_play(SND_SELECT);
-            if (netlink_connect(s_conn[s_sel].id, now_ms))
-                s_phase = FTPS_CONNECTING;
-            else
-                fail(S_FTP_CONN_FAILED);
-        }
-        break;
-    }
     case FTPS_CONNECTING: {
         int st = netlink_state(now_ms);
         if (st == LINK_UP) {
@@ -145,7 +107,6 @@ int ftpscreen_update(const UiInput *in, float dt, unsigned now_ms)
         if (netlink_state(now_ms) == LINK_FAILED)
             fail(S_FTP_LOST);
         break;
-    case FTPS_NO_CONN:
     case FTPS_FAILED:
         break;
     }
@@ -184,37 +145,12 @@ static void sign(float cy, float t, int green, int still)
     gfx_circle(SCREEN_W / 2, cy, 9, green ? GREEN : RGBA(236, 236, 240, (int)(255 * pulse)));
 }
 
-/* a message under the sign, and under it (smaller, grey) a second text that may need two lines */
-static void message(float t, StrId msg, StrId under)
+/* a message under the sign */
+static void message(float t, StrId msg)
 {
     sign(86, t, 0, 1);
     float size = text_fit(0.75f, 0.5f, 0, SCREEN_W - 60, L(msg));
     text_draw(SCREEN_W / 2, 150, size, 0, LIGHT, ALIGN_CENTER, L(msg));
-    if (under != S_COUNT) {
-        char lines[2][96];
-        int n = text_wrap(L(under), 0.56f, SCREEN_W - 80, lines, 2);
-        for (int i = 0; i < n; i++)
-            text_draw(SCREEN_W / 2, 176 + i * 17, 0.56f, 0, GREY, ALIGN_CENTER, lines[i]);
-    }
-}
-
-static void draw_list(void)
-{
-    const char *head = L(S_FTP_CHOOSE);
-    text_draw(SCREEN_W / 2, 62, text_fit(0.75f, 0.5f, 0, SCREEN_W - 60, head), 0, LIGHT, ALIGN_CENTER, head);
-    int rows = s_nconn < VISIBLE ? s_nconn : VISIBLE;
-    float w = LIST_W, h = POPUP_EDGE + rows * POPUP_ITEM + POPUP_EDGE, x = (SCREEN_W - w) / 2, y = 74;
-    popup_panel(x, y, w, h, POPUP_DARK, 1);
-    for (int k = 0; k < rows; k++) {
-        int i = s_top + k;
-        float ry = y + POPUP_EDGE + k * POPUP_ITEM;
-        u32 col = POPUP_TEXT;
-        if (i == s_sel)
-            popup_choice(x + POPUP_EDGE, ry, w - 2 * POPUP_EDGE, POPUP_ITEM, 1);
-        else
-            col = COLOR_ALPHA(col, (int)(((col >> 24) & 0xFF) * 0.8f));
-        text_draw(x + 16, ry + 18, text_fit(0.62f, 0.45f, 0, w - 32, s_conn[i].name), 0, col, ALIGN_LEFT, s_conn[i].name);
-    }
 }
 
 static void draw_running(float t)
@@ -265,13 +201,7 @@ void ftpscreen_draw(float t)
         sign(86, t, 0, 0);
         break;
     case FTPS_SWITCH_OFF:
-        message(t, S_FTP_WIFI_OFF, S_COUNT);
-        break;
-    case FTPS_NO_CONN:
-        message(t, S_FTP_NO_CONN, S_FTP_NO_CONN_HINT);
-        break;
-    case FTPS_CHOOSE:
-        draw_list();
+        message(t, S_FTP_WIFI_OFF);
         break;
     case FTPS_CONNECTING:
         sign(86, t, 0, 0);
@@ -281,7 +211,7 @@ void ftpscreen_draw(float t)
         draw_running(t);
         break;
     case FTPS_FAILED:
-        message(t, s_msg, S_COUNT);
+        message(t, s_msg);
         break;
     }
     hint(L(s_phase == FTPS_RUNNING ? S_FTP_STOP : s_phase == FTPS_CONNECTING ? S_F_CANCEL : S_BACK));
