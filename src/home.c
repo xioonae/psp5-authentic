@@ -6,6 +6,7 @@
 #include <string.h>
 #include <strings.h>
 #include "home.h"
+#include "lastplayed.h"
 #include "playtime.h"
 #include "system.h"
 
@@ -21,6 +22,8 @@ static Key s_pinned[PIN_SLOTS];
 static int s_npinned;
 static Key s_recent[HISTORY_MAX]; /* newest first; may hold pinned cards too, so that unpinning puts a card back where it belongs */
 static int s_nrecent;
+static Key s_hidden[HOME_HIDDEN_MAX]; /* newest first */
+static int s_nhidden;
 
 /* --- the two lists --- */
 
@@ -69,8 +72,8 @@ static void file_path(char *out, int size)
     snprintf(out, size, "%s/home.txt", g_data_dir);
 }
 
-/* one line per card: "pin <key>" or "recent <key>" */
-static char s_text[(PIN_SLOTS + HISTORY_MAX) * (KEY_LEN + 8) + 16];
+/* one line per card: "pin <key>", "recent <key>" or "hide <key>" */
+static char s_text[(PIN_SLOTS + HISTORY_MAX + HOME_HIDDEN_MAX) * (KEY_LEN + 8) + 16];
 
 static void save(void)
 {
@@ -81,6 +84,8 @@ static void save(void)
         n += snprintf(s_text + n, sizeof(s_text) - n, "pin %s\n", s_pinned[i]);
     for (int i = 0; i < s_nrecent; i++)
         n += snprintf(s_text + n, sizeof(s_text) - n, "recent %s\n", s_recent[i]);
+    for (int i = 0; i < s_nhidden; i++)
+        n += snprintf(s_text + n, sizeof(s_text) - n, "hide %s\n", s_hidden[i]);
     SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (fd >= 0) {
         sceIoWrite(fd, s_text, n);
@@ -111,6 +116,8 @@ static int load_file(void)
             snprintf(s_pinned[s_npinned++], KEY_LEN, "%s", line + 4);
         else if (!strncmp(line, "recent ", 7) && line[7] && s_nrecent < HISTORY_MAX && find_key(s_recent, s_nrecent, line + 7) < 0)
             snprintf(s_recent[s_nrecent++], KEY_LEN, "%s", line + 7);
+        else if (!strncmp(line, "hide ", 5) && line[5] && s_nhidden < HOME_HIDDEN_MAX && find_key(s_hidden, s_nhidden, line + 5) < 0)
+            snprintf(s_hidden[s_nhidden++], KEY_LEN, "%s", line + 5);
         line = end + 1;
     }
     return 1;
@@ -139,38 +146,25 @@ static int find_entry(const EntryList *list, const Key *keys, const char *key)
     return -1;
 }
 
-/* the newest first: by file time, then by title, then by place in the list (as the Library sorts "recently added") */
-static const EntryList *s_cmp_list;
-static int cmp_added(const void *a, const void *b)
+u64 home_order_key(const Entry *e)
 {
-    const Entry *x = &s_cmp_list->items[*(const int *)a], *y = &s_cmp_list->items[*(const int *)b];
-    if (x->file_time != y->file_time)
-        return x->file_time > y->file_time ? -1 : 1;
-    int c = strcasecmp(x->title, y->title);
-    return c ? c : *(const int *)a - *(const int *)b;
+    int rank = home_recent_rank(e);
+    if (rank >= 0)
+        return (3ull << 32) | (0xFFFFFFFFu - (u32)rank);
+    u32 played = lastplayed_time(e);
+    return played ? (2ull << 32) | played : (1ull << 32) | e->file_time;
 }
 
-/* first start: Home shows the games and apps that were added last */
-static void seed(const EntryList *list)
+/* the games that fill the rest of Home: the order key first (a bigger one first), then the title, then the place in the list (as the Library sorts them) */
+static const EntryList *s_cmp_list;
+static const u64 *s_cmp_key;
+static int cmp_rest(const void *a, const void *b)
 {
-    int n = 0;
-    int *order = malloc((size_t)(list->count ? list->count : 1) * sizeof(int));
-    if (!order)
-        return;
-    for (int i = 0; i < list->count; i++)
-        if (list->items[i].type != ENTRY_UMD)
-            order[n++] = i;
-    s_cmp_list = list;
-    qsort(order, n, sizeof(int), cmp_added);
-    for (int i = 0; i < n && s_nrecent < HOME_MAX; i++) {
-        Key key;
-        key_of(&list->items[order[i]], key);
-        if (find_key(s_recent, s_nrecent, key) < 0)
-            snprintf(s_recent[s_nrecent++], KEY_LEN, "%s", key);
-    }
-    free(order);
-    if (s_nrecent)
-        save(); /* from now on Home only follows what is played, added and removed */
+    int i = *(const int *)a, j = *(const int *)b;
+    if (s_cmp_key[i] != s_cmp_key[j])
+        return s_cmp_key[i] > s_cmp_key[j] ? -1 : 1;
+    int c = strcasecmp(s_cmp_list->items[i].title, s_cmp_list->items[j].title);
+    return c ? c : i - j;
 }
 
 /* drops the cards that are not in the list any more */
@@ -189,8 +183,20 @@ static void prune(const EntryList *list)
         for (int i = s_nrecent - 1; i >= 0; i--)
             if (find_entry(list, keys, s_recent[i]) < 0)
                 drop_at(s_recent, &s_nrecent, i);
+        for (int i = s_nhidden - 1; i >= 0; i--)
+            if (find_entry(list, keys, s_hidden[i]) < 0)
+                drop_at(s_hidden, &s_nhidden, i);
     }
     free(keys);
+}
+
+/* the game was opened (or added): it is the newest card, and it is not off Home any more */
+static void open_key(const char *key)
+{
+    int i = find_key(s_hidden, s_nhidden, key);
+    if (i >= 0)
+        drop_at(s_hidden, &s_nhidden, i);
+    push_front(s_recent, &s_nrecent, HISTORY_MAX, key);
 }
 
 /* The games that were played without psp5 (from the XMB, found by the helper plugin) since psp5 was last open: each one is the newest card, the
@@ -208,7 +214,7 @@ static void apply_plays(const EntryList *list)
         return;
     for (int i = 0; i < n; i++)
         if (find_entry(list, keys, playtime_play_key(i)) >= 0) {
-            push_front(s_recent, &s_nrecent, HISTORY_MAX, playtime_play_key(i));
+            open_key(playtime_play_key(i));
             changed = 1;
         }
     free(keys);
@@ -219,11 +225,9 @@ static void apply_plays(const EntryList *list)
 
 void home_load(const EntryList *list)
 {
-    s_npinned = s_nrecent = 0;
+    s_npinned = s_nrecent = s_nhidden = 0;
     if (load_file())
         prune(list);
-    else
-        seed(list);
     apply_plays(list);
 }
 
@@ -263,6 +267,29 @@ int home_build(const EntryList *list, int *out, int max)
             out[n++] = at;
             room--;
         }
+    }
+    if (room > 0 && n < max) { /* the rest: the other games, in the order of "Recently played" (played before, then added last first), but not those taken off Home */
+        int *rest = malloc((size_t)(list->count ? list->count : 1) * sizeof(int));
+        u64 *okey = malloc((size_t)(list->count ? list->count : 1) * sizeof(u64));
+        int m = 0;
+        for (int i = 0; rest && okey && i < list->count; i++) {
+            if (list->items[i].type == ENTRY_UMD || find_key(s_pinned, s_npinned, keys[i]) >= 0 || find_key(s_recent, s_nrecent, keys[i]) >= 0 ||
+                find_key(s_hidden, s_nhidden, keys[i]) >= 0)
+                continue;
+            okey[i] = home_order_key(&list->items[i]);
+            rest[m++] = i;
+        }
+        if (rest && okey) {
+            s_cmp_list = list;
+            s_cmp_key = okey;
+            qsort(rest, m, sizeof(int), cmp_rest);
+            for (int k = 0; k < m && room > 0 && n < max; k++) {
+                out[n++] = rest[k];
+                room--;
+            }
+        }
+        free(rest);
+        free(okey);
     }
     free(keys);
     if (!lib_pinned && n < max)
@@ -307,7 +334,7 @@ void home_note_launch(const Entry *e)
     if (e->type == ENTRY_UMD)
         return;
     key_of(e, key);
-    push_front(s_recent, &s_nrecent, HISTORY_MAX, key);
+    open_key(key);
     save();
 }
 
@@ -328,6 +355,7 @@ void home_remove(const Entry *e)
     i = find_key(s_recent, s_nrecent, key);
     if (i >= 0)
         drop_at(s_recent, &s_nrecent, i);
+    push_front(s_hidden, &s_nhidden, HOME_HIDDEN_MAX, key); /* or the game would come back as one of those that fill the rest of Home */
     save();
 }
 
@@ -342,7 +370,7 @@ int home_pin(const Entry *e)
     if (game_pins() >= HOME_PIN_MAX)
         return 0;
     if (find_key(s_recent, s_nrecent, key) < 0)
-        push_front(s_recent, &s_nrecent, HISTORY_MAX, key); /* so that unpinning leaves it on Home */
+        open_key(key); /* so that unpinning leaves it on Home (and it is not taken off any more) */
     snprintf(s_pinned[s_npinned++], KEY_LEN, "%s", key);
     save();
     return 1;

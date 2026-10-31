@@ -134,17 +134,13 @@ static int top_tabs(const Ui *ui, int out[2])
 static const EntryList *s_sort_list;
 static const u64 *s_sort_time; /* for every entry of the list, what to sort it by in "Recently played" (played_key); a bigger one comes first */
 
-/* "Recently played" shows the games in the order of the Games tab (home.c): first those on Home's list of the cards opened last, the newest
- * first, as the Games tab has them after the pinned cards (a pin only moves a card to the front of the Games tab, not of the Library); then
- * the other games that have been played, the one played last first; last the games that have not been played, the one added last first.
- * The three parts are the top 32 bits of the key: 3, 2 and 1. */
+/* "Recently played" shows the games in the order of the Games tab (home.c, home_order_key): first those on Home's list of the cards opened last, the newest
+ * first, as the Games tab has them after the pinned cards (a pin only moves a card to the front of the Games tab, not of the Library); then the other games
+ * that have been played, the one played last first; last the games that have not been played, the one added last first. The Games tab fills what the pinned
+ * and the opened cards leave of its ten places in the same order. */
 static u64 played_key(const Entry *e)
 {
-    int rank = home_recent_rank(e);
-    if (rank >= 0)
-        return (3ull << 32) | (0xFFFFFFFFu - (u32)rank);
-    u32 played = lastplayed_time(e);
-    return played ? (2ull << 32) | played : (1ull << 32) | e->file_time;
+    return home_order_key(e);
 }
 static int cmp_name(const void *a, const void *b)
 {

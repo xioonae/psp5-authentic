@@ -51,8 +51,11 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ### Games
 
-- **Games you played from the XMB move to the front of Home** when psp5 starts, the one you played last in front (before, only the games started from psp5 did). Games you have not
-  played are ordered by when they were added, as before: Home is filled with the newest ones on the first start, and nothing else changes for them.
+- **The Games tab is always full.** It shows the games and apps you pinned, then the ones you played last, and then fills the rest of its ten places with the other games and apps in the
+  order of the Library's *Recently played* (the ones you played before, then the ones added last). A game you copy onto the PSP shows up on Home by itself, without waiting to be played.
+  *Remove from Home* still works: a game you take off does not come back until you start it, add it or pin it again, and the next game fills its place. (Games you took off
+  Home with an earlier version were not written down, so they can show up again: take them off once more.)
+- **Games you played from the XMB move to the front of Home** when psp5 starts, the one you played last in front (before, only the games started from psp5 did).
 
 ## 1.2.0 – Controls, new Settings pages, folders in the Library and time played
 

@@ -46,7 +46,7 @@ wherever it can, but it doesn't copy the console in everything.
 
 ## What you get
 
-- **Games (Home).** Your last played games and apps plus the ones you pinned, in one row. The selected card is big, with its
+- **Games (Home).** The games and apps you pinned, the ones you played last and then the newest you added, up to ten cards in one row. The selected card is big, with its
   artwork behind it. ↓ selects the **Play** and **⋯** (options) buttons. A UMD in the drive shows up first.
 - **Time played.** A small clock with the time (*54h*, *45min* or *<1min*) on the right of the bottom row, in Games and in the Library.
   With ARK, psp5 installs a tiny helper plugin by itself (nothing to switch on). It runs inside every game (PSP games, ISOs, homebrew and PS1 games), **however you started it** (from psp5, from the XMB, with or without psp5 as ARK's launcher),
