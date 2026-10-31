@@ -23,6 +23,7 @@ static volatile int *s_running;
 static StrId s_msg;              /* what FTPS_FAILED says */
 static int s_start_wait;         /* frames to show the first picture before the PSP's window opens (it takes a moment) */
 static float s_switch_wait;      /* the Wi-Fi switch is looked at now and then while it is off */
+static int s_release;            /* the PSP's window has just closed: the ✕ and ○ that were pressed in it do not count here until they have been let go */
 static FtpStatus s_status;
 
 FtpScreenPhase ftpscreen_phase(void)
@@ -45,32 +46,37 @@ void ftpscreen_open(volatile int *running)
     s_running = running;
     s_switch_wait = 0;
     s_start_wait = 2;
+    s_release = 0;
     memset(&s_status, 0, sizeof s_status);
 }
 
-/* The PSP's own window, in which the player chooses the saved connection and the system connects. Returns 1 when the screen is to close (the window was closed). */
-static int window(void)
+/* The PSP's own window, in which the player chooses the saved connection and the system connects. What it gave decides the phase. */
+static void window(void)
 {
     int r = wifi_connect(s_running);
+    s_release = 1;
     if (r > 0) {
         s_phase = FTPS_CONNECTING;
-        return 0;
-    }
-    if (!netlink_switch_on()) { /* the window had nothing to connect to because the switch is off: ask for it, and open the window again when it is on */
+    } else if (!netlink_switch_on()) { /* the window had nothing to connect to because the switch is off: ask for it, and open the window again when it is on */
         s_phase = FTPS_SWITCH_OFF;
         s_switch_wait = 0;
-        return 0;
-    }
-    if (r < 0) {
+    } else if (r < 0) {
         fail(S_WIFI_FAILED);
-        return 0;
+    } else {
+        s_phase = FTPS_STOPPED;
     }
-    return 1;
 }
 
 int ftpscreen_update(const UiInput *in, float dt, unsigned now_ms)
 {
-    if (in->pressed & PSP_CTRL_CIRCLE) {
+    u32 pressed = in->pressed;
+    if (s_release) {
+        if (in->held & (PSP_CTRL_CIRCLE | PSP_CTRL_CROSS))
+            pressed &= ~(u32)(PSP_CTRL_CIRCLE | PSP_CTRL_CROSS);
+        else
+            s_release = 0;
+    }
+    if (pressed & PSP_CTRL_CIRCLE) {
         sound_play(SND_BACK);
         return 1;
     }
@@ -78,15 +84,22 @@ int ftpscreen_update(const UiInput *in, float dt, unsigned now_ms)
     case FTPS_START:
         if (s_start_wait > 0)
             s_start_wait--;
-        else if (window())
-            return 1;
+        else
+            window();
         break;
     case FTPS_SWITCH_OFF:
         s_switch_wait += dt;
         if (s_switch_wait >= 0.5f) {
             s_switch_wait = 0;
-            if (netlink_switch_on() && window())
-                return 1;
+            if (netlink_switch_on())
+                window();
+        }
+        break;
+    case FTPS_STOPPED:
+    case FTPS_FAILED:
+        if (pressed & PSP_CTRL_CROSS) {
+            sound_play(SND_SELECT);
+            window();
         }
         break;
     case FTPS_CONNECTING: {
@@ -107,8 +120,6 @@ int ftpscreen_update(const UiInput *in, float dt, unsigned now_ms)
         if (netlink_state(now_ms) == LINK_FAILED)
             fail(S_FTP_LOST);
         break;
-    case FTPS_FAILED:
-        break;
     }
     return 0;
 }
@@ -127,14 +138,27 @@ void ftpscreen_close(void)
 
 /* ---- drawing ---------------------------------------------------------------------------------------------------------------------------------------------- */
 
-/* the hint at the bottom right: the symbol of ○ and what it does, in a dark capsule (as on the USB screen and in the File Manager) */
-static void hint(const char *label)
+typedef struct {
+    int btn;
+    const char *label;
+} HintItem;
+
+/* the hints at the bottom right: the symbol of a button and what it does, one after the other, in a dark capsule (as on the USB screen and in the File Manager) */
+static void hints(const HintItem *it, int n)
 {
-    int btn = controls_glyph(PSP_CTRL_CIRCLE);
-    float bw = gfx_button_width(btn), w = bw + 5 + ceilf(text_width(0.56f, 0, label)), x = SCREEN_W - 22 - w, y = 252; /* (whole pixels) */
+    float bw[2], iw[2], w = 0, x, y = 252; /* (whole pixels) */
+    for (int i = 0; i < n; i++) {
+        bw[i] = gfx_button_width(it[i].btn);
+        iw[i] = bw[i] + 5 + ceilf(text_width(0.56f, 0, it[i].label));
+        w += iw[i] + (i ? 14 : 0);
+    }
+    x = SCREEN_W - 22 - w;
     gfx_round_rect(x - 9, y - 10, w + 18, 20, 10, RGBA(0, 0, 0, 110));
-    gfx_button(x + bw / 2, y, 6.5f, btn, RGBA(236, 236, 240, 255), RGBA(20, 20, 26, 255));
-    text_draw(x + bw + 5, y + 4.5f, 0.56f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, label);
+    for (int i = 0; i < n; i++) {
+        gfx_button(x + bw[i] / 2, y, 6.5f, it[i].btn, RGBA(236, 236, 240, 255), RGBA(20, 20, 26, 255));
+        text_draw(x + bw[i] + 5, y + 4.5f, 0.56f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, it[i].label);
+        x += iw[i] + 14;
+    }
 }
 
 /* the round sign in the middle at the top: it pulses while it waits, the dot is green when a computer is there */
@@ -203,6 +227,9 @@ void ftpscreen_draw(float t)
     case FTPS_SWITCH_OFF:
         message(t, S_FTP_WIFI_OFF);
         break;
+    case FTPS_STOPPED:
+        message(t, S_FTP_NOT_RUNNING);
+        break;
     case FTPS_CONNECTING:
         sign(86, t, 0, 0);
         text_draw(SCREEN_W / 2, 150, text_fit(0.75f, 0.5f, 0, SCREEN_W - 60, L(S_FTP_CONNECTING)), 0, LIGHT, ALIGN_CENTER, L(S_FTP_CONNECTING));
@@ -214,5 +241,11 @@ void ftpscreen_draw(float t)
         message(t, s_msg);
         break;
     }
-    hint(L(s_phase == FTPS_RUNNING ? S_FTP_STOP : s_phase == FTPS_CONNECTING ? S_F_CANCEL : S_BACK));
+    HintItem back = { controls_glyph(PSP_CTRL_CIRCLE), L(s_phase == FTPS_RUNNING ? S_FTP_STOP : s_phase == FTPS_CONNECTING ? S_F_CANCEL : S_BACK) };
+    if (s_phase == FTPS_STOPPED || s_phase == FTPS_FAILED) {
+        HintItem both[2] = { { controls_glyph(PSP_CTRL_CROSS), L(S_FTP_START) }, back };
+        hints(both, 2);
+    } else {
+        hints(&back, 1);
+    }
 }

@@ -111,7 +111,7 @@ clears the marks, and at the top it cancels a waiting copy or move before it lea
 *Settings → Network → FTP Server* copies files to and from the PSP over Wi-Fi, for example your games to the `ISO` folder.
 
 1. Turn on the Wi-Fi switch of the PSP, and make sure it has a saved Wi-Fi connection (in the XMB: *Settings → Network Settings → Infrastructure Mode*).
-2. Open *FTP Server*. The PSP's own Wi-Fi window opens (the same as in *Settings → Network → Wi-Fi connection*): choose your connection there. Then wait for the address, for example `192.168.1.23`.
+2. Open *FTP Server*. The PSP's own Wi-Fi window opens (the same as in *Settings → Network → Wi-Fi connection*): choose your connection there. Then wait for the address, for example `192.168.1.23`. If you close the window without choosing, the screen says that the FTP server is not running: press ✕ to open the window again.
 3. On your computer or phone, open an FTP program (FileZilla, WinSCP …) or the file manager (on Windows, type `ftp://192.168.1.23` in the address bar of Explorer). Use the address and port 21.
    Any user name and password will do. Choose **passive mode** if your program asks (it is the default almost everywhere).
 4. You see the folder `ms0` (the Memory Stick) and, on a PSP Go, `ef0`. Nothing else of the PSP can be reached.
