@@ -58,11 +58,12 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   them, psp5 authentic starts with the PS5 theme instead.
 - **Shut down** is written with a small d again (the other names keep their capitals).
 - **The first list uses the same letters as the other lists** (the names of the six pages were bigger than the settings in them).
-- **The cog wheel looks like the Play and ⋯ buttons when it is selected:** a white circle with a black cog and a thin ring round it (it was a frame).
+- **The cog wheel looks like the Play and ⋯ buttons when it is selected:** a white circle, as high as the frame of a selected tab, with a black cog in it (it was a frame).
 - **New: Console Storage** (*Settings → Storage → Console Storage*, the first row of *Storage*). At the top (it can't be chosen) it shows the size of the storage, a bar with a colour for what is on it, and the free space.
-  Under it are four rows with a colour and a size: *Games and Apps*, *Media Gallery* (the `MUSIC`, `VIDEO` and `PICTURE` folders and `PSP/PHOTO`), *Saved Data* and *Other* (everything else that is used).
+  The bar shows what is on the storage in the console's own colours, one after the other: blue for *Games and Apps*, purple for *Media*, orange for *Saved Data* and grey for *Other*; a part that is not empty is at least 2 pixels wide, so that a small one is seen.
+  Under it are four rows with a colour and a size: *Games and Apps*, *Media* (the `MUSIC`, `VIDEO` and `PICTURE` folders and `PSP/PHOTO`), *Saved Data* and *Other* (everything else that is used).
   The sizes are counted in the background, so they grow for a moment. Confirm on *Games and Apps* opens the list of all your games and apps, Confirm on *Saved Data* opens *Manage Saved Data*, and Back comes back
-  to the same row of Settings. *Media Gallery* and *Other* do nothing yet. On a PSP Go with a Memory Stick the page has two blocks, the internal storage and the Memory Stick, each with its own four rows.
+  to the same row of Settings. *Media* and *Other* do nothing yet. On a PSP Go with a Memory Stick the page has two blocks, the internal storage and the Memory Stick, each with its own four rows.
 - **New: Games and Apps.** The list of the games and apps on the console, made like *Manage Saved Data*: the same list and buttons (✕ Delete, □ Mark, △ Select all, ○ Back), a Sort button with a popup, the picture of
   the game, its ID, when you played it last and its size at the right. It sorts by *Least used*, *Date used (Newest-Oldest)*, *Date used (Oldest-Newest)*, *Name (A-Z)*, *Name (Z-A)*, *Size (Large-Small)* and
   *Size (Small-Large)*. A game you delete (a file, or the folder of an app) is gone from Home and from the Library too. psp5 authentic itself and anything outside `ISO` and `PSP/GAME` can't be deleted.
@@ -82,7 +83,7 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   time: it keeps its place in the order, and if that place is beyond the nine it takes one of the last places (the games that come last make room for it). Up to nine games can be kept; the tenth says so and the switch stays off.
   Confirm turns the switch and the popup stays open; Home changes when you close the popup.
 - **Gone: Pin to Home, Add to Home and Remove from Home.** Nothing is pinned or taken off Home any more. A game you pinned with an earlier version is kept now. The Library card is always the last card of Home and has no
-  options popup. **Manage Saved Data is not in the options popup any more:** it is in *Settings → Storage → Console Storage* (see Settings).
+  options: no popup, and no ⋯ button under it (only *Open*). **Manage Saved Data is not in the options popup any more:** it is in *Settings → Storage → Console Storage* (see Settings).
 - **Games you played from the XMB move to the front of Home** when psp5 authentic starts, the one you played last in front (before, only the games started from psp5 authentic did).
 
 ## 1.2.0 – Controls, new Settings pages, folders in the Library and time played

@@ -65,7 +65,7 @@ wherever it can, but it doesn't copy the console in everything.
   folders*; the folders are cards, Confirm opens one, Back goes back). Folders are the ones the Categories Lite plugin makes. The Library
   remembers your sorting and view.
 - **Console Storage** (*Settings → Storage*). The size of the storage, a coloured bar and the free space, and four rows with their sizes: **Games and Apps** (the list of all your games and apps: sort, mark and delete them),
-  Media Gallery (music, video and pictures), **Saved Data** (*Manage Saved Data*: the saves of all your games, mark some, delete them and see how much room you get back; ARK's own save folder is locked and can't be deleted) and Other.
+  Media (music, video and pictures), **Saved Data** (*Manage Saved Data*: the saves of all your games, mark some, delete them and see how much room you get back; ARK's own save folder is locked and can't be deleted) and Other.
   On a PSP Go with a Memory Stick there are two blocks, one for each storage.
 - **Music.** Plays the MP3 files in `MUSIC` with title, artist and album art (from the file, or a `cover.jpg` / `folder.jpg`
   in the folder). It keeps playing while you browse your games.

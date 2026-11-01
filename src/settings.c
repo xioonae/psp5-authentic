@@ -792,15 +792,16 @@ static void pop_update(int move, u32 p)
 }
 
 /* --- Console Storage ---
- * The page has a status block for each storage (the size, a bar of what is on it, the free space) and under it four rows: Games and Apps, Media Gallery,
+ * The page has a status block for each storage (the size, a bar of what is on it, the free space) and under it four rows: Games and Apps, Media,
  * Saved Data and Other, each with its colour and its size. The blocks are not rows (they can not be chosen); a PSP Go with a Memory Stick has two of
  * them, one under the other, and the page scrolls from one to the other. Games and Apps and Saved Data open their screens (SA_GAMES, SA_SAVES, saves.c);
- * Media Gallery and Other do nothing yet. */
+ * Media and Other do nothing yet. */
 #define STORE_HEAD_H   22.0f /* the name of the storage, when there are two */
 #define STORE_STATUS_H 54.0f /* "Size", the bar, "Free space" */
 #define STORE_GAP      10.0f
+#define ST_MIN_PIECE  2.0f  /* a part of the storage that is not empty is at least this wide in the bar */
 
-static const u32 ST_COLOR[ST_ROWS] = { RGBA(64, 132, 255, 255), RGBA(255, 170, 40, 255), RGBA(80, 200, 120, 255), RGBA(178, 128, 240, 255) };
+static const u32 ST_COLOR[ST_ROWS] = { RGBA(20, 150, 236, 255), RGBA(81, 3, 174, 255), RGBA(215, 90, 6, 255), RGBA(189, 187, 174, 255) }; /* (taken from the console's own Storage page: blue, purple, orange, grey) */
 static StorageInfo s_si[2];
 static int s_blocks;
 
@@ -1092,6 +1093,8 @@ static void draw_store_page(float a)
             float x = bx;
             for (int r = 0; r < ST_ROWS; r++) {
                 float w = floorf(bw * (float)((double)part[r] / (double)si->total) + 0.5f);
+                if (part[r] && w < ST_MIN_PIECE) /* a small part is seen too (Saved Data is often less than a pixel) */
+                    w = ST_MIN_PIECE;
                 if (x + w > bx + bw)
                     w = bx + bw - x;
                 if (w < 1)

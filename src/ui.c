@@ -1326,7 +1326,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         } else if (move == -1 && on_btn == 2) {
             ui->btn_focus = 1;
             sound_play(SND_MOVE);
-        } else if (move == 1 && on_btn == 1) {
+        } else if (move == 1 && on_btn == 1 && sel_card(ui) != HOME_LIBRARY) { /* (the Library card has no options: Start is the only button) */
             ui->btn_focus = 2;
             sound_play(SND_MOVE);
         } else if (in->pressed & back_btn) {
@@ -1509,8 +1509,7 @@ static void format_time(char *out, int size, float sec)
 #define BOLT_GAP     3.0f /* between the bolt and the battery, which belong together (the bolt is slanted: it looks further from the battery than this) */
 #define WIFI_R       7.0f /* the Wi-Fi sign is a square of 2 R = 14 px (a little higher than the battery: three soft arcs need that much room) */
 #define COG_R        7.0f /* the cog wheel is a square of 2 R, and its right edge is on the margin like the clock's used to be */
-#define COG_BTN_D   28.0f /* the white circle of the selected cog wheel ... */
-#define COG_RING_D  36.0f /* ... and the thin ring round it */
+#define COG_BTN_D   TOP_FRAME_H /* the white circle of the selected cog wheel: as high as the frame of the selected tab */
 
 static void button_bg(float x, float y, float w, float h, float t, float fade);
 
@@ -1571,12 +1570,10 @@ static void draw_top_bar(Ui *ui)
         bar_left = wx;
     }
 
-    /* the cog wheel is a button too: selected (↑ from the first thing of a tab) it is a white circle with a thin ring round it and a dark wheel in it,
-     * like Start and Options under a card */
-    if (cog * a > 0.01f) {
+    /* the cog wheel is a button too: selected (↑ from the first thing of a tab) it is a white circle, as high as the frame of a tab, with a dark wheel in
+     * it, like Start and Options under a card */
+    if (cog * a > 0.01f)
         button_bg(gx - COG_BTN_D / 2, TOP_MID - COG_BTN_D / 2, COG_BTN_D, COG_BTN_D, cog, a);
-        gfx_edge_ring(gx - COG_RING_D / 2, TOP_MID - COG_RING_D / 2, COG_RING_D, COG_RING_D, COG_RING_D / 2, 1, with_alpha(LIGHT, 0.6f * cog * a));
-    }
     gfx_gear(gx, TOP_MID, COG_R, with_alpha(mix_color(LIGHT, DARK, cog), a), RGBA(14, 14, 18, (int)(255 * a)));
 
     /* flikarna krymper om de inte får plats (t.ex. långa ryska ord) – mäts bara om när något ändras */
@@ -1853,11 +1850,13 @@ static void draw_details(Ui *ui)
     button_bg(bx, by, w, bh, t0, fade);
     text_draw(bx + w / 2, by + 17.5f, 0.66f, 0, with_alpha(mix_color(TEXT_MAIN, DARK, t0), fade), ALIGN_CENTER, go);
 
-    float mx = bx + w + 10;
-    button_bg(mx, by, bh, bh, t1, fade);
-    u32 dots = with_alpha(mix_color(TEXT_MAIN, DARK, t1), fade);
-    for (int k = -1; k <= 1; k++)
-        gfx_circle(mx + bh / 2 + k * 6, by + bh / 2, 2, dots);
+    if (i != HOME_LIBRARY) { /* (the Library card has no options: no button for them) */
+        float mx = bx + w + 10;
+        button_bg(mx, by, bh, bh, t1, fade);
+        u32 dots = with_alpha(mix_color(TEXT_MAIN, DARK, t1), fade);
+        for (int k = -1; k <= 1; k++)
+            gfx_circle(mx + bh / 2 + k * 6, by + bh / 2, 2, dots);
+    }
 
     draw_play_pill(play_text(ui, i), SCREEN_W - MARGIN, fade * la); /* the time played, on the right of the same row */
 }

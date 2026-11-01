@@ -5,7 +5,7 @@
 #include <psptypes.h>
 
 /* What is on the console's storage, for Settings > Storage > Console Storage: for the memory card (and, on a PSP Go, its internal storage too) the
- * size, the free space, and how much of the rest is Games and Apps (gamesize.c), Media Gallery (the MUSIC, VIDEO and PICTURE folders and PSP/PHOTO),
+ * size, the free space, and how much of the rest is Games and Apps (gamesize.c), Media (the MUSIC, VIDEO and PICTURE folders and PSP/PHOTO),
  * Saved Data (PSP/SAVEDATA) and Other (everything else that is used). The folders are counted in a thread of its own; the space is asked at once. */
 typedef struct {
     int dev;                       /* 0 = ms0:, 1 = ef0: */
