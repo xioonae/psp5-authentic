@@ -1236,14 +1236,62 @@ void gfx_dot(float cx, float cy, float r, u32 color, int soft)
     sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2, 0, v);
 }
 
+static int s_clip_x, s_clip_y, s_clip_w = SCREEN_W, s_clip_h = SCREEN_H; /* the clip that is set (gfx_bar_fill puts it back) */
+
 void gfx_clip(float x, float y, float w, float h)
 {
-    sceGuScissor((int)x, (int)y, (int)w, (int)h);
+    s_clip_x = (int)x, s_clip_y = (int)y, s_clip_w = (int)w, s_clip_h = (int)h;
+    sceGuScissor(s_clip_x, s_clip_y, s_clip_w, s_clip_h);
 }
 
 void gfx_clip_reset(void)
 {
+    s_clip_x = s_clip_y = 0, s_clip_w = SCREEN_W, s_clip_h = SCREEN_H;
     sceGuScissor(0, 0, SCREEN_W, SCREEN_H);
+}
+
+float text_marquee_offset(float overflow, float t)
+{
+    if (overflow <= 0 || t < 0)
+        return 0;
+    float run = overflow / MARQUEE_SPEED, cycle = MARQUEE_WAIT + run + MARQUEE_END;
+    t -= cycle * floorf(t / cycle);
+    if (t < MARQUEE_WAIT)
+        return 0;
+    if (t < MARQUEE_WAIT + run)
+        return (t - MARQUEE_WAIT) * MARQUEE_SPEED;
+    return overflow;
+}
+
+void text_draw_marquee(float x, float y, float size, int bold, u32 color, float room, const char *s, float t)
+{
+    float w = text_width(size, bold, s);
+    if (w <= room) {
+        text_draw(x, y, size, bold, color, ALIGN_LEFT, s);
+        return;
+    }
+    int x0 = (int)floorf(x), x1 = (int)floorf(x + room);
+    if (x0 < s_clip_x)
+        x0 = s_clip_x;
+    if (x1 > s_clip_x + s_clip_w)
+        x1 = s_clip_x + s_clip_w;
+    if (x1 <= x0)
+        return;
+    sceGuScissor(x0, s_clip_y, x1 - x0, s_clip_h);
+    text_draw(x - floorf(text_marquee_offset(w - room, t) + 0.5f), y, size, bold, color, ALIGN_LEFT, s);
+    sceGuScissor(s_clip_x, s_clip_y, s_clip_w, s_clip_h);
+}
+
+/* A rounded bar one radius too long, cut off at x + w: the left end is round, the right end is straight, and nothing is drawn twice (a fade stays even) */
+void gfx_bar_fill(float x, float y, float w, float h, float r, u32 color)
+{
+    int left = (int)floorf(x + 0.5f), right = (int)floorf(x + w + 0.5f); /* (whole pixels: a part of a bar is as wide as its pixels) */
+    int x0 = s_clip_x > left ? s_clip_x : left, x1 = s_clip_x + s_clip_w < right ? s_clip_x + s_clip_w : right;
+    if (x1 <= x0)
+        return;
+    sceGuScissor(x0, s_clip_y, x1 - x0, s_clip_h);
+    gfx_round_rect(left, y, right - left + 2 * r, h, r, color);
+    sceGuScissor(s_clip_x, s_clip_y, s_clip_w, s_clip_h);
 }
 
 void gfx_quad(const float *xy, const u32 *colors)

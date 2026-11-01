@@ -19,6 +19,7 @@ static u8 *s_keep;
 static SceUID s_thread = -1;
 static volatile int s_quit;
 static volatile int s_focus;
+static volatile int s_round = 1; /* the corners of the pictures that are loaded now: 1 = rounded, 0 = square (loader_set_round) */
 static const LoaderView *volatile s_view;
 
 static volatile int s_bg_want = -1;
@@ -47,8 +48,10 @@ static int load_icon_near(int range)
             if (i < 0 || s_slots[i].state != SLOT_EMPTY) /* (the Library card has no icon to load) */
                 continue;
             s_slots[i].state = SLOT_LOADING;
-            Texture *t = art_load_icon(&s_list->items[i]);
+            int round = s_round;
+            Texture *t = round ? art_load_icon(&s_list->items[i]) : art_load_icon_square(&s_list->items[i]);
             s_slots[i].tex = t;
+            s_slots[i].round = round;
             s_slots[i].shown = 0;
             s_slots[i].state = t ? SLOT_READY : SLOT_MISSING;
             return 1;
@@ -111,6 +114,7 @@ void loader_start(const EntryList *list)
     }
     s_quit = 0;
     s_focus = 0;
+    s_round = 1;
     s_bg_want = s_bg_index = -1;
     s_cov_want = s_cov_index = -1;
     s_cov_done = 0;
@@ -155,6 +159,11 @@ void loader_set_view(const LoaderView *view)
     s_view = view;
 }
 
+void loader_set_round(int round)
+{
+    s_round = round ? 1 : 0;
+}
+
 void loader_focus(int view_pos)
 {
     const LoaderView *v = s_view;
@@ -169,8 +178,8 @@ void loader_focus(int view_pos)
 
     for (int i = 0; i < s_list->count; i++) {
         IconSlot *s = &s_slots[i];
-        if (!s_keep[i] && (s->state == SLOT_READY || s->state == SLOT_MISSING)) {
-            tex_free(s->tex);
+        if ((!s_keep[i] && (s->state == SLOT_READY || s->state == SLOT_MISSING)) || (s->state == SLOT_READY && s->round != s_round)) {
+            tex_free(s->tex); /* far away, or made with the other corners than the tab has now: it is loaded again when it is wanted */
             s->tex = NULL;
             s->state = SLOT_EMPTY;
         }

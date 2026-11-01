@@ -27,6 +27,8 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 - **psp5 authentic now remembers when you played each game** (`lastplayed.txt` in psp5 authentic's folder). It notes the time when psp5 authentic starts a game, and with ARK the helper plugin of *Time played*
   tells it about games you started from the XMB (psp5 authentic learns it the next time it starts). Games you played before this version have no time yet, but they keep their place in the
   Games tab. The Games tab, *Information* and the new *Games and Apps* list use these times.
+- **The Library's cards are rectangles**, as on the console: no rounded corners. The selected card keeps its size (it was a little bigger) and has a straight white frame. The cards in the Games tab keep
+  their rounded corners.
 
 ### Power menu
 
@@ -94,6 +96,22 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 - **Gone: Pin to Home, Add to Home and Remove from Home.** Nothing is pinned or taken off Home any more. A game you pinned with an earlier version is kept now. The Library card is always the last card of Home and has no
   options: no popup, and no ⋯ button under it (only *Open*). **Manage Saved Data is not in the options popup any more:** it is in *Settings → Storage → Console Storage* (see Settings).
 - **Games you played from the XMB move to the front of Home** when psp5 authentic starts, the one you played last in front (before, only the games started from psp5 authentic did).
+- **The name and the type tag (PSP, APP ...) next to the big card are as large as in the Library.** *Play*, the time played and the name all have the same size now, in Games and in the Library.
+
+### Lists, names and popups
+
+- **A name that does not fit scrolls** instead of shrinking or ending in "...". It waits a moment, scrolls to the end, waits again and starts over. This is for the name next to the big card (Games), the name
+  of the selected card in the Library, and the highlighted row of the File Manager, *Manage Saved Data* and *Games and Apps* (the rows that are not highlighted are still cut with "..."). The names in
+  Settings and in the popups are not changed.
+- **The bar that shows how full a storage is ends with a straight line** where the used part stops (it was round). This is for *Console Storage*, *Manage Saved Data*, *Games and Apps* and the File Manager.
+- **Hold ↑ or ↓ in a popup to move fast.** The first step comes at once, then it repeats after a third of a second. This was missing in the options popup of a game, the Sort and view popups of the Library
+  and the power menu (SELECT); the popups of the other screens did it already. A direction that is held when a popup opens still does not move it.
+- **Games and Apps starts on *Least used***, the first choice of its Sort popup (it started on the second). **Choosing a sort starts the list at the top**, in *Games and Apps* and in *Manage Saved Data*
+  (the list did not scroll back before).
+
+### Docs
+
+- The pictures of *Games*, *Library*, *Library with folders* and *Games and Apps* in the README show the new look (rectangular cards, the title as large as in the Library, *Games and Apps* on *Least used*).
 
 ## 1.2.0 – Controls, new Settings pages, folders in the Library and time played
 

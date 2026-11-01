@@ -16,6 +16,8 @@ void art_init(const char *base_dir);
 
 /* Kortbild (8888, rundade hörn). NULL om ingen ikon finns. */
 Texture *art_load_icon(const Entry *e);
+/* The same picture with square corners (the Library's cards are rectangles). */
+Texture *art_load_icon_square(const Entry *e);
 
 /* Bakgrund (5650, BG_W×BG_H): PIC1 skarp, annars ikonen kraftigt suddad. */
 Texture *art_load_bg(const Entry *e);

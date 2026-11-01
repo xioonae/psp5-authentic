@@ -59,7 +59,7 @@ wherever it can, but it doesn't copy the console in everything.
 ## What you get
 
 - **Games (Home).** The games and apps you played last, then the newest you added, and the ones you keep in Home, up to ten cards in one row. The selected card is big, with its
-  artwork behind it. ↓ selects the **Play** and **⋯** (options) buttons. A UMD in the drive shows up first.
+  artwork behind it. ↓ selects the **Play** and **⋯** (options) buttons. A UMD in the drive shows up first. A name that is too long for the screen scrolls after a moment.
 - **Time played.** A small clock with the time (*54h*, *45min* or *<1min*) on the right of the bottom row, in Games and in the Library.
   With ARK, psp5 authentic installs a tiny helper plugin by itself (nothing to switch on). It runs inside every game (PSP games, ISOs, homebrew and PS1 games), **however you started it** (from psp5 authentic, from the XMB, with or without psp5 authentic as ARK's launcher),
   and counts only the time the PSP is awake. The times are added when psp5 authentic starts next. To turn it off, turn off the two `psp5time.prx` lines in *Settings → System → Plugins*. Without ARK, or with those lines off, nothing is counted.
@@ -67,7 +67,7 @@ wherever it can, but it doesn't copy the console in everything.
 - **Library.** The last card of Games. It opens a grid with everything you have, games and apps together, a **Sort** button (by
   name, by what you added or by size, either way round) and a **view** button (*All*, *In folders*, *Outside of folders* or *Both in and out of
   folders*; the folders are cards, Confirm opens one, Back goes back). Folders are the ones the Categories Lite plugin makes. The Library
-  remembers your sorting and view.
+  remembers your sorting and view. The cards are rectangles, as on the console; the selected one has a white frame.
 - **Console Storage** (*Settings → Storage*). The size of the storage, a coloured bar and the free space, and four rows with their sizes: **Games and Apps** (the list of all your games and apps: sort, mark and delete them),
   Media (music, video and pictures), **Saved Data** (*Manage Saved Data*: the saves of all your games, mark some, delete them and see how much room you get back; ARK's own save folder is locked and can't be deleted) and Other.
   On a PSP Go with a Memory Stick there are two blocks, one for each storage.
@@ -109,7 +109,7 @@ Games and apps use their own icon and background automatically. If you want your
 
 | Button | What it does |
 |---|---|
-| D-pad or analog stick | **Navigate**: move between cards, rows, tabs and buttons (hold to go faster) |
+| D-pad or analog stick | **Navigate**: move between cards, rows, tabs and buttons (hold to go faster, also in popups) |
 | ✕ | **Confirm**: start a game, open, choose, switch on or off |
 | ○ | **Back**: one step back, close a popup or a screen |
 | START | **Options** of the selected card or file (START again closes them) |

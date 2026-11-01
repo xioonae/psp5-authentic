@@ -12,6 +12,7 @@ static const StrId NAMES[CHOICES] = { S_TO_XMB, S_SLEEP, S_SHUTDOWN, S_RESTART, 
 static const int ACTIONS[CHOICES] = { SA_XMB, SA_SUSPEND, SA_SHUTDOWN, SA_RESTART, SA_RECOVERY };
 
 static int s_open, s_sel, s_dir;
+static float s_timer; /* seconds until a held ↑ / ↓ moves again */
 static float s_anim; /* 0..1: how much of it there is (it fades in and out) */
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -32,6 +33,7 @@ void power_reset(void)
     s_open = 0;
     s_sel = 0;
     s_dir = 0;
+    s_timer = 0;
     s_anim = 0;
 }
 
@@ -45,6 +47,7 @@ void power_open(const UiInput *in)
     s_open = 1;
     s_sel = POWER_OPEN_ON;
     s_dir = dir_of(in);
+    s_timer = 1e9f; /* (a direction that is held when it opens does not move, and does not repeat until it is let go) */
     sound_play(SND_SELECT);
 }
 
@@ -53,14 +56,23 @@ int power_update(const UiInput *in, float dt)
     s_anim = clampf(s_anim + (s_open ? 7 : -7) * dt, 0, 1);
     if (!s_open)
         return SA_NONE;
-    int dir = dir_of(in);
-    if (dir && dir != s_dir) {
-        int next = (int)clampf(s_sel + dir, 0, CHOICES - 1);
+    int dir = dir_of(in), step = 0;
+    if (!dir) {
+        s_dir = 0;
+    } else if (dir != s_dir) { /* a new press: it moves at once, a held one repeats after a moment (as the lists do) */
+        s_dir = dir;
+        s_timer = 0.32f;
+        step = dir;
+    } else if ((s_timer -= dt) <= 0) {
+        s_timer = 0.08f;
+        step = dir;
+    }
+    if (step) {
+        int next = (int)clampf(s_sel + step, 0, CHOICES - 1);
         if (next != s_sel)
             sound_play(SND_MOVE);
         s_sel = next;
     }
-    s_dir = dir;
     if (in->pressed & PSP_CTRL_CROSS) {
         s_open = 0;
         sound_play(SND_SELECT);

@@ -187,7 +187,7 @@ static int fit_icon(Image *img)
     return 1;
 }
 
-Texture *art_load_icon(const Entry *e)
+static Texture *load_icon(const Entry *e, int round)
 {
     char path[256];
     Texture *t;
@@ -213,9 +213,19 @@ Texture *art_load_icon(const Entry *e)
         tex_free(t);
         return NULL;
     }
-    if (t)
+    if (t && round)
         tex_round_corners(t, t->w / ICON_RADIUS_DIV);
     return t;
+}
+
+Texture *art_load_icon(const Entry *e)
+{
+    return load_icon(e, 1);
+}
+
+Texture *art_load_icon_square(const Entry *e)
+{
+    return load_icon(e, 0);
 }
 
 Texture *art_load_bg(const Entry *e)

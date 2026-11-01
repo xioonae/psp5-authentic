@@ -11,6 +11,7 @@ typedef struct {
     volatile int state;
     Texture *tex;
     float shown; /* 0→1, för intoning (används av UI:t) */
+    int round;   /* the picture was made with rounded corners (the Games tab) or square ones (the Library) */
 } IconSlot;
 
 /* En flik: index i spellistan i visningsordning (a negative one is not a game: the Library card, which has no icon).
@@ -27,6 +28,8 @@ void loader_stop(void);
 
 /* Byter vilken flik som laddas i ordning. */
 void loader_set_view(const LoaderView *view);
+/* The corners of the card pictures from now on: 1 = rounded (the Games tab), 0 = square (the Library). The pictures that are loaded with the other corners are made again. */
+void loader_set_round(int round);
 /* Position i fliken som är i fokus; frigör ikoner långt bort. Anropas varje bildruta. */
 void loader_focus(int view_pos);
 /* Ikonplatsen för ett index i spellistan. */

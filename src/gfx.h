@@ -105,6 +105,16 @@ void gfx_quad(const float *xy, const u32 *colors);
 /* Ritar bara inom rektangeln tills gfx_clip_reset */
 void gfx_clip(float x, float y, float w, float h);
 void gfx_clip_reset(void);
+/* A name that is wider than its room does not shrink: it stands still for a moment, scrolls to its end, stays there a moment, and starts again.
+ * text_marquee_offset() is how far it has gone `t` seconds after it appeared (0 while it waits and when it fits: overflow <= 0);
+ * text_draw_marquee() draws it from x on, left aligned, in `room` pixels (nothing is drawn outside them) and scrolled for `t` seconds. */
+#define MARQUEE_WAIT  1.2f  /* seconds it stands at the start */
+#define MARQUEE_END   1.0f  /* ... and at the end */
+#define MARQUEE_SPEED 36.0f /* pixels a second */
+float text_marquee_offset(float overflow, float t);
+void text_draw_marquee(float x, float y, float size, int bold, u32 color, float room, const char *s, float t);
+/* The filled part of a bar: the left end rounded like the bar's (radius r), the right end a straight edge at x + w. Inside the clip that is set now (it is put back). */
+void gfx_bar_fill(float x, float y, float w, float h, float r, u32 color);
 void gfx_stroke(const float *xy, const u32 *colors, int n, float width);
 
 enum { BTN_CROSS, BTN_CIRCLE, BTN_TRIANGLE, BTN_SQUARE, BTN_START, BTN_SELECT };

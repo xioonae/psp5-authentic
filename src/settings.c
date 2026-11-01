@@ -1424,7 +1424,7 @@ static void draw_store_page(float a)
                 if (w < 1)
                     continue;
                 if (x == bx)
-                    gfx_round_rect(x, y + 22, w < 6 ? 6 : w, 6, 3, fade(ST_COLOR[r], a));
+                    gfx_bar_fill(x, y + 22, w, 6, 3, fade(ST_COLOR[r], a)); /* the left end is the bar's, round; every part ends in a straight edge */
                 else
                     gfx_rect(x, y + 22, w, 6, fade(ST_COLOR[r], a));
                 x += w;

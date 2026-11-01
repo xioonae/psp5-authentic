@@ -32,6 +32,7 @@
 
 /* layout (480×272) */
 #define MARGIN     24.0f
+#define TITLE_SIZE 0.66f   /* the size of a game's name (Games and Library), of Play / Open and of the time played: one size for all of them */
 #define BOTTOM_Y   243.0f  /* the middle of the bottom row: Start and Options in Games, the tag and title in the Library.
                             * The highlight of Start is 16 px from the bottom edge, as far as the top bar's ink is from the top. */
 #define ROW_Y      38.0f   /* kortradens överkant */
@@ -51,8 +52,6 @@
 #define CELL_W     ((SCREEN_W - 2 * MARGIN - (GRID_COLS - 1) * GRID_GAP) / GRID_COLS) /* 80: the grid and every card in it are whole pixels */
 #define CELL_H     44.0f   /* (the pictures are 144 x 80, a little wider than this: 20 x 11 is 1.82, they are 1.80) */
 #define ROW_STEP   (CELL_H + 11.0f)
-#define SELECT_GROW_W 6.0f /* the selected card of the grid is this much wider and ... */
-#define SELECT_GROW_H 4.0f /* ... higher, evenly on all sides (whole pixels) */
 #define SORT_SIZE  0.56f   /* the text of the Library's Sort button, and the space between it and the edge of its frame */
 #define SORT_PAD   9.0f
 #define GRID_ROWS  3       /* hela rader som syns */
@@ -457,17 +456,6 @@ static void close_library(Ui *ui)
 
 /* --- titel --- */
 
-static void utf8_pop(char *s)
-{
-    int n = strlen(s);
-    while (n > 0) {
-        n--;
-        if (((u8)s[n] & 0xC0) != 0x80)
-            break;
-    }
-    s[n] = 0;
-}
-
 static const char *type_name(u32 t);
 
 /* the tag (PSP, APP, ...) in front of the title: its width plus the gap to the title */
@@ -488,18 +476,10 @@ static void fit_label(Ui *ui)
     const char *title = i == HOME_LIBRARY ? L(S_TAB_LIBRARY) : ui->list->items[i].title;
     if (i >= 0)
         max_w -= tag_room(ui->list->items[i].type);
-    ui->label_size = 0.78f;
+    ui->label_size = TITLE_SIZE; /* as in the Library: a title that does not fit keeps its size and scrolls after a moment */
+    ui->label_room = max_w;
+    ui->label_t = 0;
     snprintf(ui->label, sizeof(ui->label), "%s", title);
-    while (ui->label_size > 0.62f && text_width(ui->label_size, 0, ui->label) > max_w)
-        ui->label_size -= 0.04f;
-    if (text_width(ui->label_size, 0, ui->label) > max_w) {
-        char buf[sizeof(ui->label)];
-        snprintf(buf, sizeof(buf), "%s", title);
-        do {
-            utf8_pop(buf);
-            snprintf(ui->label, sizeof(ui->label), "%s...", buf);
-        } while (buf[0] && text_width(ui->label_size, 0, ui->label) > max_w);
-    }
 }
 
 /* --- livscykel --- */
@@ -676,6 +656,29 @@ static int menu_dir_of(const UiInput *in)
     return ((in->held & PSP_CTRL_UP) || in->ly < 40) ? -1 : ((in->held & PSP_CTRL_DOWN) || in->ly > 215) ? 1 : 0;
 }
 
+/* a held ↑ / ↓ in a popup repeats: the first step at once, the next after POPUP_REPEAT_FIRST, then every POPUP_REPEAT seconds, as the lists do */
+#define POPUP_REPEAT_FIRST 0.32f
+#define POPUP_REPEAT       0.08f
+#define POPUP_REPEAT_HELD  1e9f /* (the direction was held when the popup opened) */
+static int menu_step(Ui *ui, const UiInput *in, float dt)
+{
+    int dir = menu_dir_of(in);
+    if (!dir) {
+        ui->menu_dir = 0;
+        return 0;
+    }
+    if (dir != ui->menu_dir) { /* a new press: it moves at once */
+        ui->menu_dir = dir;
+        ui->menu_timer = POPUP_REPEAT_FIRST;
+        return dir;
+    }
+    ui->menu_timer -= dt;
+    if (ui->menu_timer > 0)
+        return 0;
+    ui->menu_timer = POPUP_REPEAT;
+    return dir;
+}
+
 /* START: Delete (only what may be deleted), Information and Keep in Home. The UMD disc has only Information (it is always the first card on Home). The Library card
  * has no popup: it is always on Home, at the end. */
 static void menu_build(Ui *ui, const UiInput *in)
@@ -688,7 +691,8 @@ static void menu_build(Ui *ui, const UiInput *in)
     ui->menu_sel = 0;
     ui->menu_stage = 0;
     ui->menu_home_dirty = 0;
-    ui->menu_dir = menu_dir_of(in); /* en riktning som redan hålls flyttar inte markeringen */
+    ui->menu_dir = menu_dir_of(in);
+    ui->menu_timer = POPUP_REPEAT_HELD; /* (a direction that is held when it opens does not move, and does not repeat until it is let go) */
     if (sel_card(ui) == HOME_LIBRARY || index < 0)
         return;
     const Entry *e = &ui->list->items[index];
@@ -711,6 +715,7 @@ static void menu_build_sort(Ui *ui, const UiInput *in)
     ui->menu_sel = ui->lib_sort;
     ui->menu_stage = 0;
     ui->menu_dir = menu_dir_of(in);
+    ui->menu_timer = POPUP_REPEAT_HELD; /* (a direction that is held when it opens does not move, and does not repeat until it is let go) */
 }
 
 /* The view button of the Library: the four views, the one in use chosen */
@@ -723,6 +728,7 @@ static void menu_build_view(Ui *ui, const UiInput *in)
     ui->menu_sel = ui->lib_view;
     ui->menu_stage = 0;
     ui->menu_dir = menu_dir_of(in);
+    ui->menu_timer = POPUP_REPEAT_HELD; /* (a direction that is held when it opens does not move, and does not repeat until it is let go) */
 }
 
 /* Stänger menyn. Innehållet står kvar medan den tonas ut. */
@@ -739,6 +745,7 @@ static void menu_build_power(Ui *ui, const UiInput *in)
     ui->menu_sel = POWER_OPEN_ON;
     ui->menu_stage = 0;
     ui->menu_dir = menu_dir_of(in);
+    ui->menu_timer = POPUP_REPEAT_HELD; /* (a direction that is held when it opens does not move, and does not repeat until it is let go) */
 }
 
 static void menu_close(Ui *ui)
@@ -1192,14 +1199,13 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         u32 back = PSP_CTRL_CIRCLE | PSP_CTRL_START; /* (the options button that opened a popup closes it again) */
         if (ui->menu_kind == MENU_POWER)
             back |= PSP_CTRL_SELECT; /* the button that opened it closes it, like START on the options popup */
-        int dir = menu_dir_of(in);
-        if (dir && dir != ui->menu_dir) {
-            int next = (int)clampf(ui->menu_sel + dir, 0, ui->menu_n - 1);
+        int step = menu_step(ui, in, dt);
+        if (step) {
+            int next = (int)clampf(ui->menu_sel + step, 0, ui->menu_n - 1);
             if (next != ui->menu_sel)
                 sound_play(SND_MOVE);
             ui->menu_sel = next;
         }
-        ui->menu_dir = dir;
         if (ui->menu_stage == 1 && ui->del_is_dir && !ui->del_measured) {
             unsigned long long bytes;
             unsigned files;
@@ -1415,8 +1421,10 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     ui->pos = approach(ui->pos, *sel, 13.0f, dt);
     if (fabsf(ui->pos - *sel) < 0.001f)
         ui->pos = *sel;
-    if (ui->tab != TAB_MUSIC)
+    if (ui->tab != TAB_MUSIC) {
+        loader_set_round(ui->tab != TAB_LIBRARY); /* the Library's cards are rectangles, the Games tab's are rounded: the pictures follow */
         loader_focus(*sel);
+    }
     if (music_needs_cjk())
         font_ensure_cjk(); /* japanska/ryska låttitlar (laddas bara en gång) */
     update_background(ui, dt);
@@ -1427,6 +1435,8 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         ui->label_anim = 0;
     }
     ui->label_anim = clampf(ui->label_anim + dt * 5.0f, 0, 1);
+    ui->label_t += dt; /* (the title scrolls when it does not fit) */
+    ui->lib_label_t += dt;
     return UI_NONE;
 }
 
@@ -1655,12 +1665,21 @@ static void card_geometry(float d, float *x, float *w, float *h, float *y)
 /* grid: a card of the library grid, whose selection ring is a little thinner than the big card's in the row. `focus` (0..1) is how
  * selected the card is (brightness, shadow); `ring` (0..1) is how visible its ring is: the selected card keeps its size and
  * brightness when the focus is somewhere else (the top bar, Start, Sort), only the ring goes. */
+/* the plain card behind a picture (the card's colour): rounded, or a rectangle when r is 0 */
+static void card_plate(float x, float y, float w, float h, float r, u32 color)
+{
+    if (r > 0)
+        gfx_round_rect(x, y, w, h, r, color);
+    else
+        gfx_rect(x, y, w, h, color);
+}
+
 static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h, float focus, float ring, float alpha, int grid)
 {
     int library = list_index == HOME_LIBRARY; /* the Library card has no icon to load: a card in the theme's colour with its picture */
     int folder = LIB_IS_FOLDER(list_index);   /* ... and so has a folder of the Library: the same colour, a folder with its first letter */
     IconSlot *slot = library || folder ? NULL : loader_icon(list_index);
-    float r = w / 12.0f; /* corner radius: 1/12 of the width at every size, which is what art.c cuts the pictures to */
+    float r = grid ? 0 : w / 12.0f; /* corner radius: 1/12 of the width at every size, which is what art.c cuts the pictures to; the Library's cards are rectangles (r 0) */
     /* the card's pixels: a pixel is part of it when its middle is (the picture, the ring and the corners all use this box) */
     int l = (int)ceilf(x - 0.5f), t = (int)ceilf(y - 0.5f);
     int rt = (int)ceilf(x + w - 0.5f), b = (int)ceilf(y + h - 0.5f);
@@ -1680,12 +1699,12 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
         u32 cc = theme_cur()->card; /* temats färg, andas medan bilden laddas */
         if (library) { /* the same colour as a game without a picture; the picture is one image on the card's whole pixels */
             int tint = (int)lerpf(200, 255, focus); /* as dim as a picture is when it is not selected */
-            gfx_round_rect(l, t, rt - l, b - t, r, RGBA(cc & 0xFF, (cc >> 8) & 0xFF, (cc >> 16) & 0xFF, (int)(255 * pa)));
+            card_plate(l, t, rt - l, b - t, r, RGBA(cc & 0xFF, (cc >> 8) & 0xFF, (cc >> 16) & 0xFF, (int)(255 * pa)));
             gfx_library_icon(l, t, rt - l, b - t, RGBA(tint, tint, tint, (int)(255 * pa)));
         } else if (folder) { /* a folder drawn by the launcher, the capital letter of the folder's name cut out of its body */
             int tint = (int)lerpf(200, 255, focus);
             u32 cc_a = RGBA(cc & 0xFF, (cc >> 8) & 0xFF, (cc >> 16) & 0xFF, (int)(255 * pa));
-            gfx_round_rect(l, t, rt - l, b - t, r, cc_a);
+            card_plate(l, t, rt - l, b - t, r, cc_a);
             FolderPic pic;
             gfx_folder_icon(l, t, rt - l, b - t, RGBA(tint, tint, tint, (int)(255 * pa)), &pic);
             int n = LIB_FOLDER_NO(list_index);
@@ -1697,8 +1716,8 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
                 text_draw(lx, ly, ls, 0, cc_a, ALIGN_CENTER, initial);
             }
         } else {
-            gfx_round_rect(x, y, w, h, r, RGBA((cc & 0xFF) + (int)(10 * breath), ((cc >> 8) & 0xFF) + (int)(10 * breath),
-                                               ((cc >> 16) & 0xFF) + (int)(12 * breath), (int)(235 * pa)));
+            card_plate(grid ? l : x, grid ? t : y, grid ? rt - l : w, grid ? b - t : h, r, RGBA((cc & 0xFF) + (int)(10 * breath), ((cc >> 8) & 0xFF) + (int)(10 * breath),
+                                                                                                  ((cc >> 16) & 0xFF) + (int)(12 * breath), (int)(235 * pa)));
             const char *t = ui->list->items[list_index].title;
             char initial[2] = { (t[0] >= 'a' && t[0] <= 'z') ? t[0] - 32 : t[0], 0 };
             if ((u8)initial[0] < 0x80 && initial[0])
@@ -1715,8 +1734,12 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
      * (1 px utanför, resten innanför) och har samma
      * hörnmitt som kortet, så bilden fyller ramen helt – ingen springa – och bildens kant och avskurna hörn
      * göms under ramen. Kanterna läggs på samma hela pixlar som kortet själv hamnar på. */
-    if (ring > 0.01f)
-        gfx_edge_ring(l - 1, t - 1, rt - l + 2, b - t + 2, r + 1, grid, RGBA(240, 240, 244, (int)(235 * ring * alpha)));
+    if (ring > 0.01f) {
+        if (grid) /* a rectangle: a straight frame, 2 px thick, one pixel outside the card and one inside it */
+            gfx_frame(l - 1, t - 1, rt - l + 2, b - t + 2, 2, RGBA(240, 240, 244, (int)(235 * ring * alpha)));
+        else
+            gfx_edge_ring(l - 1, t - 1, rt - l + 2, b - t + 2, r + 1, grid, RGBA(240, 240, 244, (int)(235 * ring * alpha)));
+    }
 }
 
 static void draw_row(Ui *ui)
@@ -1784,7 +1807,7 @@ static void button_bg(float x, float y, float w, float h, float t, float fade)
 #define PILL_PAD 12.0f
 #define CLOCK_D  12.0f /* the clock face: 12 px, so that it sits in the middle of the 26 px pill */
 #define CLOCK_GAP 6.0f
-#define PILL_SIZE 0.66f /* the text, as large as the text of Start */
+#define PILL_SIZE TITLE_SIZE /* the text, as large as the text of Start */
 
 /* the time played of the game `i` of the list as text; "" = nothing to show. The seconds are looked up once for the game that is selected
  * (the file is searched for it), the text is made every time so that it follows the language (Settings can change it while this is open). */
@@ -1832,23 +1855,23 @@ static void draw_details(Ui *ui)
     float la = smooth(ui->label_anim);
     float tx = SMALL_X + (1 - la) * 8;
     const char *type = i >= 0 ? type_name(ui->list->items[i].type) : "";
-    if (type[0]) {
+    if (type[0]) { /* the tag and the title are as large as in the Library (the same sizes, the tag 15 high) */
         float bw = ceilf(text_width(0.5f, 1, type)) + 12; /* (whole pixels) */
-        float ty = floorf(LABEL_Y - 7.5f - ui->label_size * 6.8f + 0.5f); /* tagg och versaler har samma mitt, som i Biblioteket */
+        float ty = floorf(LABEL_Y - 12.5f + 0.5f); /* tagg och versaler har samma mitt, som i Biblioteket */
         gfx_round_rect(tx, ty, bw, 15, 3, with_alpha(LIGHT, 0.92f * la * fade));
-        text_draw(tx + bw / 2, ty + 11, 0.5f, 1, with_alpha(DARK, la * fade), ALIGN_CENTER, type);
+        text_draw(tx + bw / 2, ty + 11.5f, 0.5f, 1, with_alpha(DARK, la * fade), ALIGN_CENTER, type);
         tx += bw + 8;
     }
-    text_draw(tx, LABEL_Y, ui->label_size, 0, with_alpha(TEXT_MAIN, la * fade), ALIGN_LEFT, ui->label);
+    text_draw_marquee(tx, LABEL_Y, ui->label_size, 0, with_alpha(TEXT_MAIN, la * fade), ui->label_room, ui->label, ui->label_t);
 
     /* Start and Options under the card, on the bottom row. Both have a dark background; the one
      * that is selected (↓ from the card) turns white with dark text. Options is a circle as high as Start, with three dots. */
     const char *go = L(i >= 0 ? S_LAUNCH : S_F_OPEN); /* the Library card is opened, not started */
     float bx = MARGIN, bh = 26, by = BOTTOM_Y - bh / 2;
-    float w = ceilf(text_width(0.66f, 0, go)) + 32;
+    float w = ceilf(text_width(TITLE_SIZE, 0, go)) + 32;
     float t0 = smooth(ui->btn_anim[0]), t1 = smooth(ui->btn_anim[1]);
     button_bg(bx, by, w, bh, t0, fade);
-    text_draw(bx + w / 2, by + 17.5f, 0.66f, 0, with_alpha(mix_color(TEXT_MAIN, DARK, t0), fade), ALIGN_CENTER, go);
+    text_draw(bx + w / 2, by + 17.5f, TITLE_SIZE, 0, with_alpha(mix_color(TEXT_MAIN, DARK, t0), fade), ALIGN_CENTER, go);
 
     if (i != HOME_LIBRARY) { /* (the Library card has no options: no button for them) */
         float mx = bx + w + 10;
@@ -2001,7 +2024,7 @@ static void draw_library(Ui *ui)
 
     /* korten – klipps under rubriken */
     int sel = ui->sel[TAB_LIBRARY];
-    float focus_anim = smooth(ui->label_anim), card_focus = focus_anim; /* (the selected card stays large when the focus is elsewhere) */
+    float focus_anim = smooth(ui->label_anim);
     int first_row = (int)floorf(ui->grid_scroll) - 1, last_row = (int)ceilf(ui->grid_scroll) + GRID_ROWS + 1;
     gfx_clip(0, GRID_Y - 8, SCREEN_W, GRID_BOTTOM - (GRID_Y - 8));
     float sx = 0, sy = 0, sw = 0, shh = 0;
@@ -2022,7 +2045,7 @@ static void draw_library(Ui *ui)
         draw_card(ui, v->idx[p], x, y, CELL_W, CELL_H, 0, 0, a * (1 - launch) * fade, 1);
     }
     if (sw > 0) {
-        float w = sw + SELECT_GROW_W * card_focus, h = shh + SELECT_GROW_H * card_focus; /* (6 x 4 px more at rest: the edges stay on whole pixels) */
+        float w = sw, h = shh; /* the selected card is not bigger than the others: it has the white frame */
         float cx = sx + sw / 2, cy = sy + shh / 2;
         if (launch > 0) { /* startanimation: kortet växer mot mitten */
             gfx_clip_reset();
@@ -2057,13 +2080,14 @@ static void draw_library(Ui *ui)
         const char *played = play_text(ui, i); /* the pill with the time played is on the right of the row: the title stops before it */
         float max_w = SCREEN_W - MARGIN - tx - (played[0] ? play_pill_width(played) + 12 : 0);
         if (ui->lib_label_for != card || ui->lib_label_room != max_w) {
-            text_ellipsis(ui->lib_label, sizeof(ui->lib_label), title, 0.66f, max_w);
+            snprintf(ui->lib_label, sizeof(ui->lib_label), "%s", title); /* (a title that is too long scrolls: nothing is shortened) */
+            if (ui->lib_label_for != card)
+                ui->lib_label_t = 0;
             ui->lib_label_for = card;
             ui->lib_label_room = max_w;
         }
         draw_play_pill(played, SCREEN_W - MARGIN, ui_a * focus_anim);
-        text_draw(tx + (1 - focus_anim) * 6, BOTTOM_Y + 4.5f, 0.66f, 0, with_alpha(TEXT_MAIN, ui_a * focus_anim),
-                  ALIGN_LEFT, ui->lib_label);
+        text_draw_marquee(tx + (1 - focus_anim) * 6, BOTTOM_Y + 4.5f, TITLE_SIZE, 0, with_alpha(TEXT_MAIN, ui_a * focus_anim), max_w, ui->lib_label, ui->lib_label_t);
     }
 }
 

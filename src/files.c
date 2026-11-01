@@ -60,6 +60,8 @@ static char s_toast[96];
 static float s_toast_time;
 static int s_pick;            /* 1 = a place to choose a plugin (files_open_pick): see files.h */
 static char s_picked[512];    /* the file that was chosen, or "" */
+static char s_name_cur[256];  /* the name of the highlighted row, and how long it has been that (a name that does not fit scrolls) */
+static float s_name_t;
 static u64 s_free, s_total;   /* enheten som visas */
 static const char *s_devs[2];
 static int s_ndev;
@@ -914,6 +916,12 @@ int files_update(const UiInput *in, float dt)
         return 0;
     }
 
+    { const char *cur = s_count ? s_items[s_sel].name : ""; /* the highlighted name scrolls from the moment the highlight came to it */
+      if (strcmp(cur, s_name_cur)) {
+          snprintf(s_name_cur, sizeof(s_name_cur), "%s", cur);
+          s_name_t = 0;
+      }
+      s_name_t += dt; }
     int move = vertical(in, dt);
     if (s_menu) {
         if (move) {
@@ -1078,7 +1086,7 @@ static void draw_header(float a, float slide)
         text_draw(right, 28, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_RIGHT, line);
         float bw = 120, used = 1 - (float)s_free / (float)s_total;
         gfx_round_rect(right - bw, 34, bw, 4, 2, fade(RGBA(255, 255, 255, 40), a));
-        gfx_round_rect(right - bw, 34, bw * clampf(used, 0.02f, 1), 4, 2, fade(theme_cur()->accent, a));
+        gfx_bar_fill(right - bw, 34, bw * clampf(used, 0.02f, 1), 4, 2, fade(theme_cur()->accent, a)); /* (a straight end) */
     }
     if (s_path[0]) { /* sökvägen, kortad från vänster */
         const char *p = s_path;
@@ -1123,7 +1131,10 @@ static void draw_list(float a, float slide)
             x += 18;
         }
         draw_icon(x, y + 2, e, a);
-        text_draw(x + 26, y + 16.5f, 0.58f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, e->shown);
+        if (sel && text_width(0.58f, 0, e->name) > LIST_W - 130) /* the highlighted name is not cut off with dots: it scrolls after a moment */
+            text_draw_marquee(x + 26, y + 16.5f, 0.58f, 0, fade(TEXT_MAIN, a), LIST_W - 130, e->name, s_name_t);
+        else
+            text_draw(x + 26, y + 16.5f, 0.58f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, e->shown);
         if (e->size[0])
             text_draw(LIST_X + LIST_W - 10, y + 16, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_RIGHT, e->size);
     }

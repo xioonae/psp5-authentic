@@ -85,6 +85,8 @@ typedef struct {
     u8 marked, laid;
     char row_main[64], row_sub[64], row_size[16];
     float sub_x;
+    float main_room;  /* the room of the name in the row */
+    u8 name_over;     /* the name is wider than that: the highlighted row scrolls it (the others show it cut off) */
 } Save;
 
 /* --- the reading thread --- */
@@ -119,6 +121,8 @@ static struct {
     int mode;             /* MODE_SAVES or MODE_GAMES */
     int gs_version;       /* Games and Apps: gamesize_version() when the sizes were last taken */
     int sel, top;
+    int name_for;         /* the row whose name scrolls (name_t seconds since it was highlighted) */
+    float name_t;
     int sort;
     int sort_focus;       /* the Sort button under the title is selected, not a row (↑ from the first row) */
     float sort_anim;      /* 0..1: how selected it looks */
@@ -687,7 +691,7 @@ static void reset(const EntryList *games, int dev, int mode)
 void saves_open_games(const EntryList *games, int dev)
 {
     reset(games, dev, MODE_GAMES);
-    S.sort = GSORT_USED_NEW;
+    S.sort = GSORT_LEAST; /* the first of the popup */
     Save *list = calloc(games->count ? games->count : 1, sizeof(Save));
     s_gone = malloc((games->count ? games->count : 1) * sizeof(int));
     int n = 0;
@@ -827,11 +831,13 @@ static void lay_row(Save *s)
     const char *sub = s->ready && s->title[0] && strcmp(s->title, name) ? s->title : "";
     float full = text_width(0.58f, 0, name);
     float main_max = sub[0] ? avail * 0.62f : avail;
+    s->main_room = main_max;
+    s->name_over = full > main_max;
     if (full > main_max)
         text_ellipsis(s->row_main, sizeof(s->row_main), name, 0.58f, main_max);
     else
         snprintf(s->row_main, sizeof(s->row_main), "%s", name);
-    s->sub_x = text_width(0.58f, 0, s->row_main) + 8;
+    s->sub_x = s->name_over ? main_max + 8 : text_width(0.58f, 0, s->row_main) + 8; /* (the highlighted row scrolls the name over the whole room) */
     if (sub[0] && avail - s->sub_x > 36)
         text_ellipsis(s->row_sub, sizeof(s->row_sub), sub, 0.5f, avail - s->sub_x);
 }
@@ -938,6 +944,8 @@ static void set_sort(int sort)
         return;
     S.sort = sort;
     resort();
+    S.sel = S.top = 0; /* a new way to sort starts the list from the beginning (the highlight does not follow the game it was on) */
+    S.scroll = 0;
     sound_play(SND_SELECT);
 }
 
@@ -1149,6 +1157,12 @@ int saves_update(const UiInput *in, float dt)
         S.top = S.sel - (ROWS - 1);
     S.scroll += (S.top - S.scroll) * clampf(dt * 16, 0, 1);
 
+    /* the name of the highlighted row scrolls when it is too long, from the moment the highlight came to it */
+    if (S.name_for != S.sel) {
+        S.name_for = S.sel;
+        S.name_t = 0;
+    }
+    S.name_t += dt;
     /* the details, and the picture once the highlight has rested for a moment */
     if (n && (S.pan_for != S.sel || S.pan_ready != T.items[S.sel].ready))
         lay_panel();
@@ -1217,7 +1231,10 @@ static void draw_rows(float a, float slide)
         else
             gfx_ring(x, cy - 6, 12, 12, 6, fade(RGBA(255, 255, 255, 90), a));
         u32 col = !s->ready ? TEXT_DIM : s->matched ? TEXT_MAIN : RGBA(200, 202, 212, 255); /* no game: a bit dimmer */
-        text_draw(x + 20, y + 16.5f, 0.58f, 0, fade(col, a), ALIGN_LEFT, s->row_main);
+        if (sel && s->name_over) /* the highlighted name does not shrink or stay cut: it scrolls after a moment */
+            text_draw_marquee(x + 20, y + 16.5f, 0.58f, 0, fade(col, a), s->main_room, s->ready && s->game[0] ? s->game : s->dir, S.name_t);
+        else
+            text_draw(x + 20, y + 16.5f, 0.58f, 0, fade(col, a), ALIGN_LEFT, s->row_main);
         if (s->row_sub[0])
             text_draw(x + 20 + s->sub_x, y + 16.5f, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_LEFT, s->row_sub);
         if (s->row_size[0])
@@ -1346,7 +1363,7 @@ static void draw_header(float a, float slide)
     if (h.has_free) { /* as in the file manager */
         text_draw(HEADER_RIGHT, 28, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_RIGHT, h.free);
         gfx_round_rect(HEADER_RIGHT - BAR_W, 34, BAR_W, 4, 2, fade(RGBA(255, 255, 255, 40), a));
-        gfx_round_rect(HEADER_RIGHT - BAR_W, 34, BAR_W * clampf(h.used, 0.02f, 1), 4, 2, fade(theme_cur()->accent, a));
+        gfx_bar_fill(HEADER_RIGHT - BAR_W, 34, BAR_W * clampf(h.used, 0.02f, 1), 4, 2, fade(theme_cur()->accent, a)); /* (a straight end) */
     }
     if (h.has_sel)
         text_draw(HEADER_RIGHT, 52, 0.5f, 0, fade(TEXT_MAIN, a), ALIGN_RIGHT, h.sel);

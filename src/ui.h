@@ -75,6 +75,8 @@ typedef struct {
     int label_for;
     char label[160];
     float label_size;
+    float label_room;    /* the room of the title beside the card: a longer one scrolls (text_draw_marquee) */
+    float label_t;       /* seconds since the title was shown, for that scrolling */
     float label_anim;
 
     /* knapprepetition */
@@ -103,7 +105,8 @@ typedef struct {
     int grid_target;     /* raden som ska stå överst */
     char lib_label[160];
     int lib_label_for;
-    float lib_label_room; /* the room the title in lib_label was shortened for (less when the small clock with the time played is there) */
+    float lib_label_room; /* the room of the title in lib_label (less when the small clock with the time played is there): a longer title scrolls */
+    float lib_label_t;    /* seconds since that title was shown */
     int pt_for;           /* the game whose time played is in pt_secs (-2 = none yet): kept so that the list is not searched every frame */
     unsigned pt_secs;     /* ... its seconds */
     char pt_text[16];     /* ... as "54h" or "45min" (made at every draw, in the language of that moment), empty when there is nothing to show */
@@ -133,7 +136,8 @@ typedef struct {
     int menu_stage;      /* 0 = valen, 1 = frågan "radera?" / "ta bort?" */
     int menu_kept;       /* the card of the options popup is kept in Home (the switch of Keep in Home) */
     int menu_home_dirty; /* Keep in Home was switched: Home is made again when the popup closes (the card stays until then) */
-    int menu_dir;        /* -1/1 medan upp/ner hålls i menyn (en flytt per tryck) */
+    int menu_dir;        /* -1/1 while ↑/↓ is held in a popup (a held button repeats, see menu_step()) */
+    float menu_timer;    /* seconds until a held ↑/↓ in a popup moves again */
     int del_is_dir;      /* frågan gäller en hel mapp */
     int del_measured;    /* mappens storlek är räknad */
     char del_lines[4][96]; /* frågans text, radbruten */

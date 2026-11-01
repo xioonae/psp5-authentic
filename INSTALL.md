@@ -87,7 +87,7 @@ Every screen uses the same few buttons for the same things:
 
 | Button | What it does |
 |---|---|
-| D-pad or analog stick | **Navigate**: move between cards, rows, tabs and buttons · hold to go faster |
+| D-pad or analog stick | **Navigate**: move between cards, rows, tabs and buttons · hold to go faster (also in popups) |
 | ✕ | **Confirm**: start the game, open, choose, switch on or off (in Music: play / pause) |
 | ○ | **Back**: one step back, close a popup or a screen (it closes the Library) |
 | START | **Options**: of the selected game, app or file (not on the Library card) · START again closes the options |
@@ -108,6 +108,7 @@ Where to go from there:
 - **↑ from any first-row card in the Library** selects the Sort button (always the first stop) · Confirm opens the sorting (the same in *Manage Saved Data* and *Games and Apps*) · ↑ again goes to the cog wheel, ↓ from the cog wheel comes back to the Sort button.
 - **↑ from the first thing on a tab** selects the top bar: ← → between Games, Music and the cog wheel (in the Library only the cog wheel: the word *Library* is a title) · Confirm opens a tab, or the settings on the cog wheel · ↓ goes back down · Back goes back to the selected game.
 - **← → in Music**: previous / next track · hold to seek.
+- **A name that is too long** scrolls after a moment: the name next to the big card, the selected card in the Library, and the highlighted row in the File Manager, *Manage Saved Data* and *Games and Apps*.
 
 ## File Manager
 
