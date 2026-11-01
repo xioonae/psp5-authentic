@@ -46,6 +46,10 @@ wherever it can, but it doesn't copy the console in everything.
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/ftp-server.png" alt="FTP Server"><br><sub><b>FTP Server</b> (Settings → Network) – copy files to and from your computer over Wi-Fi: the address to type, who is connected and the file that is going</sub></td>
+    <td width="50%"><img src="docs/screenshots/manage-plugins.png" alt="Manage Plugins"><br><sub><b>Manage Plugins</b> (Settings → System → Plugins) – the plugins that are installed and where; Confirm opens one to install it to more places or uninstall it from some</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/install-plugin.png" alt="Install New Plugin"><br><sub><b>Install New Plugin</b> – choose a <code>.prx</code> in the File Manager, then where it goes and what it runs in (XMB, Games, PS1)</sub></td>
     <td width="50%"></td>
   </tr>
 </table>
@@ -73,7 +77,7 @@ wherever it can, but it doesn't copy the console in everything.
   - *psp5 authentic* – boot into psp5 authentic, sounds, startup animation, battery percentage, clear the image cache.
   - *Network* – the PSP's own Wi-Fi screen and the FTP Server.
   - *System* – *Console Information* (nickname, model, system software, MAC address, storage, battery, and where psp5 authentic comes from), *Appearance* (*Show Game art* and the themes),
-    *Language*, *ARK-5 Settings* or *ARK-4 Settings* (ARK's own options: USB charge, WPA2, hide pictures, regions ...), *Performance* (CPU speed, extra memory, caches) and *Plugins*.
+    *Language*, *ARK-5 Settings* or *ARK-4 Settings* (ARK's own options: USB charge, WPA2, hide pictures, regions ...), *Performance* (CPU speed, extra memory, caches) and *Plugins* (switch each plugin on or off, and *Manage Plugins* to install a new plugin and to install or uninstall one in more or fewer places).
   - *Storage* – Console Storage (see above), the File Manager and USB Mode.
   - *Screen and Sound* – the PSP's own brightness, backlight timer (psp5 authentic remembers it), volume, equalizer and AVLS.
   - *Controls* – the PSP's own confirm button, and which buttons confirm, go back, open the options and the power menu.

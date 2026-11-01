@@ -9,6 +9,7 @@ enum {
     SA_NONE, SA_CLOSE, SA_USB, SA_XMB, SA_RESTART, SA_SUSPEND, SA_SHUTDOWN, SA_RECOVERY, SA_CLEAR_CACHE, SA_FILES, SA_WIFI, SA_FTP,
     SA_GAMES, /* Console Storage > Games and Apps: the list of the games and apps (saves.c), on the storage settings_action_dev() says */
     SA_SAVES, /* Console Storage > Saved Data: Manage Saved Data (saves.c), on the same storage */
+    SA_PLUGIN_PICK, /* Plugins > Manage Plugins > Install New Plugin: the File Manager opens to choose a plugin (a visit: settings_plugin_new() when it gives one back) */
 };
 
 /* The storage of the row that gave SA_GAMES or SA_SAVES: 0 = the memory card (ms0:), 1 = the internal storage of a PSP Go (ef0:), -1 = all (one storage only) */
@@ -19,6 +20,9 @@ void settings_back(void);
 /* 1 = the action is a visit: when it is over psp5 comes back to Settings, on the same row (the PSP's own Wi-Fi screen, the FTP server, the File Manager, USB Mode), and not to the
  * main screen like after the others. */
 int settings_is_visit(int action);
+
+/* A plugin file was chosen (the File Manager gave it back): Settings shows the page for installing it. `path` is the file, e.g. "ms0:/download/leda.prx". */
+void settings_plugin_new(const char *path);
 
 /* 1 = a choice's popup is open: SELECT does not open the power popup then (main.c, power.c). */
 int settings_modal(void);

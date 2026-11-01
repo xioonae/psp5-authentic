@@ -67,8 +67,13 @@ typedef struct {
 } Category; /* a page: a list of rows */
 
 /* The pages. PG_ROOT is the first list; the six rows of it open the pages after it; the rows of PG_SYSTEM open the six after that. */
-enum { PG_ROOT, PG_PSP5, PG_NETWORK, PG_SYSTEM, PG_STORAGE, PG_SCREEN, PG_CONTROLS, PG_INFO, PG_APPEAR, PG_LANG, PG_ARK, PG_PERF, PG_PLUGINS, PG_CSTORE, PG_COUNT };
-static const signed char PARENT[PG_COUNT] = { -1, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_STORAGE };
+enum { PG_ROOT, PG_PSP5, PG_NETWORK, PG_SYSTEM, PG_STORAGE, PG_SCREEN, PG_CONTROLS, PG_INFO, PG_APPEAR, PG_LANG, PG_ARK, PG_PERF, PG_PLUGINS, PG_CSTORE,
+       PG_PLUGMGR, PG_PLUGEDIT, PG_PLUGADD, PG_PLUGDEL, PG_PLUGNEW, PG_COUNT };
+static const signed char PARENT[PG_COUNT] = { -1, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_STORAGE,
+                                              PG_PLUGINS, PG_PLUGMGR, PG_PLUGEDIT, PG_PLUGEDIT, PG_PLUGMGR };
+
+/* The actions that Settings does itself (an IT_ACTION with one of these is not given to main.c): the buttons of Manage Plugins */
+enum { PA_ADD = 100, PA_DEL, PA_NEW };
 
 /* Console Storage (PG_CSTORE): for each storage a status block (the size, a bar, the free space) that can not be chosen, and four rows that can: the colours
  * of the dots and of the bar */
@@ -91,6 +96,10 @@ static struct {
     float pop_anim, pop_scroll;
     char toast[96];     /* a message that is shown for a moment (settings_notice) */
     float toast_time;
+    /* the question of Manage Plugins (Install / Uninstall): its text, which button is chosen (0 = do it, 1 = Cancel), what it is for (PA_*) */
+    int ask, ask_sel, ask_kind, ask_nl;
+    float ask_anim;
+    char ask_lines[4][96];
 } S;
 
 #define POP_ROWS 8 /* the most values a popup shows at once; a longer list scrolls (the 14 regions, the 11 languages) */
@@ -418,6 +427,286 @@ static void page_row(Category *c, int page, int icon)
     it->icon = icon;
 }
 
+/* --- Plugins and Manage Plugins ---
+ * The page Plugins has a row Manage Plugins and then a switch for every line of the plugin files. Manage Plugins (PG_PLUGMGR) has a row that opens the File Manager to
+ * choose a new plugin (SA_PLUGIN_PICK; main.c does it and gives the file back through settings_plugin_new) and a row for every plugin that has a line. A plugin's page
+ * (PG_PLUGEDIT) has Install to (PG_PLUGADD: the runlevels it is not in yet) and Uninstall from (PG_PLUGDEL: its lines). Each of those is a list of switches and a button; the
+ * button asks first (the question of the popups) and then changes the files (plugins.c). The page of a new plugin (PG_PLUGNEW) has the file, where to put it
+ * (the ARK folder or SEPLUGINS, on each storage) and a switch for XMB, Games and PS1. */
+#define PM_MAX 24
+
+static struct {
+    char name[48];                                                   /* the plugin the pages are about */
+    PluginFree add[PM_MAX];
+    unsigned char add_on[PM_MAX];
+    char add_text[PM_MAX][80];
+    int add_n;
+    int del[PM_MAX];                                                 /* its lines (indexes for plugins_get) */
+    unsigned char del_on[PM_MAX];
+    char del_text[PM_MAX][80];
+    int del_n;
+    char src[160], src_name[48];                                     /* a new plugin: the file that was chosen, and its name */
+    unsigned char lvl_on[PLUGIN_LEVELS], loc;                        /* its switches, and where it goes (an index in locs) */
+    PluginLoc locs[PLUGIN_LOCS];
+    int loc_n;
+    const char *loc_opt[PLUGIN_LOCS];
+    char loc_text[PLUGIN_LOCS][48];
+} PM;
+
+static void page_enter(int page);
+
+/* "XMB, Games": where a plugin is installed */
+static void pm_levels_text(const char *name, char *out, int size)
+{
+    int idx[PM_MAX], n = plugins_lines_of(name, idx, PM_MAX);
+    const char *seen[PM_MAX];
+    int ns = 0;
+    out[0] = 0;
+    for (int k = 0; k < n; k++) {
+        const char *t = runlevel_name(plugins_get(idx[k])->where);
+        int dup = 0;
+        for (int j = 0; j < ns; j++)
+            dup |= !strcmp(seen[j], t);
+        if (dup)
+            continue;
+        seen[ns++] = t;
+        int len = strlen(out);
+        snprintf(out + len, size - len, "%s%s", len ? ", " : "", t);
+    }
+}
+
+static void fill_plugins(int rebuild)
+{
+    Category *c = &s_cats[PG_PLUGINS];
+    c->count = 0;
+    page_row(c, PG_PLUGMGR, 0); /* above the switches */
+    for (int i = 0; i < plugins_count() && c->count < MAX_ITEMS; i++) {
+        Plugin *p = plugins_get(i);
+        if (!rebuild)
+            s_plugin_on[i] = p->on;
+        Item *it = add(c, p->name, IT_TOGGLE);
+        it->value = &s_plugin_on[i];
+        it->plugin = i + 1;
+        snprintf(it->info, sizeof(it->info), "%s", runlevel_name(p->where));
+    }
+    if (c->count == 1)
+        info(c, L(S_NO_PLUGINS), "");
+}
+
+/* Manage Plugins: the button for a new plugin, then the plugins that are installed */
+static void pm_fill_mgr(void)
+{
+    Category *c = &s_cats[PG_PLUGMGR];
+    c->count = 0;
+    action(c, L(S_PM_NEW), SA_PLUGIN_PICK);
+    const char *names[MAX_PLUGINS];
+    int n = plugins_names(names, MAX_PLUGINS);
+    for (int i = 0; i < n && c->count < MAX_ITEMS; i++) {
+        Item *it = add(c, names[i], IT_PAGE);
+        it->action = PG_PLUGEDIT;
+        pm_levels_text(names[i], it->info, sizeof(it->info));
+    }
+    if (!n)
+        info(c, L(S_NO_PLUGINS), "");
+}
+
+/* A plugin's page: what can be done with it (Install to needs a runlevel that is free, Uninstall from a line) */
+static void pm_fill_edit(void)
+{
+    Category *c = &s_cats[PG_PLUGEDIT];
+    PluginFree free_[PM_MAX];
+    int lines[PM_MAX];
+    c->count = 0;
+    if (plugins_free_places(PM.name, free_, PM_MAX))
+        page_row(c, PG_PLUGADD, 0);
+    if (plugins_lines_of(PM.name, lines, PM_MAX))
+        page_row(c, PG_PLUGDEL, 0);
+}
+
+/* "XMB - SEPLUGINS (ms0:)" */
+static void pm_place_text(char *out, int size, const char *level, const char *file_path)
+{
+    char place[64];
+    plugins_place_label(file_path, place, sizeof(place));
+    snprintf(out, size, "%s - %s", level, place);
+}
+
+static void pm_fill_add(void)
+{
+    Category *c = &s_cats[PG_PLUGADD];
+    c->count = 0;
+    PM.add_n = plugins_free_places(PM.name, PM.add, PM_MAX);
+    for (int i = 0; i < PM.add_n; i++) {
+        pm_place_text(PM.add_text[i], sizeof(PM.add_text[i]), runlevel_name(PLUGIN_LEVEL[PM.add[i].level]), plugins_file_path(PM.add[i].file));
+        PM.add_on[i] = 0;
+        Item *it = add(c, PM.add_text[i], IT_TOGGLE);
+        it->value = &PM.add_on[i];
+        it->immediate = 1; /* a choice for the button below, nothing to save */
+    }
+    if (PM.add_n)
+        action(c, L(S_PM_INSTALL), PA_ADD);
+}
+
+static void pm_fill_del(void)
+{
+    Category *c = &s_cats[PG_PLUGDEL];
+    c->count = 0;
+    PM.del_n = plugins_lines_of(PM.name, PM.del, PM_MAX);
+    for (int i = 0; i < PM.del_n; i++) {
+        const Plugin *pl = plugins_get(PM.del[i]);
+        pm_place_text(PM.del_text[i], sizeof(PM.del_text[i]), runlevel_name(pl->where), plugins_file_path(pl->file));
+        PM.del_on[i] = 0;
+        Item *it = add(c, PM.del_text[i], IT_TOGGLE);
+        it->value = &PM.del_on[i];
+        it->immediate = 1;
+    }
+    if (PM.del_n)
+        action(c, L(S_PM_UNINSTALL), PA_DEL);
+}
+
+static void pm_fill_new(void);
+static void pm_set_loc(int opt)
+{
+    PM.loc = opt;
+    pm_fill_new(); /* the runlevels that are free depend on the place */
+}
+
+/* A new plugin: its file, where it goes, and a switch for each runlevel it is not in already at that place */
+static void pm_fill_new(void)
+{
+    Category *c = &s_cats[PG_PLUGNEW];
+    c->count = 0;
+    PM.loc_n = plugins_locations(PM.locs, PLUGIN_LOCS);
+    for (int i = 0; i < PM.loc_n; i++) {
+        plugins_place_label(PM.locs[i].file, PM.loc_text[i], sizeof(PM.loc_text[i]));
+        PM.loc_opt[i] = PM.loc_text[i];
+    }
+    if (PM.loc >= PM.loc_n)
+        PM.loc = 0;
+    info(c, L(S_I_FILE), PM.src_name);
+    if (PM.loc_n) {
+        Item *it = add(c, L(S_I_LOCATION), IT_CHOICE);
+        it->value = &PM.loc;
+        it->opts = PM.loc_opt;
+        it->nopts = PM.loc_n;
+        it->immediate = 1;
+        it->set = pm_set_loc;
+    }
+    int rows = 0;
+    for (int lv = 0; lv < PLUGIN_LEVELS && PM.loc_n; lv++) {
+        if (plugins_has(&PM.locs[PM.loc], PM.src_name, lv)) { /* it is there already */
+            PM.lvl_on[lv] = 0;
+            continue;
+        }
+        Item *it = add(c, runlevel_name(PLUGIN_LEVEL[lv]), IT_TOGGLE);
+        it->value = &PM.lvl_on[lv];
+        it->immediate = 1;
+        rows++;
+    }
+    if (rows)
+        action(c, L(S_PM_INSTALL), PA_NEW);
+}
+
+/* the switches of Plugins are saved when Settings is left; before the files are changed here they are written, so that nothing is lost when the lines move */
+static void flush_plugins(void)
+{
+    if (!S.plugins_dirty)
+        return;
+    for (int i = 0; i < plugins_count(); i++)
+        plugins_get(i)->on = s_plugin_on[i];
+    plugins_save();
+    S.plugins_dirty = 0;
+}
+
+/* The question: what is switched on in the list, said in words. Nothing switched on: a message instead. */
+static void pm_ask(int kind)
+{
+    char list[512] = "";
+    int n = 0;
+    for (int i = 0; kind == PA_ADD && i < PM.add_n; i++)
+        if (PM.add_on[i]) {
+            int len = strlen(list);
+            snprintf(list + len, sizeof(list) - len, "%s%s", n++ ? ", " : "", PM.add_text[i]);
+        }
+    for (int i = 0; kind == PA_DEL && i < PM.del_n; i++)
+        if (PM.del_on[i]) {
+            int len = strlen(list);
+            snprintf(list + len, sizeof(list) - len, "%s%s", n++ ? ", " : "", PM.del_text[i]);
+        }
+    for (int lv = 0; kind == PA_NEW && lv < PLUGIN_LEVELS && PM.loc_n; lv++)
+        if (PM.lvl_on[lv]) {
+            char one[80];
+            pm_place_text(one, sizeof(one), runlevel_name(PLUGIN_LEVEL[lv]), PM.locs[PM.loc].file);
+            int len = strlen(list);
+            snprintf(list + len, sizeof(list) - len, "%s%s", n++ ? ", " : "", one);
+        }
+    if (!n) {
+        settings_notice(L(S_PM_NOTHING));
+        sound_play(SND_ERROR);
+        return;
+    }
+    char text[700];
+    snprintf(text, sizeof(text), L(kind == PA_DEL ? S_PM_ASK_UNINSTALL : S_PM_ASK_INSTALL), kind == PA_NEW ? PM.src_name : PM.name, list);
+    S.ask_nl = text_wrap(text, 0.5f, POPUP_ASK_W - 24, S.ask_lines, 4);
+    S.ask_kind = kind;
+    S.ask = 1;
+    S.ask_sel = 1; /* Cancel is preselected: nothing is changed by mistake */
+    sound_play(SND_SELECT);
+}
+
+/* The question was answered with Install / Uninstall: the files are changed, and Settings goes back to where the change shows */
+static void pm_apply(int kind)
+{
+    flush_plugins();
+    int ok = 0, exists = 0;
+    if (kind == PA_ADD) {
+        ok = 1;
+        for (int i = 0; i < PM.add_n; i++)
+            if (PM.add_on[i])
+                ok &= plugins_add(PM.add[i].file, PM.add[i].level, PM.add[i].path);
+    } else if (kind == PA_DEL) {
+        int idx[PM_MAX], n = 0;
+        for (int i = 0; i < PM.del_n; i++)
+            if (PM.del_on[i])
+                idx[n++] = PM.del[i];
+        ok = plugins_remove(idx, n);
+    } else if (PM.loc_n) {
+        unsigned mask = 0;
+        for (int lv = 0; lv < PLUGIN_LEVELS; lv++)
+            if (PM.lvl_on[lv])
+                mask |= 1u << lv;
+        int r = plugins_install(PM.src, &PM.locs[PM.loc], mask);
+        ok = r == PLUGIN_OK;
+        exists = r == PLUGIN_EXISTS;
+    }
+    settings_notice(L(ok ? S_F_DONE : exists ? S_PM_EXISTS : S_F_FAILED));
+    sound_play(ok ? SND_SELECT : SND_ERROR);
+    fill_plugins(0); /* the lines have moved: the switches of the page Plugins are made from the files again */
+    int lines[PM_MAX];
+    if (!ok)
+        page_enter(S.page); /* the lists as they are now */
+    else if (kind == PA_NEW) {
+        pm_fill_mgr();
+        const char *name = PM.src_name;
+        for (int i = 0; i < s_cats[PG_PLUGMGR].count; i++)
+            if (s_cats[PG_PLUGMGR].items[i].type == IT_PAGE && !strcasecmp(s_cats[PG_PLUGMGR].items[i].label, name))
+                S.item[PG_PLUGMGR] = i;
+        page_enter(PG_PLUGMGR);
+    } else
+        page_enter(plugins_lines_of(PM.name, lines, PM_MAX) ? PG_PLUGEDIT : PG_PLUGMGR);
+}
+
+void settings_plugin_new(const char *path)
+{
+    const char *base = strrchr(path, '/');
+    snprintf(PM.src, sizeof(PM.src), "%s", path);
+    snprintf(PM.src_name, sizeof(PM.src_name), "%s", base ? base + 1 : path);
+    memset(PM.lvl_on, 0, sizeof(PM.lvl_on));
+    PM.loc = 0;
+    S.item[PG_PLUGNEW] = 1; /* the row for the place (the first is only the name of the file) */
+    page_enter(PG_PLUGNEW);
+}
+
 /* rebuild = 1: the menu is built again (a new language, say) without losing the choices that are not saved yet */
 static void build(int rebuild)
 {
@@ -441,6 +730,11 @@ static void build(int rebuild)
     s_cats[PG_PERF].name = L(S_CAT_PERF);
     s_cats[PG_PLUGINS].name = L(S_CAT_PLUGINS);
     s_cats[PG_CSTORE].name = L(S_CS_TITLE);
+    s_cats[PG_PLUGMGR].name = L(S_PM_MANAGE);
+    s_cats[PG_PLUGEDIT].name = PM.name; /* the plugin that is being managed */
+    s_cats[PG_PLUGADD].name = L(S_PM_INSTALL_TO);
+    s_cats[PG_PLUGDEL].name = L(S_PM_UNINSTALL_FROM);
+    s_cats[PG_PLUGNEW].name = L(S_PM_NEW);
 
     c = &s_cats[PG_ROOT];
     c->name = L(S_SETTINGS);
@@ -614,18 +908,7 @@ static void build(int rebuild)
         choice(c, L(S_MS_CACHE), &g_cfw.mscache, OPT_MSCACHE, N(OPT_MSCACHE));
     choice(c, L(S_ISO_CACHE), &g_cfw.infernocache, OPT_INFERNO, N(OPT_INFERNO));
 
-    c = &s_cats[PG_PLUGINS];
-    for (int i = 0; i < plugins_count() && c->count < MAX_ITEMS; i++) {
-        Plugin *p = plugins_get(i);
-        if (!rebuild)
-            s_plugin_on[i] = p->on;
-        Item *it = add(c, p->name, IT_TOGGLE);
-        it->value = &s_plugin_on[i];
-        it->plugin = i + 1;
-        snprintf(it->info, sizeof(it->info), "%s", runlevel_name(p->where));
-    }
-    if (!c->count)
-        info(c, L(S_NO_PLUGINS), "");
+    fill_plugins(rebuild);
 }
 
 void settings_open(void)
@@ -641,12 +924,12 @@ void settings_open(void)
 
 int settings_modal(void)
 {
-    return S.pop != 0;
+    return S.pop != 0 || S.ask != 0;
 }
 
 int settings_is_visit(int action)
 {
-    return action == SA_WIFI || action == SA_FTP || action == SA_FILES || action == SA_USB;
+    return action == SA_WIFI || action == SA_FTP || action == SA_FILES || action == SA_USB || action == SA_PLUGIN_PICK;
 }
 
 void settings_notice(const char *msg)
@@ -666,11 +949,7 @@ int settings_commit(void)
         snprintf(path, sizeof(path), "%sSETTINGS.TXT", sys_ark_dir());
         arkcfg_save(path);
     }
-    if (S.plugins_dirty) {
-        for (int i = 0; i < plugins_count(); i++)
-            plugins_get(i)->on = s_plugin_on[i];
-        plugins_save();
-    }
+    flush_plugins();
     S.cfw_dirty = S.plugins_dirty = S.own_dirty = 0;
     return changed;
 }
@@ -791,6 +1070,28 @@ static void pop_update(int move, u32 p)
     }
 }
 
+/* The question of Manage Plugins: ↑ ↓ choose, ✕ does it (the first) or not (Cancel), ○ closes it. */
+static void ask_update(int move, u32 p)
+{
+    if (move) {
+        int next = (int)clampf(S.ask_sel + move, 0, 1);
+        if (next != S.ask_sel)
+            sound_play(SND_MOVE);
+        S.ask_sel = next;
+    }
+    if (p & PSP_CTRL_CROSS) {
+        int go = S.ask_sel == 0;
+        S.ask = 0;
+        if (go)
+            pm_apply(S.ask_kind); /* (it plays its own sound) */
+        else
+            sound_play(SND_BACK);
+    } else if (p & PSP_CTRL_CIRCLE) {
+        S.ask = 0;
+        sound_play(SND_BACK);
+    }
+}
+
 /* --- Console Storage ---
  * The page has a status block for each storage (the size, a bar of what is on it, the free space) and under it four rows: Games and Apps, Media,
  * Saved Data and Other, each with its colour and its size. The blocks are not rows (they can not be chosen); a PSP Go with a Memory Stick has two of
@@ -858,6 +1159,16 @@ static void page_enter(int page)
         store_fill();
         S.store_scroll = 0;
     }
+    if (page == PG_PLUGMGR) /* the lists of Manage Plugins are made from the files when the page comes into view */
+        pm_fill_mgr();
+    else if (page == PG_PLUGEDIT)
+        pm_fill_edit();
+    else if (page == PG_PLUGADD)
+        pm_fill_add();
+    else if (page == PG_PLUGDEL)
+        pm_fill_del();
+    else if (page == PG_PLUGNEW)
+        pm_fill_new();
     if (*sel >= c->count)
         *sel = c->count ? c->count - 1 : 0;
     if (*sel < *top)
@@ -885,7 +1196,12 @@ int settings_update(const UiInput *in, float dt)
     int move = vertical(in, sy, dt);
 
     S.pop_anim = clampf(S.pop_anim + (S.pop ? 7 : -7) * dt, 0, 1);
-    if (S.pop) { /* a choice's popup is open: it gets all the buttons (the list behind it goes on scrolling into place) */
+    S.ask_anim = clampf(S.ask_anim + (S.ask ? 7 : -7) * dt, 0, 1);
+    if (S.ask) { /* the question of Manage Plugins is open: it gets all the buttons */
+        ask_update(move, p);
+        sel = &S.item[S.page]; /* (answering it can take Settings to another page) */
+        c = &s_cats[S.page];
+    } else if (S.pop) { /* a choice's popup is open: it gets all the buttons (the list behind it goes on scrolling into place) */
         pop_update(move, p);
         S.pop_scroll = approach(S.pop_scroll, S.pop_top, 14.0f, dt);
     } else {
@@ -895,9 +1211,13 @@ int settings_update(const UiInput *in, float dt)
                 sound_play(SND_MOVE);
             *sel = next;
         }
+        if (c->count && *sel >= c->count) /* (a page that was made again has fewer rows than before) */
+            *sel = c->count - 1;
         Item *it = c->count ? &c->items[*sel] : NULL;
         if (it && (p & PSP_CTRL_CROSS) && it->type == IT_PAGE) {
             sound_play(SND_SELECT);
+            if (it->action == PG_PLUGEDIT) /* the row is the plugin: its name is what the pages are about */
+                snprintf(PM.name, sizeof(PM.name), "%s", it->label);
             page_enter(it->action);
             sel = &S.item[S.page];
         } else if (it && (p & PSP_CTRL_CROSS) && it->type == IT_CHOICE) {
@@ -926,6 +1246,8 @@ int settings_update(const UiInput *in, float dt)
                 sound_play(SND_SELECT);
                 return it->action;
             }
+        } else if (it && (p & PSP_CTRL_CROSS) && it->type == IT_ACTION && it->action >= PA_ADD) {
+            pm_ask(it->action); /* the buttons of Manage Plugins: Settings asks, and does it itself */
         } else if (it && (p & PSP_CTRL_CROSS) && it->type == IT_ACTION) {
             sound_play(SND_SELECT);
             sound_wait(400); /* låt ljudet höras innan något stängs */
@@ -1051,10 +1373,12 @@ static void draw_item(const Item *it, float y, const Theme *shown, float a)
             right -= 16;
         }
         break;
+    case IT_PAGE: /* a page has a value only in Manage Plugins: where the plugin is installed */
+        snprintf(value, sizeof(value), "%s", it->info);
+        break;
     case IT_ACTION:
-    case IT_PAGE:
     case IT_STORE:
-        break; /* an action, or a page, has no value to show (a storage row is drawn by draw_store_page) */
+        break; /* an action has no value to show (a storage row is drawn by draw_store_page) */
     }
     float value_w = 0;
     if (value[0]) {
@@ -1181,6 +1505,18 @@ static void draw_popup(void)
     }
 }
 
+/* The question of Manage Plugins, in the middle of the screen like the other questions (popup.c) */
+static void draw_ask(void)
+{
+    float a = smooth(S.ask_anim);
+    if (a <= 0)
+        return;
+    popup_dim(a);
+    const char *labels[2] = { L(S.ask_kind == PA_DEL ? S_PM_UNINSTALL : S_PM_INSTALL), L(S_F_CANCEL) };
+    const u32 colors[2] = { S.ask_kind == PA_DEL ? POPUP_DANGER : POPUP_TEXT, POPUP_TEXT };
+    popup_ask(S.ask_lines, S.ask_nl, lang_needs_cjk() ? 15.0f : 13.0f, NULL, labels, colors, 2, S.ask_sel, a);
+}
+
 void settings_draw(void)
 {
     float a = S.open;
@@ -1226,6 +1562,7 @@ void settings_draw(void)
     }
 
     draw_popup();
+    draw_ask();
     if (S.toast_time > 0) /* as the toast of the other screens: 2.8 s, fading in and out */
         popup_toast(S.toast, clampf(S.toast_time / 0.4f, 0, 1) * clampf((2.8f - S.toast_time) / 0.2f, 0, 1));
     power_draw(); /* the power popup of SELECT (main.c asks power.c) */

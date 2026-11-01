@@ -58,6 +58,8 @@ static int s_repeat_dir;
 static float s_repeat_timer;
 static char s_toast[96];
 static float s_toast_time;
+static int s_pick;            /* 1 = a place to choose a plugin (files_open_pick): see files.h */
+static char s_picked[512];    /* the file that was chosen, or "" */
 static u64 s_free, s_total;   /* enheten som visas */
 static const char *s_devs[2];
 static int s_ndev;
@@ -478,6 +480,18 @@ static void load(const char *select, int fallback)
     } else {
         int n = read_dir(s_path, &s_items);
         s_count = n < 0 ? 0 : n;
+        if (s_pick) { /* folders, and the plugins (.prx) in them */
+            int w = 0;
+            for (int i = 0; i < s_count; i++) {
+                const char *dot = strrchr(s_items[i].name, '.');
+                if (s_items[i].kind == KIND_FILE && (!dot || strcasecmp(dot, ".prx")))
+                    continue;
+                if (w != i)
+                    s_items[w] = s_items[i];
+                w++;
+            }
+            s_count = w;
+        }
         if (s_count > 1) /* (an empty folder has no list: qsort must not get a null pointer) */
             qsort(s_items, s_count, sizeof(*s_items), cmp_entry);
         for (int i = 0; i < s_count; i++) {
@@ -833,8 +847,10 @@ static int vertical(const UiInput *in, float dt)
     return dir;
 }
 
-void files_open(void)
+static void open_list(int pick)
 {
+    s_pick = pick;
+    s_picked[0] = 0;
     s_ndev = 0;
     if (dev_present("ms0:/"))
         s_devs[s_ndev++] = "ms0:/";
@@ -844,6 +860,22 @@ void files_open(void)
     s_menu = M_NONE;
     s_repeat_dir = 0;
     enter(s_ndev == 1 ? s_devs[0] : "", NULL);
+}
+
+void files_open(void)
+{
+    open_list(0);
+}
+
+void files_open_pick(void)
+{
+    open_list(1);
+}
+
+int files_picked(char *out, int size)
+{
+    snprintf(out, size, "%s", s_picked);
+    return s_picked[0] != 0;
 }
 
 static void finish_op(void)
@@ -923,15 +955,23 @@ int files_update(const UiInput *in, float dt)
             join(path, sizeof(path), s_path, e->name);
             enter(e->kind == KIND_DEVICE ? e->name : path, NULL);
             sound_play(SND_SELECT);
+        } else if (s_pick) { /* a plugin: it is the choice, and the File Manager is over */
+            if (e) {
+                char path[MAX_PATH];
+                join(path, sizeof(path), s_path, e->name);
+                snprintf(s_picked, sizeof(s_picked), "%s", path);
+                sound_play(SND_SELECT);
+                return 1;
+            }
         } else if (s_path[0]) {
             open_menu(M_OPTIONS); /* ✕ på en fil: vad ska göras med den */
         }
-    } else if ((in->pressed & PSP_CTRL_SQUARE) && e && e->kind != KIND_DEVICE) {
+    } else if ((in->pressed & PSP_CTRL_SQUARE) && e && e->kind != KIND_DEVICE && !s_pick) {
         e->marked ^= 1;
         sound_play(SND_SELECT);
         if (s_sel < s_count - 1)
             s_sel++;
-    } else if ((in->pressed & PSP_CTRL_START) && s_path[0]) { /* the options button, as everywhere */
+    } else if ((in->pressed & PSP_CTRL_START) && s_path[0] && !s_pick) { /* the options button, as everywhere */
         open_menu(M_OPTIONS);
     } else if (in->pressed & PSP_CTRL_CIRCLE) {
         /* ○ cancels before it leaves: the marks first, then (when this is the last step out of the screen) what was copied or cut and is
@@ -1007,8 +1047,8 @@ static void draw_hints(float a)
 {
     struct { int btn; StrId text; } h[4];
     int n = 0;
-    h[n++] = (typeof(h[0])){ controls_glyph(PSP_CTRL_CROSS), S_F_OPEN };
-    if (s_path[0]) {
+    h[n++] = (typeof(h[0])){ controls_glyph(PSP_CTRL_CROSS), s_pick && s_count && s_items[s_sel].kind == KIND_FILE ? S_PM_SELECT : S_F_OPEN };
+    if (s_path[0] && !s_pick) {
         h[n++] = (typeof(h[0])){ controls_glyph(PSP_CTRL_SQUARE), S_F_MARK };
         h[n++] = (typeof(h[0])){ controls_glyph(PSP_CTRL_START), S_OPTIONS };
     }
@@ -1029,7 +1069,7 @@ static void draw_hints(float a)
 
 static void draw_header(float a, float slide)
 {
-    text_draw(LIST_X + 4 + slide, 34, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_FILES));
+    text_draw(LIST_X + 4 + slide, 34, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(s_pick ? S_PM_CHOOSE : S_FILES));
     if (s_total) { /* ledigt utrymme och en tunn stapel, som PS5:s lagringsvy */
         char num[24], line[64];
         fmt_size(num, sizeof(num), s_free);

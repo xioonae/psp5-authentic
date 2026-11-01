@@ -10,7 +10,7 @@
 #include "plugins.h"
 #include "system.h"
 
-#define MAX_FILES 2
+#define MAX_FILES 6 /* the ARK folder's and SEPLUGINS on two storages, and room for an ARK folder that is somewhere else */
 #define MAX_LINES 96
 #define LINE_LEN 192
 
@@ -57,6 +57,7 @@ static void parse_line(int file, int line)
     snprintf(pl->where, sizeof(pl->where), "%s", parts[0]);
     pl->on = !strcasecmp(parts[2], "on") || !strcmp(parts[2], "1") || !strcasecmp(parts[2], "enabled") ||
              !strcasecmp(parts[2], "true");
+    snprintf(pl->path, sizeof(pl->path), "%s", parts[1]);
     pl->file = file;
     pl->line = line;
 }
@@ -102,18 +103,61 @@ static void load_file(const char *path)
         parse_line(file, i);
 }
 
+static int dir_exists(const char *path)
+{
+    SceUID d = sceIoDopen(path);
+    if (d < 0)
+        return 0;
+    sceIoDclose(d);
+    return 1;
+}
+
+static int file_exists(const char *path)
+{
+    SceIoStat st;
+    return sceIoGetstat(path, &st) >= 0;
+}
+
+/* The other storage of a PSP Go that has both ("ms0:" when psp5 runs from the internal storage, else "ef0:"), NULL when there is none (ARK can also point ms0: at the
+ * internal storage: that is one storage) */
+static const char *other_root(void)
+{
+    if (sys_ms_is_ef())
+        return NULL;
+    int from_ef = !strncasecmp(g_root, "ef0:", 4);
+    if (!from_ef && sys_model() != 4) /* only a PSP Go has ef0: */
+        return NULL;
+    const char *root = from_ef ? "ms0:" : "ef0:";
+    char probe[8];
+    snprintf(probe, sizeof(probe), "%s/", root);
+    return dir_exists(probe) ? root : NULL;
+}
+
+/* a file is read once, however its path is written (ARK-4 without an ARK folder uses <storage>/SEPLUGINS/ as the ARK folder) */
+static void load_once(const char *path)
+{
+    for (int i = 0; i < s_file_count; i++)
+        if (!strcasecmp(s_files[i].path, path))
+            return;
+    load_file(path);
+}
+
 int plugins_load(const char *ark_dir)
 {
     char path[200];
     s_file_count = s_count = 0;
     snprintf(path, sizeof(path), "%sPLUGINS.TXT", ark_dir);
     snprintf(s_ark_file, sizeof(s_ark_file), "%s", path);
-    load_file(path);
-    /* ARK-4 utan ARK-mapp använder <lagring>/SEPLUGINS/ som ARK-mapp – läs inte samma fil två gånger */
-    char se[40];
-    snprintf(se, sizeof(se), "%s/SEPLUGINS/PLUGINS.TXT", g_root);
-    if (strcasecmp(path, se))
-        load_file(se);
+    load_once(path);
+    snprintf(path, sizeof(path), "%s/SEPLUGINS/PLUGINS.TXT", g_root);
+    load_once(path);
+    const char *other = other_root();
+    if (other) {
+        snprintf(path, sizeof(path), "%s/PSP/SAVEDATA/ARK_01234/PLUGINS.TXT", other);
+        load_once(path);
+        snprintf(path, sizeof(path), "%s/SEPLUGINS/PLUGINS.TXT", other);
+        load_once(path);
+    }
     return s_count;
 }
 
@@ -228,4 +272,307 @@ int plugins_helper_add(const char *prx_path)
         parse_line((int)(f - s_files), line);
     }
     return plugins_save();
+}
+
+/* ---------------------------------------------------------------------- */
+/* Manage Plugins */
+
+const char *const PLUGIN_LEVEL[PLUGIN_LEVELS] = { "vsh", "game", "pops" };
+
+/* the runlevel a line has, as an index in PLUGIN_LEVEL (the words ARK knows for it count too), or -1 */
+static int level_index(const char *rl)
+{
+    if (!strcasecmp(rl, "vsh") || !strcasecmp(rl, "xmb"))
+        return 0;
+    if (!strcasecmp(rl, "game"))
+        return 1;
+    if (!strcasecmp(rl, "pops") || !strcasecmp(rl, "psx") || !strcasecmp(rl, "ps1"))
+        return 2;
+    return -1;
+}
+
+static int level_always(const char *rl)
+{
+    return !strcasecmp(rl, "always") || !strcasecmp(rl, "all");
+}
+
+/* the lists are made again from the lines of the files */
+static void reparse(void)
+{
+    s_count = 0;
+    for (int f = 0; f < s_file_count; f++)
+        for (int l = 0; l < s_files[f].count; l++)
+            parse_line(f, l);
+}
+
+int plugins_names(const char **out, int max)
+{
+    int n = 0;
+    for (int i = 0; i < s_count; i++) {
+        int seen = 0;
+        for (int k = 0; k < n; k++)
+            if (!strcasecmp(out[k], s_plugins[i].name))
+                seen = 1;
+        if (!seen && n < max)
+            out[n++] = s_plugins[i].name;
+    }
+    return n;
+}
+
+int plugins_lines_of(const char *name, int *out, int max)
+{
+    int n = 0;
+    for (int i = 0; i < s_count && n < max; i++)
+        if (!strcasecmp(s_plugins[i].name, name))
+            out[n++] = i;
+    return n;
+}
+
+int plugins_free_places(const char *name, PluginFree *out, int max)
+{
+    int n = 0;
+    for (int i = 0; i < s_count; i++) {
+        const Plugin *pl = &s_plugins[i];
+        if (strcasecmp(pl->name, name))
+            continue;
+        int again = 0; /* the same file and path as an earlier line of it: looked at already */
+        for (int k = 0; k < i; k++)
+            if (!strcasecmp(s_plugins[k].name, name) && s_plugins[k].file == pl->file && !strcasecmp(s_plugins[k].path, pl->path))
+                again = 1;
+        if (again)
+            continue;
+        int have[PLUGIN_LEVELS] = { 0 }, always = 0;
+        for (int k = 0; k < s_count; k++) {
+            const Plugin *o = &s_plugins[k];
+            if (strcasecmp(o->name, name) || o->file != pl->file || strcasecmp(o->path, pl->path))
+                continue;
+            if (level_always(o->where))
+                always = 1;
+            int lv = level_index(o->where);
+            if (lv >= 0)
+                have[lv] = 1;
+        }
+        for (int lv = 0; lv < PLUGIN_LEVELS && !always && n < max; lv++)
+            if (!have[lv]) {
+                out[n].file = pl->file;
+                snprintf(out[n].path, sizeof(out[n].path), "%s", pl->path);
+                out[n].level = lv;
+                n++;
+            }
+    }
+    return n;
+}
+
+const char *plugins_file_path(int file)
+{
+    return file >= 0 && file < s_file_count ? s_files[file].path : "";
+}
+
+void plugins_place_label(const char *path, char *out, int size)
+{
+    char dir[160];
+    snprintf(dir, sizeof(dir), "%s", path);
+    char *slash = strrchr(dir, '/'); /* the file's name goes: what is left is the folder */
+    if (slash)
+        *slash = 0;
+    const char *folder = strrchr(dir, '/');
+    folder = folder ? folder + 1 : dir;
+    if (strlen(path) > 4 && path[3] == ':')
+        snprintf(out, size, "%s (%.4s)", folder, path);
+    else
+        snprintf(out, size, "%s", folder);
+}
+
+int plugins_remove(const int *idx, int n)
+{
+    static unsigned char kill[MAX_FILES][MAX_LINES];
+    memset(kill, 0, sizeof(kill));
+    int any = 0;
+    for (int k = 0; k < n; k++) {
+        if (idx[k] < 0 || idx[k] >= s_count)
+            return 0;
+        const Plugin *pl = &s_plugins[idx[k]];
+        if (s_files[pl->file].partial) /* writing it back would cut lines off */
+            return 0;
+        kill[pl->file][pl->line] = 1;
+        any = 1;
+    }
+    if (!any)
+        return 0;
+    for (int f = 0; f < s_file_count; f++) {
+        PluginFile *pf = &s_files[f];
+        int w = 0;
+        for (int l = 0; l < pf->count; l++) {
+            if (kill[f][l]) {
+                pf->dirty = 1;
+                continue;
+            }
+            if (w != l)
+                memcpy(pf->lines[w], pf->lines[l], LINE_LEN);
+            w++;
+        }
+        pf->count = w;
+    }
+    reparse();
+    return plugins_save();
+}
+
+/* 0 = no room (or the file may not be written), 1 = the line is added, 2 = it is there already */
+static int add_line(int file, int level, const char *path)
+{
+    PluginFile *f = &s_files[file];
+    if (f->partial || strlen(path) + 16 >= LINE_LEN)
+        return 0;
+    for (int i = 0; i < s_count; i++)
+        if (s_plugins[i].file == file && level_index(s_plugins[i].where) == level && !strcasecmp(s_plugins[i].path, path))
+            return 2;
+    if (f->count >= MAX_LINES)
+        return 0;
+    snprintf(f->lines[f->count], LINE_LEN, "%s, %s, on", PLUGIN_LEVEL[level], path);
+    f->dirty = 1;
+    f->count++;
+    reparse(); /* (the lists are in the order of the files, as a new load of them would make them) */
+    return 1;
+}
+
+int plugins_add(int file, int level, const char *path)
+{
+    if (file < 0 || file >= s_file_count || level < 0 || level >= PLUGIN_LEVELS || !path || !path[0])
+        return 0;
+    int r = add_line(file, level, path);
+    if (r == 0)
+        return 0;
+    return r == 2 ? 1 : plugins_save();
+}
+
+static void add_loc(PluginLoc *out, int *n, int max, const char *dir)
+{
+    if (*n >= max || !dir[0])
+        return;
+    for (int i = 0; i < *n; i++)
+        if (!strcasecmp(out[i].dir, dir))
+            return;
+    snprintf(out[*n].dir, sizeof(out[*n].dir), "%s", dir);
+    snprintf(out[*n].file, sizeof(out[*n].file), "%s/PLUGINS.TXT", dir);
+    ++*n;
+}
+
+int plugins_locations(PluginLoc *out, int max)
+{
+    int n = 0;
+    const char *roots[2] = { g_root, other_root() };
+    for (int r = 0; r < 2; r++) {
+        if (!roots[r])
+            continue;
+        char ark[80];
+        if (r == 0)
+            snprintf(ark, sizeof(ark), "%s", sys_ark_dir());
+        else
+            snprintf(ark, sizeof(ark), "%s/PSP/SAVEDATA/ARK_01234", roots[r]);
+        int len = strlen(ark);
+        while (len > 4 && ark[len - 1] == '/')
+            ark[--len] = 0;
+        if (ark[0] && dir_exists(ark))
+            add_loc(out, &n, max, ark);
+        char se[80];
+        snprintf(se, sizeof(se), "%s/SEPLUGINS", roots[r]);
+        add_loc(out, &n, max, se);
+    }
+    return n;
+}
+
+int plugins_has(const PluginLoc *loc, const char *name, int level)
+{
+    char dest[160];
+    if (snprintf(dest, sizeof(dest), "%s/%s", loc->dir, name) >= (int)sizeof(dest))
+        return 0;
+    for (int i = 0; i < s_count; i++)
+        if (!strcasecmp(s_files[s_plugins[i].file].path, loc->file) && level_index(s_plugins[i].where) == level && !strcasecmp(s_plugins[i].path, dest))
+            return 1;
+    return 0;
+}
+
+static int copy_file(const char *src, const char *dst)
+{
+    static unsigned char buf[16384];
+    SceUID in = sceIoOpen(src, PSP_O_RDONLY, 0);
+    if (in < 0)
+        return 0;
+    SceUID outf = sceIoOpen(dst, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+    if (outf < 0) {
+        sceIoClose(in);
+        return 0;
+    }
+    int ok = 1;
+    for (;;) {
+        int got = sceIoRead(in, buf, sizeof(buf));
+        if (got < 0) {
+            ok = 0;
+            break;
+        }
+        if (got == 0)
+            break;
+        if (sceIoWrite(outf, buf, got) != got) {
+            ok = 0;
+            break;
+        }
+    }
+    sceIoClose(in);
+    sceIoClose(outf);
+    if (!ok)
+        sceIoRemove(dst); /* no half a file */
+    return ok;
+}
+
+/* a rename on the same storage, else a copy and the old file deleted (when that fails the plugin is where it was wanted all the same) */
+static int move_file(const char *src, const char *dst)
+{
+    if (!strncasecmp(src, dst, 4) && sceIoRename(src, dst) >= 0)
+        return 1;
+    if (!copy_file(src, dst))
+        return 0;
+    sceIoRemove(src);
+    return 1;
+}
+
+int plugins_install(const char *src, const PluginLoc *loc, unsigned levels)
+{
+    levels &= (1u << PLUGIN_LEVELS) - 1;
+    if (!src || !loc || !loc->file[0] || !levels)
+        return PLUGIN_FAILED;
+    const char *name = strrchr(src, '/');
+    name = name ? name + 1 : src;
+    char dest[160];
+    if (!*name || snprintf(dest, sizeof(dest), "%s/%s", loc->dir, name) >= (int)sizeof(dest))
+        return PLUGIN_FAILED;
+    int file = -1;
+    for (int i = 0; i < s_file_count; i++)
+        if (!strcasecmp(s_files[i].path, loc->file))
+            file = i;
+    if (file < 0 && s_file_count >= MAX_FILES)
+        return PLUGIN_FAILED;
+    if (file >= 0) { /* the lines have to fit, and the file be written back whole, before anything is moved */
+        int room = s_files[file].count;
+        for (int k = 0; k < PLUGIN_LEVELS; k++)
+            if (levels & (1u << k))
+                room += !plugins_has(loc, name, k);
+        if (s_files[file].partial || room > MAX_LINES)
+            return PLUGIN_FAILED;
+    }
+    if (strcasecmp(src, dest)) {
+        if (file_exists(dest))
+            return PLUGIN_EXISTS;
+        sceIoMkdir(loc->dir, 0777); /* (SEPLUGINS may not be there yet) */
+        if (!move_file(src, dest))
+            return PLUGIN_FAILED;
+    }
+    if (file < 0) { /* PLUGINS.TXT is made with the first line */
+        file = s_file_count++;
+        memset(&s_files[file], 0, sizeof(s_files[file]));
+        snprintf(s_files[file].path, sizeof(s_files[file].path), "%s", loc->file);
+    }
+    for (int k = 0; k < PLUGIN_LEVELS; k++)
+        if ((levels & (1u << k)) && add_line(file, k, dest) == 0)
+            return PLUGIN_FAILED;
+    return plugins_save() ? PLUGIN_OK : PLUGIN_FAILED;
 }

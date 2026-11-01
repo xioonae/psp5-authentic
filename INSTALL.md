@@ -61,6 +61,15 @@ The plugin keeps the seconds of each game in `PSP5/played`, and psp5 authentic a
 - When psp5 authentic is updated, the plugin file is replaced by the one that comes with it.
 - The same plugin lets psp5 authentic know **when** a game was played last, also when you started it from the XMB. The Information screen shows it as *Last played*, and the Games tab and the *Games and Apps* list use it.
 
+## Plugins
+
+*Settings → System → Plugins* has a switch for every line of your `PLUGINS.TXT` files (the ARK folder's and `SEPLUGINS`, on the Memory Stick and, on a PSP Go, the internal storage). **Manage Plugins** is the first row:
+
+- **Install New Plugin** opens the File Manager. Find the `.prx`, Confirm on it, then choose where it goes (the ARK folder or `SEPLUGINS`) and switch on *XMB*, *Games* and *PS1*. After a question the plugin file is moved there
+  and the lines are added to that folder's `PLUGINS.TXT`. A file of the same name there is never written over.
+- Confirm on a plugin that is installed: **Install to** lists the places it is not in yet, **Uninstall from** the places it is in. Both ask before they change anything. *Uninstall from* removes the lines only; the plugin file stays.
+- A plugin needs a restart of the PSP before it does anything.
+
 ## Where your games go
 
 | What | Folder |

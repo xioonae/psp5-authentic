@@ -462,12 +462,15 @@ static int ftp_mode(void)
 
 /* Filhanteraren: allt annat är stängt, så inget annat läser eller skriver filer under tiden. Returns what the player chose in the power popup there that leaves
  * psp5 (SA_SHUTDOWN, SA_RESTART, SA_RECOVERY), else 0: the File Manager is closed first, and the caller does it (Sleep is done on the spot, as with the PSP's own switch). */
-static int files_mode(void)
+static int files_mode(int pick)
 {
     gfx_init();
     font_init(lang_needs_cjk());
     sound_init();
-    files_open();
+    if (pick) /* Manage Plugins: only to choose a plugin file (files_picked() has it when this returns) */
+        files_open_pick();
+    else
+        files_open();
     power_reset();
     int pending = SA_NONE;
     u32 old = ~0u; /* ignore the button that opened it, whichever it is (the confirm button) */
@@ -560,7 +563,11 @@ static int run_action(int action, EntryList *list, Ui *ui)
         return 1; /* filer kan ha ändrats – skanna om */
     case SA_FILES:
         app_stop(list, ui);
-        after_visit(files_mode());
+        after_visit(files_mode(0));
+        return 1;
+    case SA_PLUGIN_PICK:
+        app_stop(list, ui);
+        after_visit(files_mode(1));
         return 1;
     case SA_WIFI:
         app_stop(list, ui);
@@ -716,8 +723,11 @@ int main(int argc, char *argv[])
                 if (run_action(action, &list, &ui)) {
                     app_start(&list, &ui, 0);
                     if (settings_is_visit(action)) { /* the PSP's own screen, the File Manager, USB Mode: back in Settings, on the same row (not the main screen) */
+                        char plugin[512];
                         if (action == SA_WIFI && s_wifi_failed)
                             settings_notice(L(S_WIFI_FAILED));
+                        else if (action == SA_PLUGIN_PICK && files_picked(plugin, sizeof(plugin)))
+                            settings_plugin_new(plugin); /* the File Manager gave a plugin: the page for installing it */
                     } else {
                         in_settings = 0;
                     }
