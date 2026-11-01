@@ -582,6 +582,18 @@ static const char *const T[S_COUNT][NL] = {
     [S_FTP_OPEN] = { "No password needed", "Inget lösenord behövs", "Kein Passwort nötig", "Aucun mot de passe requis", "No hace falta contraseña",
                      "Nessuna password richiesta", "Geen wachtwoord nodig", "Não é preciso palavra-passe", "Пароль не нужен", "パスワードは不要です", "Heslo není potřeba" },
     [S_FTP_STOP] = { "Stop", "Stoppa", "Beenden", "Arrêter", "Detener", "Ferma", "Stoppen", "Parar", "Остановить", "停止", "Zastavit" },
+    /* (Claude's translations: not checked by native speakers) shown while the server waits, when the PSP's own "WLAN Power Save" is on */
+    [S_FTP_POWER_SAVE] = { "WLAN Power Save is on: if a computer cannot connect, switch it off in the PSP's Settings.",
+                           "WLAN-strömsparläge är på: kan en dator inte ansluta, stäng av det i PSP:ns inställningar.",
+                           "WLAN-Energiesparmodus ist an: Verbindet sich ein Computer nicht, schalte ihn in den PSP-Einstellungen aus.",
+                           "Économie d'énergie WLAN activée : désactivez-la dans les réglages de la PSP si un ordinateur ne se connecte pas.",
+                           "Ahorro de energía WLAN activado: si un ordenador no puede conectarse, desactívalo en los ajustes de la PSP.",
+                           "Risparmio energia WLAN attivo: se un computer non si connette, disattivalo nelle impostazioni della PSP.",
+                           "WLAN-energiebesparing staat aan: kan een computer niet verbinden, zet het uit in de PSP-instellingen.",
+                           "Poupança de energia WLAN ativa: se um computador não conseguir ligar-se, desative-a nas definições da PSP.",
+                           "Энергосбережение WLAN включено: если компьютер не может подключиться, отключите его в настройках PSP.",
+                           "無線LANの省電力がオンです。パソコンから接続できないときは、PSPの設定でオフにしてください。",
+                           "Úspora energie WLAN je zapnutá: pokud se počítač nemůže připojit, vypněte ji v nastavení PSP." },
     /* Settings > About (Claude's translations: not checked by native speakers) */
     [S_CAT_INFO] = { "Console Information", "Konsolinformation", "Konsoleninformationen", "Informations sur la Console", "Información de la Consola",
                      "Informazioni sulla Console", "Console-informatie", "Informações da Consola", "Информация о Консоли", "本体情報", "Informace o Konzoli" },

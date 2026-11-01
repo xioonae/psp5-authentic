@@ -25,6 +25,7 @@ static int s_start_wait;         /* frames to show the first picture before the 
 static float s_switch_wait;      /* the Wi-Fi switch is looked at now and then while it is off */
 static int s_release;            /* the PSP's window has just closed: the ✕ and ○ that were pressed in it do not count here until they have been let go */
 static FtpStatus s_status;
+static int s_power_save;         /* the PSP's own "WLAN Power Save" was on when the server started: a hint is drawn while it waits */
 
 FtpScreenPhase ftpscreen_phase(void)
 {
@@ -47,6 +48,7 @@ void ftpscreen_open(volatile int *running)
     s_switch_wait = 0;
     s_start_wait = 2;
     s_release = 0;
+    s_power_save = 0;
     memset(&s_status, 0, sizeof s_status);
 }
 
@@ -105,9 +107,10 @@ int ftpscreen_update(const UiInput *in, float dt, unsigned now_ms)
     case FTPS_CONNECTING: {
         int st = netlink_state(now_ms);
         if (st == LINK_UP) {
-            if (ftp_start(FTP_PORT, netlink_ip_value()))
+            if (ftp_start(FTP_PORT, netlink_ip_value())) {
                 s_phase = FTPS_RUNNING;
-            else
+                s_power_save = netlink_power_save();
+            } else
                 fail(S_FTP_START_FAILED);
         } else if (st == LINK_FAILED) {
             fail(S_FTP_CONN_FAILED);
@@ -192,6 +195,12 @@ static void draw_running(float t)
         else
             snprintf(line, sizeof line, "%s", L(S_FTP_WAITING));
         text_draw(SCREEN_W / 2, 204, text_fit(0.75f, 0.5f, 0, SCREEN_W - 60, line), 0, LIGHT, ALIGN_CENTER, line);
+        if (s_power_save && s->clients == 0) { /* the computer may not be able to find the PSP at all ("No route to host"): the PSP's Wi-Fi sleeps */
+            char lines[2][96];
+            int n = text_wrap(L(S_FTP_POWER_SAVE), 0.5f, 380, lines, 2);
+            for (int i = 0; i < n; i++)
+                text_draw(SCREEN_W / 2, 224 + 13 * i, 0.5f, 0, RGBA(236, 190, 120, 230), ALIGN_CENTER, lines[i]);
+        }
         return;
     }
     const char *what = L(s->activity == FTP_SENDING ? S_FTP_SENDING : S_FTP_RECEIVING);

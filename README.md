@@ -96,7 +96,7 @@ wherever it can, but it doesn't copy the console in everything.
 - **File Manager** (*Settings → Storage*). Browse the Memory Stick (and the internal storage on a PSP Go) and copy,
   move, rename, delete or make folders.
 - **FTP Server** (*Settings → Network → FTP Server*). Copy files to and from the PSP over Wi-Fi: the PSP's own Wi-Fi window opens so that you choose one of your saved connections, and psp5 authentic shows the address to type
-  into an FTP program or the file manager of your computer. It shows who is connected and the file that is going. There is no password, so use it on your own network.
+  into an FTP program or the file manager of your computer. It shows who is connected and the file that is going. There is no password, so use it on your own network. If the computer cannot connect, INSTALL.md has a list of what to check (WLAN Power Save of the PSP, the network).
 - **Sounds and languages.** Menu sounds (you can turn them off). 11 languages: psp5 authentic follows the PSP's language; Swedish and
   Czech are picked under *Settings → System → Language*.
 - **Quick and careful.** Only the cards near your selection are loaded, and artwork is cached, so it opens fast after the

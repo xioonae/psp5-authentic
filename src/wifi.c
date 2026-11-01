@@ -6,18 +6,12 @@
  * status" and ad hoc; it has no way to ask for adding, editing or removing a connection. */
 #include <pspkernel.h>
 #include <psputility.h>
-#include <psputility_netmodules.h>
 #include <psputility_netconf.h>
-#include <pspnet.h>
-#include <pspnet_inet.h>
-#include <pspnet_apctl.h>
 #include <string.h>
 #include "wifi.h"
 #include "netlink.h"
 #include "gfx.h"
 #include "theme.h"
-
-#define MODULE_ALREADY_LOADED 0x80111102 /* the answer of a load that was done before (music.c has the same) */
 
 static int s_done;
 
@@ -77,22 +71,10 @@ static int run_dialog(volatile int *running)
 
 int wifi_dialog(volatile int *running)
 {
-    int common = sceUtilityLoadNetModule(PSP_NET_MODULE_COMMON);
-    int inet = sceUtilityLoadNetModule(PSP_NET_MODULE_INET);
-    int net = -1, inet_init = -1, apctl = -1, result = -1;
-    if ((common >= 0 || common == (int)MODULE_ALREADY_LOADED) && (inet >= 0 || inet == (int)MODULE_ALREADY_LOADED) &&
-        (net = sceNetInit(0x20000, 0x20, 0x1000, 0x20, 0x1000)) >= 0 && (inet_init = sceNetInetInit()) >= 0 && (apctl = sceNetApctlInit(0x1600, 42)) >= 0)
+    int result = -1;
+    if (netlink_start()) /* the libraries are started as for the FTP server (netlink.c) and stopped again at the end */
         result = run_dialog(running);
-    if (apctl >= 0)
-        sceNetApctlTerm();
-    if (inet_init >= 0)
-        sceNetInetTerm();
-    if (net >= 0)
-        sceNetTerm();
-    if (inet >= 0)
-        sceUtilityUnloadNetModule(PSP_NET_MODULE_INET);
-    if (common >= 0)
-        sceUtilityUnloadNetModule(PSP_NET_MODULE_COMMON);
+    netlink_stop();
     return result;
 }
 

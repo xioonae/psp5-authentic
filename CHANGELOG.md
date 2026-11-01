@@ -17,6 +17,10 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   - **There is no password:** any user name and password work, so use it on your own network. It uses passive mode, which FTP programs, Windows Explorer and curl do by default.
   - Download, upload, resume, rename, delete and new folders work. Up to three computers can be connected at the same time. The PSP does not go to sleep while it runs.
   - *Settings → Network* now says what both of its rows do. The new texts are in all 11 languages.
+  - **The network is started the way ARK's own launcher does it** (arkMenu): the same sizes and thread priorities (a pool of 256 KB, the net threads at priority 42) and an event handler for the access point control.
+    The Wi-Fi connection row of Settings starts it the same way. This is for the case that a computer says "No route to host" although the PSP shows its address (it was reported on a real PSP). The change has not been tried on a PSP.
+  - **A hint for WLAN Power Save.** When the PSP's own *WLAN Power Save* (XMB: *Settings → Power Save Settings*) is on, the PSP's Wi-Fi sleeps and may not answer the computer at all ("No route to host"). The FTP screen
+    then says so under "Waiting for a computer", until a computer is connected. The new text is in all 11 languages. INSTALL.md has a list of what to check.
 
 ### Library
 

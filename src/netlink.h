@@ -11,7 +11,11 @@ enum { LINK_CONNECTING, LINK_UP, LINK_FAILED };
 /* 1 = the Wi-Fi switch of the PSP is on. */
 int netlink_switch_on(void);
 
-/* Starts the network libraries. 1 = it is done (or was), 0 = it could not be (no memory, the modules would not load). Call netlink_stop() in any case afterwards. */
+/* 1 = "WLAN Power Save" is on in the PSP's own settings (Settings > Power Save Settings). The Wi-Fi then sleeps between the access point's messages and a computer's
+ * question "who has this address?" can stay unanswered: the computer says "No route to host". */
+int netlink_power_save(void);
+
+/* Starts the network libraries (with the numbers ARK's launcher uses: netlink.c). 1 = it is done (or was), 0 = it could not be (no memory, the modules would not load). Call netlink_stop() in any case afterwards. */
 int netlink_start(void);
 
 /* The libraries are started and the system's window has connected the PSP: from now on netlink_state() watches that connection. */

@@ -7,23 +7,41 @@
 #include <pspnet_inet.h>
 #include <pspnet_apctl.h>
 #include <pspwlan.h>
+#include <psputility_sysparam.h>
 #include <stdio.h>
 #include <string.h>
 #include "netlink.h"
 
 #define MODULE_ALREADY_LOADED 0x80111102 /* the answer of a load that was done before (wifi.c has the same) */
 #define JOIN_MS 60000                    /* a connection that is not made in a minute has failed */
+/* The network libraries are started with the numbers of ARK's own launcher (arkMenu, its FTP server and its update check): a pool of 256 KB, the two net threads at
+ * priority 42 and the access point control with 10 KB of stack and priority 48. */
+#define NET_POOL  (256 * 1024)
+#define NET_PRIO  42
+#define APCTL_STACK (10 * 1024)
+#define APCTL_PRIO  48
 
-static int s_common = -1, s_inet_mod = -1, s_net = -1, s_inet = -1, s_apctl = -1; /* what was started (>= 0) */
+static int s_common = -1, s_inet_mod = -1, s_net = -1, s_inet = -1, s_apctl = -1, s_handler = -1; /* what was started (>= 0) */
 static int s_connecting;                                                         /* netlink_attach() was called */
 static unsigned s_since;
 static int s_fresh;                                                              /* the clock has not been read since netlink_attach() */
 static int s_up;
 static char s_ip[16];
 
+/* arkMenu registers a handler for the events of the access point control too (it does nothing with them): the connection is watched by asking its state */
+static void apctl_event(int prev_state, int new_state, int event, int error, void *arg)
+{
+}
+
 int netlink_switch_on(void)
 {
     return sceWlanGetSwitchState() > 0;
+}
+
+int netlink_power_save(void)
+{
+    int v = 0;
+    return sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_WLAN_POWERSAVE, &v) >= 0 && v == PSP_SYSTEMPARAM_WLAN_POWERSAVE_ON;
 }
 
 int netlink_start(void)
@@ -34,8 +52,9 @@ int netlink_start(void)
     s_inet_mod = sceUtilityLoadNetModule(PSP_NET_MODULE_INET);
     if (!(s_common >= 0 || s_common == (int)MODULE_ALREADY_LOADED) || !(s_inet_mod >= 0 || s_inet_mod == (int)MODULE_ALREADY_LOADED))
         return 0;
-    if ((s_net = sceNetInit(0x20000, 0x20, 0x1000, 0x20, 0x1000)) < 0 || (s_inet = sceNetInetInit()) < 0 || (s_apctl = sceNetApctlInit(0x1600, 42)) < 0)
+    if ((s_net = sceNetInit(NET_POOL, NET_PRIO, 0, NET_PRIO, 0)) < 0 || (s_inet = sceNetInetInit()) < 0 || (s_apctl = sceNetApctlInit(APCTL_STACK, APCTL_PRIO)) < 0)
         return 0;
+    s_handler = sceNetApctlAddHandler(apctl_event, NULL); /* (a failure is not one: nothing depends on it) */
     return 1;
 }
 
@@ -103,6 +122,8 @@ void netlink_stop(void)
     s_connecting = 0;
     s_up = 0;
     s_ip[0] = 0;
+    if (s_handler >= 0)
+        sceNetApctlDelHandler(s_handler);
     if (s_apctl >= 0)
         sceNetApctlTerm();
     if (s_inet >= 0)
@@ -113,5 +134,5 @@ void netlink_stop(void)
         sceUtilityUnloadNetModule(PSP_NET_MODULE_INET);
     if (s_common >= 0)
         sceUtilityUnloadNetModule(PSP_NET_MODULE_COMMON);
-    s_common = s_inet_mod = s_net = s_inet = s_apctl = -1;
+    s_common = s_inet_mod = s_net = s_inet = s_apctl = s_handler = -1;
 }
