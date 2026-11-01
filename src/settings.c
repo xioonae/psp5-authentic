@@ -20,6 +20,8 @@
 #include "osd.h"
 #include "power.h"
 #include "popup.h"
+#include "gameops.h"
+#include "storage.h"
 
 #define TITLE_Y     34.0f
 #define LIST_X      24.0f  /* the same sides as the list of the file manager: 24 px from the edges of the screen */
@@ -36,7 +38,7 @@
 #define TEXT_DIM  RGBA(160, 162, 172, 255)
 #define LIGHT     RGBA(236, 236, 240, 255)
 
-typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO, IT_THEME, IT_PAGE, IT_LANG } ItemType;
+typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO, IT_THEME, IT_PAGE, IT_LANG, IT_STORE } ItemType;
 
 /* the icons of the first list (drawn here, no image files) */
 enum { ICO_NONE, ICO_APP, ICO_NETWORK, ICO_SYSTEM, ICO_STORAGE, ICO_SCREEN, ICO_CONTROLS };
@@ -48,7 +50,8 @@ typedef struct {
     const char *const *opts;     /* CHOICE */
     int nopts;
     int action;                  /* ACTION: SA_*, THEME: temats index, LANG: the language, PAGE: the page it opens */
-    int icon;                    /* PAGE: ICO_* in front of the label (0 = none) */
+    int icon;                    /* PAGE: ICO_* in front of the label (0 = none); STORE: the colour of the dot (ST_*) */
+    int block;                   /* STORE: the storage it is a row of (0, or 1 on a PSP Go with two) */
     char info[48];               /* INFO-värde / undertext */
     int plugin;                  /* >0: plugin nr (1-baserat) */
     int own;                     /* psp5:s egen inställning (psp5.cfg) */
@@ -64,8 +67,12 @@ typedef struct {
 } Category; /* a page: a list of rows */
 
 /* The pages. PG_ROOT is the first list; the six rows of it open the pages after it; the rows of PG_SYSTEM open the six after that. */
-enum { PG_ROOT, PG_PSP5, PG_NETWORK, PG_SYSTEM, PG_STORAGE, PG_SCREEN, PG_CONTROLS, PG_INFO, PG_APPEAR, PG_LANG, PG_ARK, PG_PERF, PG_PLUGINS, PG_COUNT };
-static const signed char PARENT[PG_COUNT] = { -1, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM };
+enum { PG_ROOT, PG_PSP5, PG_NETWORK, PG_SYSTEM, PG_STORAGE, PG_SCREEN, PG_CONTROLS, PG_INFO, PG_APPEAR, PG_LANG, PG_ARK, PG_PERF, PG_PLUGINS, PG_CSTORE, PG_COUNT };
+static const signed char PARENT[PG_COUNT] = { -1, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_STORAGE };
+
+/* Console Storage (PG_CSTORE): for each storage a status block (the size, a bar, the free space) that can not be chosen, and four rows that can: the colours
+ * of the dots and of the bar */
+enum { ST_GAMES, ST_MEDIA, ST_SAVED, ST_OTHER, ST_ROWS };
 
 static Category s_cats[PG_COUNT];
 static char s_ark_name[48]; /* "ARK-5 Settings" or "ARK-4 Settings": the name of the page that has the settings of ARK itself */
@@ -73,6 +80,8 @@ static unsigned char s_plugin_on[MAX_PLUGINS];
 static struct {
     int page, item[PG_COUNT]; /* the page shown, and the row chosen on each page (kept when the page is left) */
     int top[PG_COUNT];  /* the first row shown on each page: it moves only when the chosen row would leave the screen */
+    int store_dev;      /* the storage of the row that gave SA_GAMES / SA_SAVES (settings_action_dev) */
+    float store_scroll; /* Console Storage: how far the page is scrolled (in pixels) */
     float scroll, open, time; /* scroll: the first row shown, on its way to top[page] */
     int cfw_dirty, plugins_dirty, own_dirty;
     int repeat_dir;
@@ -431,6 +440,7 @@ static void build(int rebuild)
     s_cats[PG_ARK].name = s_ark_name;
     s_cats[PG_PERF].name = L(S_CAT_PERF);
     s_cats[PG_PLUGINS].name = L(S_CAT_PLUGINS);
+    s_cats[PG_CSTORE].name = L(S_CS_TITLE);
 
     c = &s_cats[PG_ROOT];
     c->name = L(S_SETTINGS);
@@ -466,6 +476,7 @@ static void build(int rebuild)
 
     /* Exit to XMB, Sleep, Shut down, Restart and Recovery menu are not here: they are the power popup of the SELECT button (power.c), on every screen */
     c = &s_cats[PG_STORAGE];
+    page_row(c, PG_CSTORE, 0);
     action(c, L(S_FILES), SA_FILES);
     action(c, L(S_USB_MODE), SA_USB);
 
@@ -646,6 +657,7 @@ void settings_notice(const char *msg)
 
 int settings_commit(void)
 {
+    storage_stop(); /* (nothing counts in the background once Settings is left, whatever comes next) */
     int changed = S.cfw_dirty || S.plugins_dirty;
     if (S.own_dirty)
         config_save(PSP5_DATA_DIR); /* ljud och språk gäller direkt, ingen omstart */
@@ -779,6 +791,60 @@ static void pop_update(int move, u32 p)
     }
 }
 
+/* --- Console Storage ---
+ * The page has a status block for each storage (the size, a bar of what is on it, the free space) and under it four rows: Games and Apps, Media Gallery,
+ * Saved Data and Other, each with its colour and its size. The blocks are not rows (they can not be chosen); a PSP Go with a Memory Stick has two of
+ * them, one under the other, and the page scrolls from one to the other. Games and Apps and Saved Data open their screens (SA_GAMES, SA_SAVES, saves.c);
+ * Media Gallery and Other do nothing yet. */
+#define STORE_HEAD_H   22.0f /* the name of the storage, when there are two */
+#define STORE_STATUS_H 54.0f /* "Size", the bar, "Free space" */
+#define STORE_GAP      10.0f
+
+static const u32 ST_COLOR[ST_ROWS] = { RGBA(64, 132, 255, 255), RGBA(255, 170, 40, 255), RGBA(80, 200, 120, 255), RGBA(178, 128, 240, 255) };
+static StorageInfo s_si[2];
+static int s_blocks;
+
+static float store_head(void) { return s_blocks > 1 ? STORE_HEAD_H : 0; }
+static float store_block_h(void) { return store_head() + STORE_STATUS_H + ST_ROWS * ROW_H + STORE_GAP; }
+
+/* The rows from what storage.c knows now (it counts in the background: the sizes grow until it is done) */
+static void store_fill(void)
+{
+    static const StrId names[ST_ROWS] = { S_CS_GAMES, S_CS_MEDIA, S_CS_SAVED, S_CS_OTHER };
+    static const int actions[ST_ROWS] = { SA_GAMES, SA_NONE, SA_SAVES, SA_NONE };
+    Category *c = &s_cats[PG_CSTORE];
+    s_blocks = storage_count();
+    c->count = 0;
+    for (int b = 0; b < s_blocks && b < 2; b++) {
+        storage_get(b, &s_si[b]);
+        const StorageInfo *si = &s_si[b];
+        unsigned long long size[ST_ROWS] = { si->games, si->media, si->saved, si->other };
+        for (int r = 0; r < ST_ROWS; r++) {
+            Item *it = add(c, L(names[r]), IT_STORE);
+            it->icon = r;
+            it->block = b;
+            it->action = actions[r];
+            if (r == ST_OTHER && !si->ready)
+                snprintf(it->info, sizeof(it->info), "...");
+            else
+                gameops_fmt_size(it->info, sizeof(it->info), size[r]);
+        }
+    }
+}
+
+int settings_action_dev(void)
+{
+    return S.store_dev;
+}
+
+void settings_back(void)
+{
+    if (S.page == PG_CSTORE) {
+        storage_start();
+        store_fill();
+    }
+}
+
 /* The page comes into view: the chosen row is kept (and is on the list), and the list starts where it was, or just enough further on to show the row. */
 static void page_enter(int page)
 {
@@ -786,6 +852,11 @@ static void page_enter(int page)
     int *sel = &S.item[page], *top = &S.top[page];
     if (page == PG_INFO) /* what it shows is asked of the PSP when it comes into view (the battery changes) */
         fill_about(&s_cats[PG_INFO]);
+    if (page == PG_CSTORE) { /* the numbers are asked of the storage when it comes into view */
+        storage_start();
+        store_fill();
+        S.store_scroll = 0;
+    }
     if (*sel >= c->count)
         *sel = c->count ? c->count - 1 : 0;
     if (*sel < *top)
@@ -803,6 +874,8 @@ int settings_update(const UiInput *in, float dt)
     if (S.toast_time > 0)
         S.toast_time -= dt;
 
+    if (S.page == PG_CSTORE)
+        store_fill();
     Category *c = &s_cats[S.page];
     int *sel = &S.item[S.page];
     u32 p = in->pressed;
@@ -846,6 +919,12 @@ int settings_update(const UiInput *in, float dt)
                 *it->value = !*it->value;
             mark_dirty(it);
             sound_play(SND_SELECT);
+        } else if (it && (p & PSP_CTRL_CROSS) && it->type == IT_STORE) {
+            if (it->action != SA_NONE) { /* Games and Apps, Saved Data: on this storage only, when there are two */
+                S.store_dev = s_blocks > 1 ? s_si[it->block].dev : -1;
+                sound_play(SND_SELECT);
+                return it->action;
+            }
         } else if (it && (p & PSP_CTRL_CROSS) && it->type == IT_ACTION) {
             sound_play(SND_SELECT);
             sound_wait(400); /* låt ljudet höras innan något stängs */
@@ -866,6 +945,8 @@ int settings_update(const UiInput *in, float dt)
     if (*sel > *top + LIST_ROWS - 1)
         *top = *sel - (LIST_ROWS - 1);
     S.scroll += (*top - S.scroll) * clampf(dt * 16, 0, 1);
+    if (S.page == PG_CSTORE && c->count) /* the page shows the block of the chosen row */
+        S.store_scroll += (c->items[*sel].block * store_block_h() - S.store_scroll) * clampf(dt * 14, 0, 1);
     return SA_NONE;
 }
 
@@ -971,7 +1052,8 @@ static void draw_item(const Item *it, float y, const Theme *shown, float a)
         break;
     case IT_ACTION:
     case IT_PAGE:
-        break; /* an action, or a page, has no value to show */
+    case IT_STORE:
+        break; /* an action, or a page, has no value to show (a storage row is drawn by draw_store_page) */
     }
     float value_w = 0;
     if (value[0]) {
@@ -980,8 +1062,71 @@ static void draw_item(const Item *it, float y, const Theme *shown, float a)
         text_draw(right, y + 17, vs, 0, fade(TEXT_DIM, a), ALIGN_RIGHT, value);
     }
     /* långa etiketter (t.ex. tyska, japanska) krymper i stället för att krocka med värdet */
-    float ls = text_fit(it->icon ? 0.7f : 0.62f, 0.48f, 0, right - value_w - left, it->label);
+    float ls = text_fit(0.62f, 0.48f, 0, right - value_w - left, it->label); /* the same size on the first list as in the pages */
     text_draw(left, y + 17, ls, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, it->label);
+}
+
+/* Console Storage: the status blocks and, under each, its four rows */
+static void draw_store_page(float a)
+{
+    const Category *c = &s_cats[PG_CSTORE];
+    int sel = S.item[PG_CSTORE];
+    float head = store_head(), bh = store_block_h();
+    gfx_clip(0, LIST_TOP - 2, SCREEN_W, SCREEN_H - LIST_TOP - 4);
+    for (int b = 0; b < s_blocks && b < 2; b++) {
+        const StorageInfo *si = &s_si[b];
+        float top = LIST_TOP + b * bh - S.store_scroll;
+        if (top > SCREEN_H || top + bh < 0)
+            continue;
+        if (head)
+            text_draw(LIST_X + 8, top + 16, 0.62f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(si->dev ? S_F_INTERNAL : S_F_MS));
+        float y = top + head, bx = LIST_X + 8, bw = LIST_W - 16;
+        char num[32], line[80];
+        if (si->total) {
+            gameops_fmt_size(num, sizeof(num), si->total);
+            snprintf(line, sizeof(line), L(S_CS_SIZE), num);
+            text_draw(bx, y + 14, text_fit(0.6f, 0.46f, 0, bw, line), 0, fade(TEXT_MAIN, a), ALIGN_LEFT, line);
+            /* the bar: the colours of what is on the storage one after the other, the rest is free */
+            gfx_round_rect(bx, y + 22, bw, 6, 3, RGBA(255, 255, 255, (int)(40 * a)));
+            unsigned long long part[ST_ROWS] = { si->games, si->media, si->saved, si->other };
+            float x = bx;
+            for (int r = 0; r < ST_ROWS; r++) {
+                float w = floorf(bw * (float)((double)part[r] / (double)si->total) + 0.5f);
+                if (x + w > bx + bw)
+                    w = bx + bw - x;
+                if (w < 1)
+                    continue;
+                if (x == bx)
+                    gfx_round_rect(x, y + 22, w < 6 ? 6 : w, 6, 3, fade(ST_COLOR[r], a));
+                else
+                    gfx_rect(x, y + 22, w, 6, fade(ST_COLOR[r], a));
+                x += w;
+            }
+            gameops_fmt_size(num, sizeof(num), si->free);
+            snprintf(line, sizeof(line), L(S_CS_FREE), num);
+            text_draw(bx, y + 46, text_fit(0.56f, 0.44f, 0, bw, line), 0, fade(TEXT_DIM, a), ALIGN_LEFT, line);
+        }
+        for (int r = 0; r < ST_ROWS; r++) {
+            int i = b * ST_ROWS + r;
+            if (i >= c->count)
+                break;
+            const Item *it = &c->items[i];
+            float ry = y + STORE_STATUS_H + r * ROW_H;
+            if (i == sel) {
+                gfx_rect(LIST_X, ry, LIST_W, ROW_H, RGBA(255, 255, 255, (int)(16 * a)));
+                gfx_frame(LIST_X, ry, LIST_W, ROW_H, 1, fade(RGBA(232, 232, 236, 230), a));
+            } else if (r < ST_ROWS - 1 && i + 1 != sel) {
+                gfx_rect(LIST_X + 4, ry + ROW_H - 1, LIST_W - 8, 1, RGBA(255, 255, 255, (int)(26 * a)));
+            }
+            gfx_circle(LIST_X + 16, ry + ROW_H / 2, 4, fade(ST_COLOR[it->icon], a));
+            float vs = text_fit(0.58f, 0.46f, 0, LIST_W * 0.4f, it->info);
+            float vw = text_width(vs, 0, it->info) + 12;
+            text_draw(LIST_X + LIST_W - 10, ry + 17, vs, 0, fade(TEXT_DIM, a), ALIGN_RIGHT, it->info);
+            float ls = text_fit(0.62f, 0.48f, 0, LIST_W - 10 - vw - 30, it->label);
+            text_draw(LIST_X + 30, ry + 17, ls, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, it->label);
+        }
+    }
+    gfx_clip_reset();
 }
 
 /* The popup of a choice, in the middle of the screen and rising into place like the power popup: the values one under the other, the
@@ -1056,8 +1201,10 @@ void settings_draw(void)
 
     /* the rows: as in the file manager, a frame round the chosen one, a thin line between the others, the rows that are partly out of the list cut */
     int sel = S.item[S.page];
+    if (S.page == PG_CSTORE)
+        draw_store_page(a);
     gfx_clip(0, LIST_TOP - 2, SCREEN_W, LIST_ROWS * ROW_H + 4);
-    for (int i = (int)S.scroll; i < c->count && i <= (int)S.scroll + LIST_ROWS; i++) {
+    for (int i = (int)S.scroll; S.page != PG_CSTORE && i < c->count && i <= (int)S.scroll + LIST_ROWS; i++) {
         float y = LIST_TOP + (i - S.scroll) * ROW_H;
         if (i == sel) {
             gfx_rect(LIST_X, y, LIST_W, ROW_H, RGBA(255, 255, 255, (int)(16 * a)));
@@ -1069,7 +1216,7 @@ void settings_draw(void)
         draw_item(&c->items[i], y, shown, a);
     }
     gfx_clip_reset();
-    if (c->count > LIST_ROWS) { /* the bar at the right: where the shown part is in the whole list (the file manager's) */
+    if (S.page != PG_CSTORE && c->count > LIST_ROWS) { /* the bar at the right: where the shown part is in the whole list (the file manager's) */
         float h = LIST_ROWS * ROW_H, th = clampf(h * LIST_ROWS / c->count, 12, h);
         float ty = LIST_TOP + (h - th) * S.scroll / (c->count - LIST_ROWS);
         gfx_round_rect(LIST_X + LIST_W + 6, ty, 3, th, 1.5f, fade(RGBA(255, 255, 255, 70), a));

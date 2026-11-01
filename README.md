@@ -9,16 +9,20 @@ wherever it can, but it doesn't copy the console in everything.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/games.png" alt="Games"><br><sub><b>Games</b> – the games you pinned, the ones you played last and then the newest you added, with the Library as the last card</sub></td>
-    <td width="50%"><img src="docs/screenshots/options.png" alt="Options of a game"><br><sub><b>Options</b> (START) – saved data, information, pin to or remove from Home, delete</sub></td>
+    <td width="50%"><img src="docs/screenshots/games.png" alt="Games"><br><sub><b>Games</b> – the games you played last, the ones you keep in Home and then the newest you added, with the Library as the last card</sub></td>
+    <td width="50%"><img src="docs/screenshots/options.png" alt="Options of a game"><br><sub><b>Options</b> (START) – delete, information and the <i>Keep in Home</i> switch</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/library.png" alt="Library"><br><sub><b>Library</b> – everything on the card in one grid, sorted by name, by when you added a game or by when you played it</sub></td>
+    <td width="50%"><img src="docs/screenshots/library.png" alt="Library"><br><sub><b>Library</b> – everything on the card in one grid, sorted by name, by when you added a game or by its size</sub></td>
     <td width="50%"><img src="docs/screenshots/library-folders.png" alt="Library with folders"><br><sub><b>Folders</b> – the Library can show the folders as cards; the button at the top left chooses what you see</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/information.png" alt="Information"><br><sub><b>Information</b> – what a game or app is, where it is, how big it is and when you played it last</sub></td>
-    <td width="50%"><img src="docs/screenshots/saved-data.png" alt="Manage Saved Data"><br><sub><b>Manage Saved Data</b> – look through saves, mark several and delete them, with the space you get back</sub></td>
+    <td width="50%"><img src="docs/screenshots/saved-data.png" alt="Manage Saved Data"><br><sub><b>Manage Saved Data</b> (Settings → Storage → Console Storage) – look through saves, mark several and delete them, with the space you get back</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/console-storage.png" alt="Console Storage"><br><sub><b>Console Storage</b> (Settings → Storage) – the size, a bar of what is on the storage and the free space; <i>Games and Apps</i> and <i>Saved Data</i> open their lists</sub></td>
+    <td width="50%"><img src="docs/screenshots/games-and-apps.png" alt="Games and Apps"><br><sub><b>Games and Apps</b> – all your games and apps: sort them, mark several and delete them, with the space you get back</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/music.png" alt="Music"><br><sub><b>Music</b> – your MP3s with album art; the music keeps playing while you browse your games</sub></td>
@@ -50,19 +54,19 @@ wherever it can, but it doesn't copy the console in everything.
 
 ## What you get
 
-- **Games (Home).** The games and apps you pinned, the ones you played last and then the newest you added, up to ten cards in one row. The selected card is big, with its
+- **Games (Home).** The games and apps you played last, then the newest you added, and the ones you keep in Home, up to ten cards in one row. The selected card is big, with its
   artwork behind it. ↓ selects the **Play** and **⋯** (options) buttons. A UMD in the drive shows up first.
 - **Time played.** A small clock with the time (*54h*, *45min* or *<1min*) on the right of the bottom row, in Games and in the Library.
   With ARK, psp5 authentic installs a tiny helper plugin by itself (nothing to switch on). It runs inside every game (PSP games, ISOs, homebrew and PS1 games), **however you started it** (from psp5 authentic, from the XMB, with or without psp5 authentic as ARK's launcher),
   and counts only the time the PSP is awake. The times are added when psp5 authentic starts next. To turn it off, turn off the two `psp5time.prx` lines in *Settings → System → Plugins*. Without ARK, or with those lines off, nothing is counted.
-- **Options** (START, or Confirm on ⋯). Manage Saved Data, Information (also when you played it last), Delete, Remove from / Add to Home, Pin to / Unpin from Home.
+- **Options** (START, or Confirm on ⋯). Delete, Information (also when you played it last) and **Keep in Home**, a switch that keeps a game among the cards even when you have not played it for a long time (up to nine).
 - **Library.** The last card of Games. It opens a grid with everything you have, games and apps together, a **Sort** button (by
-  name, by what you added last or by what you played last) and a **view** button (*All*, *In folders*, *Outside of folders* or *Both in and out of
+  name, by what you added or by size, either way round) and a **view** button (*All*, *In folders*, *Outside of folders* or *Both in and out of
   folders*; the folders are cards, Confirm opens one, Back goes back). Folders are the ones the Categories Lite plugin makes. The Library
-  remembers your sorting and view. You can pin the Library card like any other card. *Recently played* shows the games in the same order as the Games tab (what you played last
-  first; a folder goes by its best game); what you have not played yet comes last. With ARK it also knows the games you started from the XMB (the helper plugin of *Time played* tells psp5 authentic).
-- **Manage Saved Data.** Lists the saves of all your games. Mark some, delete them and see how much room you get back.
-  ARK's own save folder is locked and can't be deleted.
+  remembers your sorting and view.
+- **Console Storage** (*Settings → Storage*). The size of the storage, a coloured bar and the free space, and four rows with their sizes: **Games and Apps** (the list of all your games and apps: sort, mark and delete them),
+  Media Gallery (music, video and pictures), **Saved Data** (*Manage Saved Data*: the saves of all your games, mark some, delete them and see how much room you get back; ARK's own save folder is locked and can't be deleted) and Other.
+  On a PSP Go with a Memory Stick there are two blocks, one for each storage.
 - **Music.** Plays the MP3 files in `MUSIC` with title, artist and album art (from the file, or a `cover.jpg` / `folder.jpg`
   in the folder). It keeps playing while you browse your games.
 - **Settings** (the cog wheel). One list at a time, like the console's: Confirm opens a page, Back goes back one. The first list has six pages:
@@ -70,7 +74,7 @@ wherever it can, but it doesn't copy the console in everything.
   - *Network* – the PSP's own Wi-Fi screen and the FTP Server.
   - *System* – *Console Information* (nickname, model, system software, MAC address, storage, battery, and where psp5 authentic comes from), *Appearance* (*Show Game art* and the themes),
     *Language*, *ARK-5 Settings* or *ARK-4 Settings* (ARK's own options: USB charge, WPA2, hide pictures, regions ...), *Performance* (CPU speed, extra memory, caches) and *Plugins*.
-  - *Storage* – the File Manager and USB Mode.
+  - *Storage* – Console Storage (see above), the File Manager and USB Mode.
   - *Screen and Sound* – the PSP's own brightness, backlight timer (psp5 authentic remembers it), volume, equalizer and AVLS.
   - *Controls* – the PSP's own confirm button, and which buttons confirm, go back, open the options and the power menu.
 

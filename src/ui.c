@@ -21,6 +21,7 @@
 #include "theme.h"
 #include "osd.h"
 #include "gameops.h"
+#include "gamesize.h"
 #include "home.h"
 #include "lastplayed.h"
 #include "power.h"
@@ -130,68 +131,122 @@ static int top_tabs(const Ui *ui, int out[2])
     return 2;
 }
 
-/* the Library is sorted by name, by when a game was added (its file time) or by when it was played – the disc always first */
+/* The Library is sorted by name, by when a game was added (its file time) or by size, either way round – the disc always first */
+_Static_assert(LIB_SORT_COUNT == CONFIG_LIB_SORTS, "config.h must know every way to sort the Library");
 static const EntryList *s_sort_list;
-static const u64 *s_sort_time; /* for every entry of the list, what to sort it by in "Recently played" (played_key); a bigger one comes first */
-
-/* "Recently played" shows the games in the order of the Games tab (home.c, home_order_key): first those on Home's list of the cards opened last, the newest
- * first, as the Games tab has them after the pinned cards (a pin only moves a card to the front of the Games tab, not of the Library); then the other games
- * that have been played, the one played last first; last the games that have not been played, the one added last first. The Games tab fills what the pinned
- * and the opened cards leave of its ten places in the same order. */
-static u64 played_key(const Entry *e)
+static int cmp_disc(const Entry *x, const Entry *y)
 {
-    return home_order_key(e);
+    if ((x->type == ENTRY_UMD) != (y->type == ENTRY_UMD))
+        return x->type == ENTRY_UMD ? -1 : 1;
+    return 0;
 }
 static int cmp_name(const void *a, const void *b)
 {
     const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
-    if ((x->type == ENTRY_UMD) != (y->type == ENTRY_UMD))
-        return x->type == ENTRY_UMD ? -1 : 1;
+    int d = cmp_disc(x, y);
+    if (d)
+        return d;
     int c = strcasecmp(x->title, y->title);
     return c ? c : *(const int *)a - *(const int *)b;
 }
-static int cmp_recent(const void *a, const void *b)
+static int cmp_name_za(const void *a, const void *b)
 {
     const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
-    if ((x->type == ENTRY_UMD) != (y->type == ENTRY_UMD))
-        return x->type == ENTRY_UMD ? -1 : 1;
+    int d = cmp_disc(x, y);
+    if (d)
+        return d;
+    int c = strcasecmp(y->title, x->title);
+    return c ? c : *(const int *)a - *(const int *)b;
+}
+static int cmp_added_new(const void *a, const void *b)
+{
+    const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
+    int d = cmp_disc(x, y);
+    if (d)
+        return d;
     if (x->file_time != y->file_time)
         return x->file_time > y->file_time ? -1 : 1;
     return cmp_name(a, b);
 }
-static int cmp_played(const void *a, const void *b)
+static int cmp_added_old(const void *a, const void *b)
 {
     const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
-    if ((x->type == ENTRY_UMD) != (y->type == ENTRY_UMD))
-        return x->type == ENTRY_UMD ? -1 : 1;
-    u64 tx = s_sort_time[*(const int *)a], ty = s_sort_time[*(const int *)b];
-    if (tx != ty)
-        return tx > ty ? -1 : 1;
+    int d = cmp_disc(x, y);
+    if (d)
+        return d;
+    if (x->file_time != y->file_time)
+        return x->file_time < y->file_time ? -1 : 1;
     return cmp_name(a, b);
 }
+static int cmp_size_big(const void *a, const void *b)
+{
+    const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
+    int d = cmp_disc(x, y);
+    if (d)
+        return d;
+    u64 sx = gamesize_of(x), sy = gamesize_of(y);
+    if (sx != sy)
+        return sx > sy ? -1 : 1;
+    return cmp_name(a, b);
+}
+static int cmp_size_small(const void *a, const void *b)
+{
+    const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
+    int d = cmp_disc(x, y);
+    if (d)
+        return d;
+    u64 sx = gamesize_of(x), sy = gamesize_of(y);
+    if (sx != sy)
+        return sx < sy ? -1 : 1;
+    return cmp_name(a, b);
+}
+static int (*const s_game_cmp[LIB_SORT_COUNT])(const void *, const void *) = {
+    cmp_name, cmp_name_za, cmp_added_new, cmp_added_old, cmp_size_big, cmp_size_small
+};
 
-/* the folders in the order of the Sort button: by name (the folders are numbered in the order of their names), the one with the
- * newest game first, or the one with the game that comes first in "Recently played" first */
+/* The folders in the order of the Sort button: by name (the folders are numbered in the order of their names; Z-A turns them round), by the newest or the
+ * oldest game in them, or by the size of their games together */
 static const FolderSet *s_sort_folders;
-static const u64 *s_folder_time; /* for every folder, the biggest played_key of its games */
+static const u64 *s_folder_size; /* for every folder, the size of its games together (only for the size sorts) */
 static int cmp_folder_name(const void *a, const void *b)
 {
     return *(const int *)a - *(const int *)b;
 }
-static int cmp_folder_recent(const void *a, const void *b)
+static int cmp_folder_name_za(const void *a, const void *b)
+{
+    return *(const int *)b - *(const int *)a;
+}
+static int cmp_folder_added_new(const void *a, const void *b)
 {
     const Folder *x = &s_sort_folders->items[*(const int *)a], *y = &s_sort_folders->items[*(const int *)b];
     if (x->newest != y->newest)
         return x->newest > y->newest ? -1 : 1;
     return cmp_folder_name(a, b);
 }
-static int cmp_folder_played(const void *a, const void *b)
+static int cmp_folder_added_old(const void *a, const void *b)
 {
-    u64 x = s_folder_time[*(const int *)a], y = s_folder_time[*(const int *)b];
+    const Folder *x = &s_sort_folders->items[*(const int *)a], *y = &s_sort_folders->items[*(const int *)b];
+    if (x->oldest != y->oldest)
+        return x->oldest < y->oldest ? -1 : 1;
+    return cmp_folder_name(a, b);
+}
+static int cmp_folder_size_big(const void *a, const void *b)
+{
+    u64 x = s_folder_size[*(const int *)a], y = s_folder_size[*(const int *)b];
     if (x != y)
         return x > y ? -1 : 1;
     return cmp_folder_name(a, b);
 }
+static int cmp_folder_size_small(const void *a, const void *b)
+{
+    u64 x = s_folder_size[*(const int *)a], y = s_folder_size[*(const int *)b];
+    if (x != y)
+        return x < y ? -1 : 1;
+    return cmp_folder_name(a, b);
+}
+static int (*const s_folder_cmp[LIB_SORT_COUNT])(const void *, const void *) = {
+    cmp_folder_name, cmp_folder_name_za, cmp_folder_added_new, cmp_folder_added_old, cmp_folder_size_big, cmp_folder_size_small
+};
 
 /* What the Library shows, for the view button (lib_view) and the folder that is open (lib_open), in the order of the Sort button:
  *   open folder          its games and apps
@@ -208,31 +263,29 @@ static void rebuild_library(Ui *ui)
     const EntryList *list = ui->list;
     int *t = v->idx ? malloc((list->count + 1) * sizeof(int)) : NULL;
     int n = 0, open = ui->lib_open, view = ui->lib_view, sort = ui->lib_sort;
-    u64 *times = NULL, *ftimes = NULL; /* "Recently played": the played_key of every game, and the biggest of them in every folder */
+    u64 *fsize = NULL; /* the size sorts: the size of the games of every folder together */
     if (!t)
         return;
-    if (sort == LIB_SORT_PLAYED) {
-        times = malloc((list->count + 1) * sizeof(u64));
-        ftimes = calloc(fs->count + 1, sizeof(u64));
-        if (!times || !ftimes) {
-            free(times);
-            free(ftimes);
+    if (sort < 0 || sort >= LIB_SORT_COUNT)
+        sort = LIB_SORT_NAME_AZ;
+    if (sort == LIB_SORT_SIZE_BIG || sort == LIB_SORT_SIZE_SMALL) {
+        fsize = calloc(fs->count + 1, sizeof(u64));
+        if (!fsize) {
             free(t);
             return;
         }
         for (int i = 0; i < list->count; i++) {
-            times[i] = played_key(&list->items[i]);
             int f = i < fs->of_count ? fs->of[i] : -1;
-            if (f >= 0 && f < fs->count && times[i] > ftimes[f])
-                ftimes[f] = times[i];
+            if (f >= 0 && f < fs->count)
+                fsize[f] += gamesize_of(&list->items[i]);
         }
     }
     if (open < 0 && (view == LIB_VIEW_FOLDERS || view == LIB_VIEW_BOTH)) {
         for (int f = 0; f < fs->count; f++)
             t[n++] = f;
         s_sort_folders = fs;
-        s_folder_time = ftimes;
-        qsort(t, n, sizeof(int), sort == LIB_SORT_PLAYED ? cmp_folder_played : sort == LIB_SORT_RECENT ? cmp_folder_recent : cmp_folder_name);
+        s_folder_size = fsize;
+        qsort(t, n, sizeof(int), s_folder_cmp[sort]);
         for (int k = 0; k < n; k++)
             t[k] = LIB_FOLDER_ID(t[k]);
     }
@@ -245,8 +298,7 @@ static void rebuild_library(Ui *ui)
     }
     if (n - first > 1) {
         s_sort_list = list;
-        s_sort_time = times;
-        qsort(t + first, n - first, sizeof(int), sort == LIB_SORT_PLAYED ? cmp_played : sort == LIB_SORT_RECENT ? cmp_recent : cmp_name);
+        qsort(t + first, n - first, sizeof(int), s_game_cmp[sort]);
     }
     if (first && n > first && list->items[t[first]].type == ENTRY_UMD) { /* the disc goes in front of the folders */
         int umd = t[first];
@@ -256,8 +308,7 @@ static void rebuild_library(Ui *ui)
     memcpy(v->idx, t, n * sizeof(int));
     v->count = n;
     free(t);
-    free(times);
-    free(ftimes);
+    free(fsize);
 }
 
 static void build_views(Ui *ui)
@@ -275,7 +326,7 @@ static void build_views(Ui *ui)
     }
     LoaderView *homev = &ui->views[TAB_GAMES];
     if (homev->idx)
-        homev->count = home_build(ui->list, homev->idx, ui->list->count + 1); /* Home: the disc, the pinned cards, the ones opened last, the Library card */
+        homev->count = home_build(ui->list, homev->idx, ui->list->count + 1); /* Home: the disc, the games opened last and the kept ones, the Library card */
     rebuild_library(ui);
 }
 
@@ -467,10 +518,11 @@ void ui_init(Ui *ui, const EntryList *list, int can_launch)
     ui->tab_anim = 1;
     ui->top_focus = -1;
     ui->card_ring = 1;
-    ui->lib_sort = g_lib_sort < LIB_SORT_COUNT ? g_lib_sort : LIB_SORT_NAME; /* the Library comes back as it was left (psp5.cfg) */
+    ui->lib_sort = g_lib_sort < LIB_SORT_COUNT ? g_lib_sort : LIB_SORT_NAME_AZ; /* the Library comes back as it was left (psp5.cfg) */
     ui->lib_view = g_lib_view < LIB_VIEW_COUNT ? g_lib_view : LIB_VIEW_ALL;
     ui->lib_open = -1;
     home_load(list);
+    gamesize_start(list); /* how big the games are (the Library's size sort, Console Storage), counted in the background */
     build_views(ui);
     ui->tab = TAB_GAMES; /* (it always has the Library card) */
     ui->pos = 1.5f; /* korten glider in vid start */
@@ -553,11 +605,23 @@ void ui_relist_removed(Ui *ui, int index)
 {
     int tab = ui->tab, old = ui->sel[tab];
     relist(ui, index, 0, 1);
+    gamesize_start(ui->list); /* (the game that is gone must not be counted any more) */
     if (tab != TAB_MUSIC) {
         int n = ui->views[tab].count;
         ui->sel[tab] = old < n ? old : (n ? n - 1 : 0);
         ui->pos = ui->sel[tab] + 0.3f; /* nästa kort glider in på platsen */
     }
+}
+
+void ui_relist_gone(Ui *ui)
+{
+    relist(ui, -1, 0, 0);
+    for (int t = 0; t < TAB_COUNT; t++)
+        if (t != TAB_MUSIC)
+            ui->sel[t] = 0;
+    ui->bg_index = -1;
+    ui->pos = (ui->tab != TAB_MUSIC ? ui->sel[ui->tab] : 0) + 0.3f;
+    gamesize_start(ui->list); /* the sizes of what is left, counted again */
 }
 
 /* A deleted card leaves Home too - unless another copy of the game is left */
@@ -573,7 +637,7 @@ void ui_forget_entry(Ui *ui, const Entry *e)
         if (!strcmp(key, other))
             return;
     }
-    home_remove(e);
+    home_forget(e);
 }
 
 /* Home has changed (home.c): build the tabs again. The selection follows its card; when the card left the tab it
@@ -586,52 +650,24 @@ static void home_changed(Ui *ui)
         ui->pos = ui->sel[tab] + 0.3f;
 }
 
-/* Remove from Home / Add to Home / Pin to Home / Unpin from Home for the selected card */
+/* Keep in Home for the selected card: it is switched (the popup stays open, the switch in it turns over) */
 static void home_do(Ui *ui, int item)
 {
-    char text[96];
-    if (sel_card(ui) == HOME_LIBRARY) { /* the Library card: pinned or not, it is never removed */
-        if (item == MI_PIN)
-            home_pin_library();
-        else
-            home_unpin_library();
-        snprintf(text, sizeof(text), "%s", L(item == MI_PIN ? S_HOME_PINNED : S_HOME_UNPINNED));
-        home_changed(ui);
-        ui_toast(ui, text);
-        sound_play(SND_SELECT);
-        return;
-    }
+    (void)item;
     int index = ui_selected(ui);
     if (index < 0)
         return;
     const Entry *e = &ui->list->items[index];
-    int tab = ui->tab;
-    if (item == MI_ADD) {
-        home_add(e);
-        snprintf(text, sizeof(text), "%s", L(S_HOME_ADDED));
-    } else if (item == MI_REMOVE || item == MI_REMOVE_YES) {
-        home_remove(e);
-        snprintf(text, sizeof(text), "%s", L(S_HOME_REMOVED));
-    } else if (item == MI_PIN) {
-        if (!home_pin(e)) { /* HOME_PIN_MAX games are pinned: the place after them is for the card played last */
-            snprintf(text, sizeof(text), L(S_HOME_PIN_LIMIT), HOME_PIN_MAX);
-            ui_toast(ui, text);
-            sound_play(SND_ERROR);
-            return;
-        }
-        snprintf(text, sizeof(text), "%s", L(S_HOME_PINNED));
-    } else {
-        home_unpin(e);
-        snprintf(text, sizeof(text), "%s", L(S_HOME_UNPINNED));
+    int kept = (home_state(ui->list, index) & HOME_KEPT) != 0;
+    if (!home_keep(e, !kept)) { /* HOME_KEEP_MAX games are kept already */
+        char text[96];
+        snprintf(text, sizeof(text), L(S_HOME_KEEP_LIMIT), HOME_KEEP_MAX);
+        ui_toast(ui, text);
+        sound_play(SND_ERROR);
+        return;
     }
-    home_changed(ui);
-    if (tab == TAB_LIBRARY && (item == MI_ADD || item == MI_PIN)) { /* the Games tab opens on the card that was just put there */
-        const LoaderView *h = &ui->views[TAB_GAMES];
-        for (int p = 0; p < h->count; p++)
-            if (h->idx[p] == index)
-                ui->sel[TAB_GAMES] = p;
-    }
-    ui_toast(ui, text);
+    ui->menu_kept = !kept;
+    ui->menu_home_dirty = 1; /* Home is made again when the popup closes: the card stays where it is until then */
     sound_play(SND_SELECT);
 }
 
@@ -640,9 +676,8 @@ static int menu_dir_of(const UiInput *in)
     return ((in->held & PSP_CTRL_UP) || in->ly < 40) ? -1 : ((in->held & PSP_CTRL_DOWN) || in->ly > 215) ? 1 : 0;
 }
 
-/* START: Hantera sparad data, Radera (bara för det som får raderas), Information, Ta bort från Home / Lägg till på Home,
- * Fäst / Lossa. UMD-skivan får bara Hantera sparad data och Information (den ligger alltid först på Home). Sparad data
- * gäller alla spel, så den finns på varje kort. */
+/* START: Delete (only what may be deleted), Information and Keep in Home. The UMD disc has only Information (it is always the first card on Home). The Library card
+ * has no popup: it is always on Home, at the end. */
 static void menu_build(Ui *ui, const UiInput *in)
 {
     int index = ui_selected(ui);
@@ -652,20 +687,17 @@ static void menu_build(Ui *ui, const UiInput *in)
     ui->menu_n = 0;
     ui->menu_sel = 0;
     ui->menu_stage = 0;
+    ui->menu_home_dirty = 0;
     ui->menu_dir = menu_dir_of(in); /* en riktning som redan hålls flyttar inte markeringen */
-    if (sel_card(ui) == HOME_LIBRARY) { /* the Library card can only be pinned and unpinned: it is always on Home */
-        ui->menu_item[ui->menu_n++] = home_library_pinned() ? MI_UNPIN : MI_PIN;
+    if (sel_card(ui) == HOME_LIBRARY || index < 0)
         return;
-    }
     const Entry *e = &ui->list->items[index];
-    ui->menu_item[ui->menu_n++] = MI_SAVES;
     if (e->type != ENTRY_UMD && gameops_target(e, path, sizeof(path), &is_dir))
         ui->menu_item[ui->menu_n++] = MI_DELETE;
     ui->menu_item[ui->menu_n++] = MI_INFO;
     if (e->type != ENTRY_UMD) {
-        int state = home_state(ui->list, index);
-        ui->menu_item[ui->menu_n++] = state & HOME_SHOWN ? MI_REMOVE : MI_ADD;
-        ui->menu_item[ui->menu_n++] = state & HOME_PINNED ? MI_UNPIN : MI_PIN;
+        ui->menu_item[ui->menu_n++] = MI_KEEP;
+        ui->menu_kept = (home_state(ui->list, index) & HOME_KEPT) != 0;
     }
 }
 
@@ -675,7 +707,7 @@ static void menu_build_sort(Ui *ui, const UiInput *in)
     ui->menu_kind = MENU_SORT;
     ui->menu_n = LIB_SORT_COUNT;
     for (int k = 0; k < LIB_SORT_COUNT; k++)
-        ui->menu_item[k] = (unsigned char)(MI_SORT_NAME + k);
+        ui->menu_item[k] = (unsigned char)(MI_SORT_NAME_AZ + k);
     ui->menu_sel = ui->lib_sort;
     ui->menu_stage = 0;
     ui->menu_dir = menu_dir_of(in);
@@ -714,6 +746,10 @@ static void menu_close(Ui *ui)
     ui->menu_open = 0;
     if (ui->menu_stage == 1)
         gameops_measure_stop();
+    if (ui->menu_home_dirty) {
+        ui->menu_home_dirty = 0;
+        home_changed(ui);
+    }
 }
 
 /* Radera → frågan: vad som tas bort och hur stort det är. Avbryt är förvalt, så inget raderas av misstag. */
@@ -732,7 +768,6 @@ static void menu_ask_delete(Ui *ui)
     ui->del_nlines = text_wrap(text, 0.5f, POPUP_ASK_W - 24, ui->del_lines, 4);
     ui->del_is_dir = is_dir;
     ui->del_measured = 0;
-    ui->ask_remove = 0;
     if (is_dir) { /* mappens storlek räknas i bakgrunden */
         snprintf(ui->del_size, sizeof(ui->del_size), "...");
         gameops_measure_start(path);
@@ -748,28 +783,9 @@ static void menu_ask_delete(Ui *ui)
     sound_play(SND_SELECT);
 }
 
-/* Remove from Home on a pinned card: the card is pinned and will be unpinned too. Cancel is chosen to begin with. */
-static void menu_ask_remove(Ui *ui)
-{
-    const Entry *e = &ui->list->items[ui_selected(ui)];
-    char shown[64], text[256];
-    text_ellipsis(shown, sizeof(shown), e->title, 0.5f, 120);
-    snprintf(text, sizeof(text), L(S_HOME_REMOVE_ASK), shown);
-    ui->del_nlines = text_wrap(text, 0.5f, POPUP_ASK_W - 24, ui->del_lines, 4);
-    ui->del_is_dir = 0;
-    ui->del_measured = 1;
-    ui->del_size[0] = 0;
-    ui->ask_remove = 1;
-    ui->menu_stage = 1;
-    ui->menu_n = 2;
-    ui->menu_item[0] = MI_REMOVE_YES;
-    ui->menu_item[1] = MI_CANCEL;
-    ui->menu_sel = 1;
-    sound_play(SND_SELECT);
-}
-
 void ui_free(Ui *ui)
 {
+    gamesize_stop();
     tex_free(ui->bg_old);
     tex_free(ui->bg_cur);
     ui->bg_old = ui->bg_cur = NULL;
@@ -958,6 +974,8 @@ static void update_music(Ui *ui, const UiInput *in, float dt, int top)
 static void open_card_menu(Ui *ui, const UiInput *in)
 {
     menu_build(ui, in);
+    if (ui->menu_n <= 0) /* the Library card has no options */
+        return;
     ui->menu_kind = MENU_CARD;
     ui->menu_open = 1;
     sound_play(SND_SELECT);
@@ -998,7 +1016,8 @@ static void activate_card(Ui *ui)
 /* the text of the Library's Sort button */
 static void sort_text(const Ui *ui, char *out, int size)
 {
-    snprintf(out, size, "%s: %s", L(S_SORT), L(ui->lib_sort == LIB_SORT_PLAYED ? S_SORT_PLAYED : ui->lib_sort == LIB_SORT_RECENT ? S_SORT_RECENT : S_SORT_NAME));
+    static const StrId names[LIB_SORT_COUNT] = { S_SORT_NAME_AZ, S_SORT_NAME_ZA, S_SORT_ADDED_NEW, S_SORT_ADDED_OLD, S_SORT_SIZE_BIG, S_SORT_SIZE_SMALL };
+    snprintf(out, size, "%s: %s", L(S_SORT), L(names[ui->lib_sort >= 0 && ui->lib_sort < LIB_SORT_COUNT ? ui->lib_sort : 0]));
 }
 
 static const char *view_label(int view)
@@ -1132,6 +1151,26 @@ static int update_top_bar(Ui *ui, const UiInput *in, float dt)
     return UI_NONE;
 }
 
+/* The size sorts of the Library: the size of a game that lives in a folder is counted in the background (gamesize.c). When more sizes are known the Library is
+ * sorted again, the same card stays selected - not more than once a second, so a long count does not keep the cards moving. */
+static void sort_by_size_again(Ui *ui, float dt)
+{
+    ui->gs_wait -= dt;
+    if (ui->lib_sort != LIB_SORT_SIZE_BIG && ui->lib_sort != LIB_SORT_SIZE_SMALL) {
+        ui->gs_version = gamesize_version();
+        return;
+    }
+    if (ui->gs_version == gamesize_version() || ui->gs_wait > 0)
+        return;
+    ui->gs_version = gamesize_version();
+    ui->gs_wait = 1.0f;
+    int chosen = sel_card(ui);
+    float tab_anim = ui->tab_anim;
+    rebuild_library(ui);
+    library_reselect(ui, chosen, 0);
+    ui->tab_anim = tab_anim; /* (no slide: the cards only change places) */
+}
+
 int ui_update(Ui *ui, const UiInput *in, float dt)
 {
     ui->time += dt;
@@ -1139,6 +1178,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     ui->tab_anim = clampf(ui->tab_anim + dt * 4.0f, 0, 1);
     if (ui->toast_time > 0)
         ui->toast_time -= dt;
+    sort_by_size_again(ui, dt);
 
     if (ui->launch >= 0) {
         ui->launch += dt / LAUNCH_LEN;
@@ -1174,8 +1214,8 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
             int item = ui->menu_item[ui->menu_sel];
             if (item == MI_DELETE) {
                 menu_ask_delete(ui);
-            } else if (item == MI_REMOVE && (home_state(ui->list, ui_selected(ui)) & HOME_PINNED)) {
-                menu_ask_remove(ui); /* a pinned card is unpinned too: ask first */
+            } else if (item == MI_KEEP) {
+                home_do(ui, item); /* a switch: the popup stays open */
             } else {
                 menu_close(ui);
                 if (item >= MI_XMB && item <= MI_RECOVERY) { /* main.c does it, as on the other screens */
@@ -1183,22 +1223,20 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
                     sound_wait(400); /* let the sound be heard before anything closes */
                     return item == MI_XMB ? UI_XMB : item == MI_SLEEP ? UI_SLEEP : item == MI_SHUTDOWN ? UI_SHUTDOWN : item == MI_RESTART ? UI_RESTART : UI_RECOVERY;
                 }
-                if (item == MI_INFO || item == MI_SAVES) {
+                if (item == MI_INFO) {
                     sound_play(SND_SELECT);
-                    return item == MI_INFO ? UI_INFO : UI_SAVES;
+                    return UI_INFO;
                 }
                 if (item == MI_DELETE_YES) {
                     sound_play(SND_SELECT);
                     return UI_DELETE;
                 }
-                if (item >= MI_SORT_NAME && item <= MI_SORT_PLAYED)
-                    set_sort(ui, item - MI_SORT_NAME);
+                if (item >= MI_SORT_NAME_AZ && item <= MI_SORT_SIZE_SMALL)
+                    set_sort(ui, item - MI_SORT_NAME_AZ);
                 else if (item >= MI_VIEW_ALL && item <= MI_VIEW_BOTH)
                     set_view(ui, item - MI_VIEW_ALL);
                 else if (item == MI_CANCEL)
                     sound_play(SND_BACK);
-                else
-                    home_do(ui, item);
             }
         } else if (in->pressed & back) {
             menu_close(ui);
@@ -1471,6 +1509,10 @@ static void format_time(char *out, int size, float sec)
 #define BOLT_GAP     3.0f /* between the bolt and the battery, which belong together (the bolt is slanted: it looks further from the battery than this) */
 #define WIFI_R       7.0f /* the Wi-Fi sign is a square of 2 R = 14 px (a little higher than the battery: three soft arcs need that much room) */
 #define COG_R        7.0f /* the cog wheel is a square of 2 R, and its right edge is on the margin like the clock's used to be */
+#define COG_BTN_D   28.0f /* the white circle of the selected cog wheel ... */
+#define COG_RING_D  36.0f /* ... and the thin ring round it */
+
+static void button_bg(float x, float y, float w, float h, float t, float fade);
 
 static void draw_top_bar(Ui *ui)
 {
@@ -1529,13 +1571,13 @@ static void draw_top_bar(Ui *ui)
         bar_left = wx;
     }
 
-    /* the cog wheel is a button too: selected (↑ from the first thing of a tab) it gets the frame of a chosen entry, like Sort */
+    /* the cog wheel is a button too: selected (↑ from the first thing of a tab) it is a white circle with a thin ring round it and a dark wheel in it,
+     * like Start and Options under a card */
     if (cog * a > 0.01f) {
-        float fy, fh;
-        popup_frame_around(TOP_MID, TOP_FRAME_H, &fy, &fh);
-        popup_choice(gx - 15, fy, 30, fh, cog * a);
+        button_bg(gx - COG_BTN_D / 2, TOP_MID - COG_BTN_D / 2, COG_BTN_D, COG_BTN_D, cog, a);
+        gfx_edge_ring(gx - COG_RING_D / 2, TOP_MID - COG_RING_D / 2, COG_RING_D, COG_RING_D, COG_RING_D / 2, 1, with_alpha(LIGHT, 0.6f * cog * a));
     }
-    gfx_gear(gx, TOP_MID, COG_R, with_alpha(LIGHT, (0.9f + 0.1f * cog) * a), RGBA(14, 14, 18, (int)(255 * a)));
+    gfx_gear(gx, TOP_MID, COG_R, with_alpha(mix_color(LIGHT, DARK, cog), a), RGBA(14, 14, 18, (int)(255 * a)));
 
     /* flikarna krymper om de inte får plats (t.ex. långa ryska ord) – mäts bara om när något ändras */
     static float size = 0.8f, gap = 20, sized_room = -1;
@@ -1830,16 +1872,14 @@ static void draw_details(Ui *ui)
 static const char *menu_label(int item)
 {
     switch (item) {
-    case MI_SAVES:        return L(S_SAVES);
     case MI_INFO:         return L(S_INFO);
-    case MI_REMOVE:
-    case MI_REMOVE_YES:   return L(S_HOME_REMOVE);
-    case MI_ADD:          return L(S_HOME_ADD);
-    case MI_PIN:          return L(S_HOME_PIN);
-    case MI_UNPIN:        return L(S_HOME_UNPIN);
-    case MI_SORT_NAME:    return L(S_SORT_NAME);
-    case MI_SORT_RECENT:  return L(S_SORT_RECENT);
-    case MI_SORT_PLAYED:  return L(S_SORT_PLAYED);
+    case MI_KEEP:         return L(S_HOME_KEEP);
+    case MI_SORT_NAME_AZ:    return L(S_SORT_NAME_AZ);
+    case MI_SORT_NAME_ZA:    return L(S_SORT_NAME_ZA);
+    case MI_SORT_ADDED_NEW:  return L(S_SORT_ADDED_NEW);
+    case MI_SORT_ADDED_OLD:  return L(S_SORT_ADDED_OLD);
+    case MI_SORT_SIZE_BIG:   return L(S_SORT_SIZE_BIG);
+    case MI_SORT_SIZE_SMALL: return L(S_SORT_SIZE_SMALL);
     case MI_VIEW_ALL:
     case MI_VIEW_FOLDERS:
     case MI_VIEW_LOOSE:
@@ -1862,7 +1902,7 @@ static void draw_menu(Ui *ui)
             labels[k] = menu_label(ui->menu_item[k]);
             colors[k] = ui->menu_item[k] == MI_DELETE_YES ? POPUP_DANGER : POPUP_TEXT;
         }
-        popup_ask(ui->del_lines, ui->del_nlines, lang_needs_cjk() ? 15.0f : 13.0f, ui->ask_remove ? NULL : ui->del_size,
+        popup_ask(ui->del_lines, ui->del_nlines, lang_needs_cjk() ? 15.0f : 13.0f, ui->del_size,
                   labels, colors, ui->menu_n, ui->menu_sel, smooth(ui->ask_anim));
         return;
     }
@@ -1872,9 +1912,9 @@ static void draw_menu(Ui *ui)
     }
     float w = 200, h = MENU_EDGE + ui->menu_n * MENU_ITEM_H + MENU_EDGE;
     float x, y;
-    if (ui->menu_kind == MENU_VIEW) { /* wide enough for the longest of the four views */
+    if (ui->menu_kind == MENU_VIEW || ui->menu_kind == MENU_SORT) { /* wide enough for the longest choice (the sort also has room for its check mark) */
         for (int k = 0; k < ui->menu_n; k++)
-            w = fmaxf(w, ceilf(text_width(0.62f, 0, menu_label(ui->menu_item[k]))) + 32);
+            w = fmaxf(w, ceilf(text_width(0.62f, 0, menu_label(ui->menu_item[k]))) + 32 + (ui->menu_kind == MENU_SORT ? 26 : 0));
         w = fminf(w, SCREEN_W - 2 * (MARGIN - 9)); /* (the widest it can be: the screen less 15 px each side) */
     }
     if (ui->menu_kind == MENU_SORT) { /* under the Sort button, whose right edge it shares */
@@ -1898,7 +1938,21 @@ static void draw_menu(Ui *ui)
         } else {
             col = with_alpha(col, 0.8f);
         }
-        text_draw(x + 16, ry + 18, text_fit(0.62f, 0.45f, 0, w - 32, label), 0, with_alpha(col, a), ALIGN_LEFT, label);
+        float room = w - 32;
+        if (item == MI_KEEP) { /* a switch, as in Settings: 26 x 14, the knob 10 across */
+            float tx = x + w - 16 - 26, ty = ry + 7;
+            gfx_round_rect(tx, ty, 26, 14, 7, with_alpha(ui->menu_kept ? theme_toggle_on(theme_cur()) : RGBA(74, 76, 84, 255), a));
+            gfx_circle(ui->menu_kept ? tx + 19 : tx + 7, ty + 7, 5, with_alpha(ui->menu_kept ? LIGHT : RGBA(196, 196, 202, 255), a));
+            room -= 34;
+        } else if (ui->menu_kind == MENU_SORT && k == ui->lib_sort) { /* a check mark for the way the Library is sorted now */
+            float cx = x + w - 16 - 6, cy = ry + MENU_ITEM_H / 2;
+            float xy[6] = { cx - 5, cy, cx - 1.5f, cy + 3.5f, cx + 5, cy - 4 };
+            u32 cc = with_alpha(LIGHT, a);
+            u32 col3[3] = { cc, cc, cc };
+            gfx_stroke(xy, col3, 3, 1.8f);
+            room -= 22;
+        }
+        text_draw(x + 16, ry + 18, text_fit(0.62f, 0.45f, 0, room, label), 0, with_alpha(col, a), ALIGN_LEFT, label);
     }
 }
 

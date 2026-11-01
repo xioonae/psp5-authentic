@@ -33,7 +33,7 @@ void folder_upper(const char *s, char *out, int size);
 typedef struct {
     char name[FOLDER_NAME_MAX]; /* the clean name */
     int count;                  /* how many games and apps are in it */
-    u32 newest;                 /* the newest file time of those (Entry.file_time) */
+    u32 newest, oldest;         /* the newest and the oldest file time of those (Entry.file_time) */
 } Folder;
 
 typedef struct {

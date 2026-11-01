@@ -256,8 +256,11 @@ void folders_build(const EntryList *list, FolderSet *fs)
         Folder *f = &fs->items[fs->count - 1];
         fs->of[m[k].entry] = fs->count - 1;
         f->count++;
-        if (list->items[m[k].entry].file_time > f->newest)
-            f->newest = list->items[m[k].entry].file_time;
+        u32 t = list->items[m[k].entry].file_time;
+        if (t > f->newest)
+            f->newest = t;
+        if (f->count == 1 || t < f->oldest)
+            f->oldest = t;
     }
     free(m);
 }

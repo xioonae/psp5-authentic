@@ -20,12 +20,13 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ### Library
 
-- **New sorting: Recently played.** The Sort button has a third choice. It shows the games in the **same order as the Games tab**: the ones you played last first. After them come
-  the other games you have played, and last the games you have not played yet, the newest first. A folder goes by the best game in it, and the disc is always first. The cards you
-  pinned stand first in the Games tab only. It is kept in `psp5.cfg` like the other sortings.
+- **Six ways to sort.** The Sort button has a new popup with a check mark at the one in use: *Name (A-Z)*, *Name (Z-A)*, *Date added (Newest-Oldest)*, *Date added (Oldest-Newest)*,
+  *Size (Large-Small)* and *Size (Small-Large)*. A folder goes by the newest (or oldest) game in it, or by the size of all its games together. The disc is always first. The size of a game that
+  lives in a folder is counted in the background, so after the start the order by size can change for a moment. *Recently played* is not a choice any more (the Games tab already shows what you
+  played last). A `psp5.cfg` of an older version still works: *Name* is *Name (A-Z)*, *Recently added* is *Date added (Newest-Oldest)*, and *Recently played* is *Name (A-Z)*.
 - **psp5 authentic now remembers when you played each game** (`lastplayed.txt` in psp5 authentic's folder). It notes the time when psp5 authentic starts a game, and with ARK the helper plugin of *Time played*
   tells it about games you started from the XMB (psp5 authentic learns it the next time it starts). Games you played before this version have no time yet, but they keep their place in the
-  Games tab and in *Recently played*.
+  Games tab. The Games tab, *Information* and the new *Games and Apps* list use these times.
 
 ### Power menu
 
@@ -56,6 +57,16 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 - **Three themes are gone:** *Starlight Blue*, *Chroma Indigo* and *Chroma Pearl* looked almost like *Cobalt Blue*, *Galactic Purple* and *Sterling Silver*. If you had chosen one of
   them, psp5 authentic starts with the PS5 theme instead.
 - **Shut down** is written with a small d again (the other names keep their capitals).
+- **The first list uses the same letters as the other lists** (the names of the six pages were bigger than the settings in them).
+- **The cog wheel looks like the Play and ⋯ buttons when it is selected:** a white circle with a black cog and a thin ring round it (it was a frame).
+- **New: Console Storage** (*Settings → Storage → Console Storage*, the first row of *Storage*). At the top (it can't be chosen) it shows the size of the storage, a bar with a colour for what is on it, and the free space.
+  Under it are four rows with a colour and a size: *Games and Apps*, *Media Gallery* (the `MUSIC`, `VIDEO` and `PICTURE` folders and `PSP/PHOTO`), *Saved Data* and *Other* (everything else that is used).
+  The sizes are counted in the background, so they grow for a moment. Confirm on *Games and Apps* opens the list of all your games and apps, Confirm on *Saved Data* opens *Manage Saved Data*, and Back comes back
+  to the same row of Settings. *Media Gallery* and *Other* do nothing yet. On a PSP Go with a Memory Stick the page has two blocks, the internal storage and the Memory Stick, each with its own four rows.
+- **New: Games and Apps.** The list of the games and apps on the console, made like *Manage Saved Data*: the same list and buttons (✕ Delete, □ Mark, △ Select all, ○ Back), a Sort button with a popup, the picture of
+  the game, its ID, when you played it last and its size at the right. It sorts by *Least used*, *Date used (Newest-Oldest)*, *Date used (Oldest-Newest)*, *Name (A-Z)*, *Name (Z-A)*, *Size (Large-Small)* and
+  *Size (Small-Large)*. A game you delete (a file, or the folder of an app) is gone from Home and from the Library too. psp5 authentic itself and anything outside `ISO` and `PSP/GAME` can't be deleted.
+- **Manage Saved Data sorts by *Last updated*, *Name* and *Size*** (it was *Last updated*, *Size* and *Name (A-Z)*).
 
 ### The name
 
@@ -65,10 +76,13 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ### Games
 
-- **The Games tab is always full.** It shows the games and apps you pinned, then the ones you played last, and then fills the rest of its ten places with the other games and apps in the
-  order of the Library's *Recently played* (the ones you played before, then the ones added last). A game you copy onto the PSP shows up on Home by itself, without waiting to be played.
-  *Remove from Home* still works: a game you take off does not come back until you start it, add it or pin it again, and the next game fills its place. (Games you took off
-  Home with an earlier version were not written down, so they can show up again: take them off once more.)
+- **The Games tab is always full.** It shows the games and apps you played last first, then the ones you played before, and then the ones you added last: nine games and the Library card as the tenth.
+  A game you copy onto the PSP shows up on Home by itself, without waiting to be played.
+- **New: Keep in Home.** The options popup (START) of a game has a switch, *Keep in Home*, in the style of the switches in Settings. A game that is kept stays among the cards even if you have not played it for a long
+  time: it keeps its place in the order, and if that place is beyond the nine it takes one of the last places (the games that come last make room for it). Up to nine games can be kept; the tenth says so and the switch stays off.
+  Confirm turns the switch and the popup stays open; Home changes when you close the popup.
+- **Gone: Pin to Home, Add to Home and Remove from Home.** Nothing is pinned or taken off Home any more. A game you pinned with an earlier version is kept now. The Library card is always the last card of Home and has no
+  options popup. **Manage Saved Data is not in the options popup any more:** it is in *Settings → Storage → Console Storage* (see Settings).
 - **Games you played from the XMB move to the front of Home** when psp5 authentic starts, the one you played last in front (before, only the games started from psp5 authentic did).
 
 ## 1.2.0 – Controls, new Settings pages, folders in the Library and time played

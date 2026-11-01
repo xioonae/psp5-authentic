@@ -294,6 +294,27 @@ static void delete_finished(EntryList *list, Ui *ui, int index, int result)
     }
 }
 
+/* The games and apps that Games and Apps deleted (saves_gone_*, the last place first): they leave the game list, Home and the cache of pictures. */
+static void games_deleted(EntryList *list, Ui *ui)
+{
+    int n = saves_gone_count();
+    if (n <= 0)
+        return;
+    loader_stop(); /* the loader's places follow the indexes of the list */
+    for (int k = 0; k < n; k++) {
+        int at = saves_gone_entry(k);
+        if (at < 0 || at >= list->count)
+            continue;
+        Entry gone = list->items[at];
+        ui_forget_entry(ui, &list->items[at]); /* (the entry of the list itself: another copy of the game in the list would keep it on Home) */
+        art_forget(&gone);
+        scan_remove_at(list, at);
+    }
+    loader_start(list);
+    ui_relist_gone(ui);
+    ui_toast(ui, L(S_DELETED));
+}
+
 /* The pad as the screens see it: controls_map() turns the buttons that are pressed into the names the screens use (confirm, back, options, the
  * power menu ...). `*old` and `s_raw` are the buttons as they are on the pad; the new presses are found there and mapped after, so a button that is
  * held while Settings gives the buttons other jobs does not count as a new press. */
@@ -646,6 +667,32 @@ int main(int argc, char *argv[])
                 start_confirmed(); /* menyn och musiklistan fungerar */
         }
 
+        if (in_saves) { /* Games and Apps, Manage Saved Data (opened from Settings > Storage): the list stands still while the screen is open */
+            UiInput none = UI_NO_INPUT;
+            int pwr = power_step(&in, dt, !saves_modal());
+            int close = saves_update(&in, dt);
+            ui_update(&ui, &none, dt);
+            if (pwr != SA_NONE) { /* chosen in the power popup (SELECT): Sleep comes back to this screen, the others leave psp5 */
+                if (pwr != SA_SUSPEND)
+                    saves_close();
+                run_action(pwr, &list, &ui);
+                old = s_raw;
+                continue;
+            }
+            if (close) {
+                saves_close();
+                in_saves = 0;
+                games_deleted(&list, &ui); /* the games and apps that were deleted leave the list */
+                settings_back(); /* ... and Settings counts its storage again */
+                if (in_settings)
+                    settings_draw();
+                else
+                    ui_draw(&ui);
+            } else {
+                saves_draw();
+            }
+            continue;
+        }
         if (in_settings) {
             int pwr = power_step(&in, dt, !settings_modal()); /* SELECT: the power popup, as on the main screen */
             int action = settings_update(&in, dt);
@@ -655,6 +702,15 @@ int main(int argc, char *argv[])
                 in_settings = 0;
                 if (settings_commit())
                     ui_toast(&ui, L(S_SAVED));
+            } else if (action == SA_GAMES || action == SA_SAVES) { /* a screen of its own, over Settings: ○ comes back to the same row */
+                power_reset();
+                if (action == SA_GAMES)
+                    saves_open_games(&list, settings_action_dev());
+                else
+                    saves_open_on(&list, settings_action_dev());
+                in_saves = 1;
+                old = s_raw;
+                continue;
             } else if (action != SA_NONE) {
                 settings_commit();
                 if (run_action(action, &list, &ui)) {
@@ -702,27 +758,6 @@ int main(int argc, char *argv[])
             }
             continue;
         }
-        if (in_saves) { /* sparad data: samma sak, listan står still medan skärmen är öppen */
-            UiInput none = UI_NO_INPUT;
-            int pwr = power_step(&in, dt, !saves_modal());
-            int close = saves_update(&in, dt);
-            ui_update(&ui, &none, dt);
-            if (pwr != SA_NONE) { /* chosen in the power popup (SELECT): Sleep comes back to this screen, the others leave psp5 */
-                if (pwr != SA_SUSPEND)
-                    saves_close();
-                run_action(pwr, &list, &ui);
-                old = s_raw;
-                continue;
-            }
-            if (close) {
-                saves_close();
-                in_saves = 0;
-                ui_draw(&ui);
-            } else {
-                saves_draw();
-            }
-            continue;
-        }
         if (deleting >= 0) {
             UiInput none = UI_NO_INPUT;
             int r = gameops_delete_update(in.pressed);
@@ -764,12 +799,6 @@ int main(int argc, char *argv[])
             in_info = 1;
             continue;
         }
-        if (action == UI_SAVES) {
-            power_reset();
-            saves_open(&list);
-            in_saves = 1;
-            continue;
-        }
         if (action == UI_DELETE && ui_selected(&ui) >= 0) {
             int index = ui_selected(&ui);
             loader_stop(); /* inget annat får läsa filen som raderas */
@@ -786,7 +815,7 @@ int main(int argc, char *argv[])
         if (action == UI_LAUNCH && ui_selected(&ui) >= 0) {
             Entry chosen = list.items[ui_selected(&ui)];
             home_note_launch(&chosen); /* the card becomes the newest one on Home */
-            lastplayed_note_launch(&chosen); /* ... and the one that was played last (Library, Recently played) */
+            lastplayed_note_launch(&chosen); /* ... and the one that was played last (Information, Games and Apps) */
             sound_wait(700);      /* låt startljudet klinga ut */
             app_stop(&list, &ui); /* frigör allt minne innan spelet laddas */
             start_confirmed();    /* ett spel som hänger sig räknas inte mot psp5 */

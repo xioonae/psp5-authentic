@@ -59,7 +59,7 @@ The plugin keeps the seconds of each game in `PSP5/played`, and psp5 authentic a
 - To turn it off, open *Settings → System → Plugins* and turn off the two `psp5time.prx` lines (*Games* and *PS1*). psp5 authentic leaves those lines as they are, so they stay off (it only adds them when there is no line for the plugin at all).
 - Without ARK, or with the lines off, nothing is counted. A game under 10 seconds is not counted. A PSP game that has no disc ID (some homebrew ISOs and CSOs) is counted under the name of its ISO file, as psp5 authentic names it: renaming the file starts a new time for it.
 - When psp5 authentic is updated, the plugin file is replaced by the one that comes with it.
-- The same plugin lets psp5 authentic know **when** a game was played last, also when you started it from the XMB. The Information screen shows it as *Last played*, and the Library's Sort button uses it for *Recently played* (the same order as the Games tab).
+- The same plugin lets psp5 authentic know **when** a game was played last, also when you started it from the XMB. The Information screen shows it as *Last played*, and the Games tab and the *Games and Apps* list use it.
 
 ## Where your games go
 
@@ -81,7 +81,7 @@ Every screen uses the same few buttons for the same things:
 | D-pad or analog stick | **Navigate**: move between cards, rows, tabs and buttons · hold to go faster |
 | ✕ | **Confirm**: start the game, open, choose, switch on or off (in Music: play / pause) |
 | ○ | **Back**: one step back, close a popup or a screen (it closes the Library) |
-| START | **Options**: of the selected game, card or file · on the Library card: pin / unpin · START again closes the options |
+| START | **Options**: of the selected game, app or file (not on the Library card) · START again closes the options |
 | SELECT | **Power menu** on every screen: Exit to XMB, Sleep, Shut down, Restart, Recovery Menu (Confirm does it at once, Back or SELECT closes). It does not open while a popup is open or a copy, move or delete is running. |
 | L / R | **Switch tabs**: Games and Music (not in the Library: ○ closes it) · in a long list a page up / down |
 | □ △ | Extras on a few screens only: mark / select all in a list (*Manage Saved Data*, the File Manager), □ pauses the music |
@@ -96,7 +96,7 @@ Where to go from there:
 
 - **↓ in Games** selects the Play and ⋯ (options) buttons under the game · ← → move between them · ↑ or Back goes back.
 - **Confirm on the Library card** (the last card of Games) opens the Library: everything in a grid; the top bar shows only *Library* there.
-- **↑ from any first-row card in the Library** selects the Sort button (always the first stop) · Confirm opens the sorting (the same in *Manage Saved Data*) · ↑ again goes to the cog wheel, ↓ from the cog wheel comes back to the Sort button.
+- **↑ from any first-row card in the Library** selects the Sort button (always the first stop) · Confirm opens the sorting (the same in *Manage Saved Data* and *Games and Apps*) · ↑ again goes to the cog wheel, ↓ from the cog wheel comes back to the Sort button.
 - **↑ from the first thing on a tab** selects the top bar: ← → between Games, Music and the cog wheel (in the Library only the cog wheel: the word *Library* is a title) · Confirm opens a tab, or the settings on the cog wheel · ↓ goes back down · Back goes back to the selected game.
 - **← → in Music**: previous / next track · hold to seek.
 

@@ -7,9 +7,9 @@
 #include "loader.h"
 #include "folders.h"
 
-enum { UI_NONE, UI_LAUNCH, UI_SETTINGS, UI_INFO, UI_DELETE, UI_SAVES,
+enum { UI_NONE, UI_LAUNCH, UI_SETTINGS, UI_INFO, UI_DELETE,
        UI_XMB, UI_SLEEP, UI_SHUTDOWN, UI_RESTART, UI_RECOVERY /* the power popup of the SELECT button */ };
-/* Games is Home (home.h): the pinned cards, the ones opened last and, at the far right, the Library card. Music has the music.
+/* Games is Home (home.h): the games played last and the kept ones and, at the far right, the Library card. Music has the music.
  * Library is not a tab of the top bar: it is a screen of its own that the Library card opens (✕) and ○ closes. It shows everything,
  * and while it is open the top bar has only the word "Library" in it, in the place of Games (it cannot be selected). */
 enum { TAB_GAMES, TAB_MUSIC, TAB_LIBRARY, TAB_COUNT };
@@ -17,17 +17,14 @@ enum { TAB_GAMES, TAB_MUSIC, TAB_LIBRARY, TAB_COUNT };
 enum { TOP_COG = TAB_COUNT };
 
 /* the choices of the options popup (menu_item) */
-enum { MI_SAVES, MI_INFO, MI_DELETE, MI_DELETE_YES, MI_CANCEL,
-       MI_REMOVE,     /* Remove from Home */
-       MI_REMOVE_YES, /* ... confirmed, for a pinned card */
-       MI_ADD,        /* Add to Home (Library) */
-       MI_PIN, MI_UNPIN,
-       MI_SORT_NAME, MI_SORT_RECENT, MI_SORT_PLAYED, /* the sort popup of the Library (SORT_*, in this order) */
+enum { MI_INFO, MI_DELETE, MI_DELETE_YES, MI_CANCEL,
+       MI_KEEP,       /* Keep in Home (a switch) */
+       MI_SORT_NAME_AZ, MI_SORT_NAME_ZA, MI_SORT_ADDED_NEW, MI_SORT_ADDED_OLD, MI_SORT_SIZE_BIG, MI_SORT_SIZE_SMALL, /* the sort popup of the Library (LIB_SORT_*, in this order) */
        MI_VIEW_ALL, MI_VIEW_FOLDERS, MI_VIEW_LOOSE, MI_VIEW_BOTH, /* the view popup of the Library (LIB_VIEW_*, in this order) */
        MI_XMB, MI_SLEEP, MI_SHUTDOWN, MI_RESTART, MI_RECOVERY /* the power popup (power.c): Exit to XMB, Sleep, Shut down, Restart, Recovery menu */ };
-/* How the Library is sorted (Ui.lib_sort; the Sort button, kept in psp5.cfg): by name, by when a game was added (its file time), or by when it was played
- * last, the one played most recently first (a game that has not been played counts from the time it was added) */
-enum { LIB_SORT_NAME, LIB_SORT_RECENT, LIB_SORT_PLAYED, LIB_SORT_COUNT };
+/* How the Library is sorted (Ui.lib_sort; the Sort button, kept in psp5.cfg): by name (A-Z or Z-A), by when a game was added (its file time, the newest or
+ * the oldest first) or by size (the biggest or the smallest first). The disc is always first. */
+enum { LIB_SORT_NAME_AZ, LIB_SORT_NAME_ZA, LIB_SORT_ADDED_NEW, LIB_SORT_ADDED_OLD, LIB_SORT_SIZE_BIG, LIB_SORT_SIZE_SMALL, LIB_SORT_COUNT };
 /* what the popup is for (menu_kind) */
 enum { MENU_CARD, MENU_SORT, MENU_POWER, MENU_VIEW };
 
@@ -85,7 +82,9 @@ typedef struct {
     float repeat_timer, repeat_held;
 
     /* biblioteket: rutnät med allt */
-    int lib_sort;        /* LIB_SORT_NAME, LIB_SORT_RECENT (added) or LIB_SORT_PLAYED */
+    int lib_sort;        /* LIB_SORT_* */
+    int gs_version;      /* gamesize_version() when the Library was last sorted by size (a folder counted since then sorts it again) */
+    float gs_wait;       /* seconds until it may sort again (not more than once a second) */
     int lib_view;        /* LIB_VIEW_*: what the Library shows (the view button) */
     int lib_open;        /* the folder that is open (its number in `folders`), or -1: the Library itself. Open, it shows that folder's games and apps. */
     char lib_open_name[FOLDER_NAME_MAX]; /* ... and its name, which is how it is found again when the list changes */
@@ -123,19 +122,19 @@ typedef struct {
     int cover_for;       /* låtens index, -1 = inget */
     float cover_fade;
 
-    /* START i Spel/Bibliotek (eller ✕ på Alternativ-knappen): en liten alternativmeny för valt kort (Hantera sparad data, Radera, Information, Ta bort från
-     * Home, Fäst). Samma meny visar sorteringen i Biblioteket (menu_kind), och, mitt på skärmen och från alla flikar med SELECT,
+    /* START i Spel/Bibliotek (eller ✕ på Alternativ-knappen): en liten alternativmeny för valt kort (Radera, Information, Behåll i Home). Samma meny visar sorteringen i Biblioteket (menu_kind), och, mitt på skärmen och från alla flikar med SELECT,
      * Viloläge / Stäng av / Starta om / Återställningsmeny. */
     int menu_open;
     int menu_kind;       /* MENU_CARD / MENU_SORT */
     float menu_anim;     /* 0→1 in-/uttoning (skärmen mörknar) */
-    float ask_anim;      /* the question (delete? remove?) is on screen */
+    float ask_anim;      /* the question (delete?) is on screen */
     int menu_n, menu_sel;
     unsigned char menu_item[6]; /* MI_* */
     int menu_stage;      /* 0 = valen, 1 = frågan "radera?" / "ta bort?" */
+    int menu_kept;       /* the card of the options popup is kept in Home (the switch of Keep in Home) */
+    int menu_home_dirty; /* Keep in Home was switched: Home is made again when the popup closes (the card stays until then) */
     int menu_dir;        /* -1/1 medan upp/ner hålls i menyn (en flytt per tryck) */
     int del_is_dir;      /* frågan gäller en hel mapp */
-    int ask_remove;      /* the question is "remove the pinned card from Home?", not "delete?" */
     int del_measured;    /* mappens storlek är räknad */
     char del_lines[4][96]; /* frågans text, radbruten */
     int del_nlines;
@@ -153,6 +152,8 @@ void ui_relist(Ui *ui, int removed_front, int added_front);
 /* Spel nummer `index` i listan har raderats och tagits bort ur den: bygger om flikarna, markeringen
  * står kvar på samma plats så att nästa kort glider dit. Laddaren ska redan vara omstartad. */
 void ui_relist_removed(Ui *ui, int index);
+/* Several games have left the list at once (Games and Apps deleted them): the cards are made again, the selection goes back to the first one */
+void ui_relist_gone(Ui *ui);
 /* Glöm kortet på Home (innan det tas bort ur listan) */
 void ui_forget_entry(Ui *ui, const Entry *e);
 int ui_update(Ui *ui, const UiInput *in, float dt);
