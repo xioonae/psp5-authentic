@@ -12,7 +12,11 @@
 #define NTX_MAGIC 0x3158544E /* "NTX1" */
 #define MAX_PNG_PIXELS (512 * 512)
 #define MAX_COVER_PIXELS (1024 * 1024) /* omslag är ofta större än ikoner */
-#define MAX_PROGRESSIVE_PIXELS (1600 * 1600) /* progressiv JPEG avkodas i sin helhet */
+/* A progressive JPEG is decoded whole: libjpeg keeps every coefficient of the picture (2 bytes each, 64 to a block, in every component) before it makes the first
+ * pixel, which no row-by-row reading can avoid. That is read from the header (the blocks of each component) and what needs more than this is not decoded: the cover is
+ * not shown, and the heap (about 13 MB on a PSP-1000) is not run dry for the icons, the lists and the music. About 1300 x 1300 pixels at the most with the colours at
+ * half size (the usual), 930 x 930 with all of them. A JPEG that is not progressive is read a row at a time and needs only the picture it makes. */
+#define MAX_PROGRESSIVE_BYTES (5 << 20)
 
 typedef struct {
     u32 magic;
@@ -66,6 +70,15 @@ static void jpeg_fail(j_common_ptr cinfo)
 
 static void jpeg_quiet(j_common_ptr cinfo, int level) {}
 
+/* the memory the coefficients of a progressive JPEG take (valid once the header is read) */
+static unsigned long long progressive_bytes(const struct jpeg_decompress_struct *c)
+{
+    unsigned long long blocks = 0;
+    for (int i = 0; i < c->num_components; i++)
+        blocks += (unsigned long long)c->comp_info[i].width_in_blocks * c->comp_info[i].height_in_blocks;
+    return blocks * 64 * 2;
+}
+
 static int decode_jpeg(const void *data, u32 size, Image *out, int min_side)
 {
     struct jpeg_decompress_struct cinfo;
@@ -84,7 +97,7 @@ static int decode_jpeg(const void *data, u32 size, Image *out, int min_side)
     jpeg_create_decompress(&cinfo);
     jpeg_mem_src(&cinfo, (const unsigned char *)data, size);
     if (jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK ||
-        (cinfo.progressive_mode && cinfo.image_width * cinfo.image_height > MAX_PROGRESSIVE_PIXELS)) {
+        (cinfo.progressive_mode && progressive_bytes(&cinfo) > MAX_PROGRESSIVE_BYTES)) {
         jpeg_destroy_decompress(&cinfo);
         return 0;
     }

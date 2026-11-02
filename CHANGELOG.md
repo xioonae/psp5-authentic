@@ -5,6 +5,13 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ## Unreleased
 
+### Memory
+
+- **The launcher leaves memory free again.** psp5 authentic is meant to keep 7 MB of the PSP's memory free for what is not its own: ARK's Recovery menu (it needs 4 MB), the MP3 decoder, Wi-Fi and the threads. But the toolchain it is built with read the
+  setting for that as "take everything except 512 KB", so on a PSP-1000 only 0.6 MB of the 24 MB was free while the launcher ran (measured on a real PSP-1000). It keeps 8 MB free now, and its own memory (the heap) is about 13 MB instead of about 21, which is more than it needs.
+- **A progressive JPEG album cover that needs a lot of memory is not decoded.** Such a cover has to be held whole while it is decoded: up to 15 MB for one of 1600 × 1600 pixels. A cover that would need more than 5 MB (about 1300 × 1300 pixels at the most, 930 × 930 when the colours
+  are kept at full size) is not shown any more (the limit was only the number of pixels, 1600 × 1600). Ordinary covers, and every JPEG that is not progressive, are not affected.
+
 ### Devices and downloads
 
 - **The PS Vita is supported.** psp5 authentic works on a PS Vita (1000 and 2000) with ARK-5, the standalone install ([FasterARK](https://github.com/PSP-Arkfive/FasterARK)).

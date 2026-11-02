@@ -41,9 +41,12 @@
 
 PSP_MODULE_INFO("psp5", PSP_MODULE_USER, 0, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
-/* Lämna 7 MB fritt: ARK:s RECOVERY.PRX (4 MB egen heap), MP3-avkodarens moduler och
- * trådarnas stackar. Resten (~17 MB på PSP-1000) räcker gott – psp5 använder under 10 MB. */
-PSP_HEAP_SIZE_KB(-7168);
+/* The heap is all the free memory except what is kept back: PSP_HEAP_SIZE_KB(-1) means "all of it", and PSP_HEAP_THRESHOLD_SIZE_KB says how much of it to leave.
+ * (With this SDK the number of a negative PSP_HEAP_SIZE_KB, the old -7168, is NOT how much is left: it was read as "all of it" and only 512 KB stayed free, which a
+ * PSP-1000 showed: 618496 bytes free of the 24 MB.) 8 MB are kept for what does not live in the heap: ARK's RECOVERY.PRX (4 MB of its own), the MP3 decoder, the
+ * network modules and the stacks of the threads. On a PSP-1000 that leaves the heap about 13 MB, which is more than psp5 needs. */
+PSP_HEAP_SIZE_KB(-1);
+PSP_HEAP_THRESHOLD_SIZE_KB(8192);
 
 /* psp5:s egna filer (omslag, cache) – på lagringen psp5 startades från (ms0: eller PSP Go:s ef0:) */
 #define DATA_DIR PSP5_DATA_DIR
