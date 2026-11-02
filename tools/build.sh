@@ -2,7 +2,7 @@
 # psp5 – made by Mille Weber
 # Bygger launchern i WSL och lägger resultatet i dist/PSP/GAME/PSP5 (ARK-5-versionen)
 # eller dist-ark4/PSP/GAME/PSP5 (ARK-4-versionen, "ark4").
-# Båda fungerar också på PSP Go – psp5 känner själv av internminnet (ef0:).
+# Båda fungerar på alla enheter (PSP, PSP Go, PS Vita) – psp5 känner själv av internminnet (ef0:).
 # Från Windows:  wsl -d pspdev -- bash /mnt/c/path/to/psp5/tools/build.sh [ark4|test|clean]
 set -e
 . /etc/profile.d/pspdev.sh

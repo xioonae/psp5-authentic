@@ -2,47 +2,64 @@
 
 *psp5 authentic 1.2.0 – a fork of psp5 (v1.5.3), originally made by Mille Weber ([08Weber/psp5](https://github.com/08Weber/psp5)), forked by Xioonae*
 
-**You need:** a PSP with **ARK-4 or ARK-5** (PSP-1000, 2000, 3000 or PSP Go) and a **USB cable**.
+**You need:** a PSP with **ARK-4 or ARK-5** (PSP-1000, 2000, 3000 or PSP Go), or a **PS Vita** (1000 or 2000) with **ARK-5**, and a **USB cable**
+(on a Vita, whatever you already use to copy files to it with VitaShell).
 
-psp5 authentic is made with Claude, an AI assistant. If something doesn't work on your PSP, please
-[open an issue](../../issues) and tell us what you saw, which PSP you have and which ARK version.
+psp5 authentic is made with Claude, an AI assistant. If something doesn't work on your device, please
+[open an issue](../../issues) and tell us what you saw, which device you have (PSP-1000, 2000, 3000, PSP Go or PS Vita) and which ARK version.
 
 ## 1. Pick your zip
 
 Not sure which ARK you have? In the XMB, press **SELECT**. ARK's menu shows *ARK 4.x* or *ARK 5.x*.
 
-| Your PSP | Download this |
+There are two zips, one for each ARK version. Each one is for every device: it is the same program on a PSP-1000, 2000, 3000, a PSP Go and a PS Vita,
+and it finds the PSP Go's internal storage by itself.
+
+| Your ARK | Download this |
 |---|---|
-| PSP-1000, 2000 or 3000 with **ARK-5** | `psp5-authentic-v1.2.0-ARK5.zip` |
-| PSP-1000, 2000 or 3000 with **ARK-4** | `psp5-authentic-v1.2.0-ARK4.zip` |
-| **PSP Go** with **ARK-5** | `psp5-authentic-v1.2.0-PSPGo-ARK5.zip` |
-| **PSP Go** with **ARK-4** | `psp5-authentic-v1.2.0-PSPGo-ARK4.zip` |
+| **ARK-5** (also the PS Vita) | `psp5-authentic-v1.2.0-ARK5.zip` |
+| **ARK-4** | `psp5-authentic-v1.2.0-ARK4.zip` |
 
-You'll find them under [Releases](../../releases). Unzip the one you downloaded.
+You'll find them under [Releases](../../releases). Unzip the one you downloaded. It has a `READ ME.txt` with the same steps as below, for every device.
 
-psp5 authentic uses the same folders as psp5 (`PSP/GAME/PSP5` on the PSP and `PSP5` for its sounds and settings), so it
+The **PS Vita** needs the standalone install of ARK-5 ([FasterARK](https://github.com/PSP-Arkfive/FasterARK), the file `FasterARK_psvita.vpk`) first.
+ARK-4 on the Vita should work the same way, but nobody has confirmed it yet: if you try it, please open an issue and tell us how it went.
+
+psp5 authentic uses the same folders as psp5 (`PSP/GAME/PSP5` for the program and its sounds, and `PSP5` for its settings, which it makes by itself), so it
 replaces an installed psp5 and keeps its settings and covers (the image cache is rebuilt once).
 
-## 2. Copy it to the PSP
+## 2. Copy it to your device
+
+**PSP-1000, 2000, 3000 and PSP Go**
 
 1. On the PSP, open *Settings → USB Connection* and plug in the cable. The PSP shows up as a drive on your
-   computer (for example `E:`).
-2. Copy the **`PSP` and `PSP5` folders** from the zip onto that drive. If your computer asks, say yes to merging
-   folders. (`PSP5` holds psp5 authentic's sounds; without it psp5 authentic plays its built-in ones.)
+   computer (for example `E:`). On a PSP Go it is the internal storage.
+2. Copy the **`PSP` folder** from the zip onto that drive. If your computer asks, say yes to merging
+   folders. The sounds are in it, next to `EBOOT.PBP`; without them psp5 authentic plays its built-in ones.
 3. Eject the drive, unplug the cable and press Back (○) on the PSP.
+
+**PS Vita**
+
+1. With VitaShell, open the folder `ux0:pspemu` and copy the **`PSP` folder** from the zip into it. Say yes to merging folders. You now have
+   `ux0:pspemu/PSP/GAME/PSP5/EBOOT.PBP`.
+2. Do the *Optional* part below with the folder `ux0:pspemu/PSP/SAVEDATA/ARK_01234`: on the Vita, psp5 authentic starts as ARK's launcher.
+
+**Updating from an older version:** do the same. The new files replace the old ones and your settings and covers stay. Older versions kept the sounds in
+`PSP5/sounds`; they are next to `EBOOT.PBP` now. You can delete the old `PSP5/sounds` folder, but keep the `PSP5` folder itself (it holds your settings).
 
 ## 3. Start psp5 authentic
 
 - **PSP-1000, 2000 or 3000:** *Game → Memory Stick → psp5 authentic*
 - **PSP Go:** *Game → System Storage → psp5 authentic*
+- **PS Vita:** start ARK; psp5 authentic opens as its launcher (see the next part).
 
 That's it! The first start takes a moment while psp5 authentic finds your games. After that it opens fast.
 
 ## Optional: replace ARK's Custom Launcher with psp5 authentic
 
-Then *Custom Launcher* in the XMB opens psp5 authentic, and your PSP can start straight into psp5 authentic.
+Then *Custom Launcher* in the XMB opens psp5 authentic, and your PSP can start straight into psp5 authentic. (On a PS Vita this is how you start it.)
 
-1. Connect the PSP with USB and open `PSP/SAVEDATA/ARK_01234/`.
+1. Connect the PSP with USB and open `PSP/SAVEDATA/ARK_01234/` (on a Vita: `ux0:pspemu/PSP/SAVEDATA/ARK_01234` in VitaShell).
 2. Rename the `VBOOT.PBP` that's there to `VBOOT_ARKMENU.PBP`. That keeps ARK's own menu as a backup.
 3. Copy `VBOOT.PBP` from the zip's `ARK_LAUNCHER` folder into `ARK_01234`.
 4. In psp5 authentic, open the settings (↑ to the top bar, → to the cog wheel, then Confirm) → *psp5 authentic* → turn on *Boot into psp5 authentic*, then restart the PSP.

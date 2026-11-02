@@ -1,5 +1,5 @@
 # psp5 – made by Mille Weber
-# Bygger alla versioner (ARK-5, ARK-4, PSP Go) och packar release-zipparna.
+# Bygger båda versionerna (ARK-5, ARK-4) och packar de två release-zipparna (de gäller alla enheter: PSP, PSP Go, PS Vita).
 name: build
 
 on:

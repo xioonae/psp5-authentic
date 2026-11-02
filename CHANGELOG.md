@@ -7,6 +7,15 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ### Devices and downloads
 
+- **The PS Vita is supported.** psp5 authentic works on a PS Vita (1000 and 2000) with ARK-5, the standalone install ([FasterARK](https://github.com/PSP-Arkfive/FasterARK)).
+  On the Vita it starts as ARK's launcher: copy the `PSP` folder into `ux0:pspemu` and `VBOOT.PBP` into `ux0:pspemu/PSP/SAVEDATA/ARK_01234`. ARK-4 on the Vita should work the same way, but nobody has confirmed it yet.
+- **Two downloads instead of four.** There is one zip for ARK-5 and one for ARK-4, and each is for every device (PSP-1000, 2000, 3000, PSP Go and PS Vita). The PSP Go zips are gone: they held the same program as the others,
+  with another READ ME. psp5 authentic finds the PSP Go's internal storage by itself.
+- **The sounds lie next to `EBOOT.PBP`.** They are in `PSP/GAME/PSP5` with the program, so the zips have no separate `PSP5` folder any more: copy the `PSP` folder and you are done. If a sound file is not there,
+  psp5 authentic looks in the game folder of the storage (when it is ARK's launcher) and then in the old place `PSP5/sounds`, so an update that only replaces `EBOOT.PBP` keeps the sounds it had. The `PSP5` folder
+  that psp5 authentic makes for its settings and covers is still there; leave it alone.
+- **A new `READ ME.txt` in the zips**, longer and made for people who have never done this before: what is in the zip, how to unzip it, and then the steps for each device on its own (PSP-1000, 2000, 3000, PSP Go, PS Vita),
+  how to make psp5 authentic ARK's launcher, how to update, what to do when something goes wrong and what to tell us in an issue.
 - **The internal storage (`ef0:`) is shown whenever the device has one.** Before, a few places (the File Manager, Plugins and *Information*) also asked whether the model is a PSP Go. Now the only question is
   whether the storage answers, as it always was for the games, the music, Saved Data, Console Storage and the FTP server. On a PSP that has no internal storage nothing about it is shown anywhere.
 

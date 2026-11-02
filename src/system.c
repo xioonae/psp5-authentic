@@ -51,6 +51,7 @@ static int s_ms_is_ef; /* ARK låter ms0: peka på PSP Go:s internminne */
 
 char g_root[5] = "ms0:";
 char g_data_dir[16] = "ms0:/PSP5";
+char g_self_dir[128] = "";
 
 void sys_set_root(const char *self_path)
 {
@@ -58,6 +59,13 @@ void sys_set_root(const char *self_path)
     if (self_path && !strncasecmp(self_path, "ef0:", 4))
         snprintf(g_root, sizeof(g_root), "ef0:");
     snprintf(g_data_dir, sizeof(g_data_dir), "%s/PSP5", g_root);
+    /* the folder of EBOOT.PBP (or VBOOT.PBP): the recorded sounds lie next to it; empty when there is no slash or the folder is too long */
+    const char *slash = self_path ? strrchr(self_path, '/') : NULL;
+    g_self_dir[0] = 0;
+    if (slash && (size_t)(slash - self_path) < sizeof(g_self_dir)) {
+        memcpy(g_self_dir, self_path, slash - self_path);
+        g_self_dir[slash - self_path] = 0;
+    }
 }
 
 #ifdef PSP5_TEST

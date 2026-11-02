@@ -1,7 +1,7 @@
 /* psp5 – made by Mille Weber */
 /* Gränssnittsljud i stil med moderna konsolmenyer: mjuka, korta och luftiga.
  * De inbyggda ljuden syntetiseras här (sinustoner, filtrerat brus, envelopes). Finns inspelade ljud i
- * PSP5/sounds/<namn>.wav på lagringen används de i stället (load_wav) – saknas en fil spelas det inbyggda ljudet. */
+ * <namn>.wav bredvid EBOOT.PBP (t.ex. ms0:/PSP/GAME/PSP5/select.wav) används de i stället (load_wav) – saknas en fil spelas det inbyggda ljudet. */
 #include <pspkernel.h>
 #include <pspaudio.h>
 #include <math.h>
@@ -176,7 +176,7 @@ static float gen_boot(float t)
 }
 
 /* --- recorded sounds ---
- * <data dir>/sounds/<name>.wav (e.g. ms0:/PSP5/sounds/select.wav) replaces the built-in sound of that name.
+ * <name>.wav (move, select, back, error, boot) lying next to EBOOT.PBP, e.g. ms0:/PSP/GAME/PSP5/select.wav, replaces the built-in sound of that name.
  * 16-bit PCM at 44.1 kHz, mono or stereo (stereo is mixed down - the mixer is mono). A missing or unusable
  * file is not an error: the built-in sound is used. tools/convert_sounds.py makes these files. */
 #define WAV_MAX_BYTES (3 << 20) /* ~17 s of mono; the longest sound is the 5 s startup sound */
@@ -189,12 +189,33 @@ static unsigned rd16(const unsigned char *p) { return p[0] | p[1] << 8; }
 static unsigned rd32(const unsigned char *p) { return p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; }
 static int rds16(const unsigned char *p) { return (int)(rd16(p) ^ 0x8000u) - 0x8000; }
 
+/* Opens the recording of that name. The places, in this order (the first file that can be opened is the one; a bad file there means the built-in sound):
+ *  1. the folder psp5 was started from, next to EBOOT.PBP (g_self_dir)
+ *  2. the game folder of the storage, <root>/PSP/GAME/PSP5 (psp5 started as ARK's launcher lies in ARK_01234, which has no sounds)
+ *  3. <data dir>/sounds, where 1.2.0 and older had them (so an update that only replaces EBOOT.PBP keeps its sounds) */
+static SceUID open_wav(const char *name)
+{
+    char path[256];
+    SceUID fd = -1;
+    if (g_self_dir[0]) {
+        snprintf(path, sizeof(path), "%s/%s.wav", g_self_dir, name);
+        fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+    }
+    if (fd < 0) {
+        snprintf(path, sizeof(path), "%s/PSP/GAME/PSP5/%s.wav", g_root, name);
+        fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+    }
+    if (fd < 0) {
+        snprintf(path, sizeof(path), "%s/sounds/%s.wav", PSP5_DATA_DIR, name);
+        fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+    }
+    return fd;
+}
+
 /* Reads the file into s_samples[id]. Returns 1 if that worked, 0 if there is no usable file (nothing changed). */
 static int load_wav(SoundId id, const char *name)
 {
-    char path[64];
-    snprintf(path, sizeof(path), "%s/sounds/%s.wav", PSP5_DATA_DIR, name);
-    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+    SceUID fd = open_wav(name);
     if (fd < 0)
         return 0;
     int size = sceIoLseek32(fd, 0, PSP_SEEK_END);

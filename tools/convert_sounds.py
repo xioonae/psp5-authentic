@@ -6,7 +6,7 @@
 The folder must hold one recording for each of MOVE, SELECT, BACK, ERROR and BOOT: any file whose name
 contains that word (any case, any extension). The output (default: res/sounds) gets move.wav, select.wav,
 back.wav, error.wav and boot.wav - 16-bit PCM, 44.1 kHz, mono. tools/make_release.py puts them into the
-zips as PSP5/sounds/, which is where psp5 looks for them.
+zips in PSP/GAME/PSP5/, next to EBOOT.PBP, which is where psp5 looks for them first.
 
 What it does to a recording:
   - ffmpeg decodes it and resamples it to 44.1 kHz (the rate the sound engine mixes at)

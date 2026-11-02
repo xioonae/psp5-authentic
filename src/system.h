@@ -7,8 +7,11 @@ extern char g_root[5];
 /* psp5:s egna filer (omslag, cache, psp5.cfg) på den lagringen, t.ex. "ef0:/PSP5" */
 extern char g_data_dir[16];
 #define PSP5_DATA_DIR g_data_dir
+/* The folder psp5 was started from (argv[0] without the file name and the last slash), e.g. "ms0:/PSP/GAME/PSP5". The recorded sounds lie in it next to
+ * EBOOT.PBP. Empty when the path is not known or does not fit. */
+extern char g_self_dir[128];
 
-/* Väljer g_root efter var psp5 själv ligger (argv[0]). Anropas först av allt. */
+/* Väljer g_root efter var psp5 själv ligger (argv[0]) och sätter g_self_dir. Anropas först av allt. */
 void sys_set_root(const char *self_path);
 
 /* Läser ARK:s konfiguration (om ARK finns). Anropas en gång vid start. */
