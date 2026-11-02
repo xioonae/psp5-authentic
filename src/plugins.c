@@ -118,15 +118,13 @@ static int file_exists(const char *path)
     return sceIoGetstat(path, &st) >= 0;
 }
 
-/* The other storage of a PSP Go that has both ("ms0:" when psp5 runs from the internal storage, else "ef0:"), NULL when there is none (ARK can also point ms0: at the
- * internal storage: that is one storage) */
+/* The other storage when there are two ("ms0:" when psp5 runs from the internal storage, else "ef0:"), NULL when there is none (ARK can also point ms0: at the
+ * internal storage: that is one storage). Whether the other one is there is only a question of whether it can be opened: no check of the model. */
 static const char *other_root(void)
 {
     if (sys_ms_is_ef())
         return NULL;
     int from_ef = !strncasecmp(g_root, "ef0:", 4);
-    if (!from_ef && sys_model() != 4) /* only a PSP Go has ef0: */
-        return NULL;
     const char *root = from_ef ? "ms0:" : "ef0:";
     char probe[8];
     snprintf(probe, sizeof(probe), "%s/", root);

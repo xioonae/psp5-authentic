@@ -360,7 +360,7 @@ void sys_about(SysAbout *a)
         a->mah_full = scePowerGetBatteryFullCapacity();
     }
     a->has_ms = device_space("ms0:", &a->ms_free, &a->ms_total);
-    a->has_ef = s_model == 4 && device_space("ef0:", &a->ef_free, &a->ef_total); /* only a PSP Go has an internal storage */
+    a->has_ef = device_space("ef0:", &a->ef_free, &a->ef_total); /* the internal storage: there when the PSP answers for it, whatever the model */
 }
 
 int sys_has_ark(void) { return s_has_ark; }

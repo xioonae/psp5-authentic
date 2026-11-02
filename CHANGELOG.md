@@ -5,6 +5,11 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ## Unreleased
 
+### Devices and downloads
+
+- **The internal storage (`ef0:`) is shown whenever the device has one.** Before, a few places (the File Manager, Plugins and *Information*) also asked whether the model is a PSP Go. Now the only question is
+  whether the storage answers, as it always was for the games, the music, Saved Data, Console Storage and the FTP server. On a PSP that has no internal storage nothing about it is shown anywhere.
+
 ### Network
 
 - **New: FTP Server** (*Settings → Network → FTP Server*). Copy files to and from the PSP over Wi-Fi: type the address that psp5 authentic shows into an FTP program or into the file manager of your
