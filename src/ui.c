@@ -65,6 +65,7 @@
 
 #define BG_DELAY   0.18f /* stå still så här länge innan bakgrunden laddas */
 #define BG_FADE    3.5f  /* övertoningshastighet (1/s) */
+#define BG_DIP     8.0f  /* the dip to black while the background under the pictures is swapped (1/s: 0.125 s down, 0.125 s up) */
 #define LAUNCH_LEN 0.45f
 #define SEEK_HOLD  0.35f /* så länge ← / → hålls innan musiken spolar */
 
@@ -421,6 +422,7 @@ static void set_tab(Ui *ui, int tab, SoundId sound)
         leave_folder(ui); /* the Library opens on its folders (or all its games) next time */
     ui->tab = tab;
     ui->tab_anim = 0;
+    ui->lib_calm = tab == TAB_LIBRARY && ui->bg_lib && ui->bg_dip <= 0; /* opened from its card: its background is there already, so it does not come up out of the dark */
     sound_play(sound);
     ui->pos = ui->sel[tab] + 0.7f; /* raden glider in från höger */
     ui->still = 0;
@@ -505,6 +507,7 @@ void ui_init(Ui *ui, const EntryList *list, int can_launch)
     gamesize_start(list); /* how big the games are (the Library's size sort, Console Storage), counted in the background */
     build_views(ui);
     ui->tab = TAB_GAMES; /* (it always has the Library card) */
+    ui->bg_lib = sel_card(ui) == HOME_LIBRARY; /* (nothing to play: the Library card is the first card, and starts on its background) */
     ui->pos = 1.5f; /* korten glider in vid start */
     loader_set_view(view(ui));
 }
@@ -848,6 +851,12 @@ static int step_input(Ui *ui, const UiInput *in, float dt, int vertical)
     return 0;
 }
 
+/* How much of the screen the pictures of the games cover (0 none, 1 all): one that is up covers it, one fading in or out covers it by its alpha */
+static float bg_cover(const Ui *ui)
+{
+    return ui->bg_cur ? (ui->bg_old ? 1.0f : ui->bg_fade) : (ui->bg_old ? 1.0f - ui->bg_fade : 0.0f);
+}
+
 static void update_background(Ui *ui, float dt)
 {
     int sel = g_theme_art && ui->tab != TAB_LIBRARY ? ui_selected(ui) : -1; /* pictures off, or the Library (which has a background of its own): only the surface */
@@ -873,6 +882,24 @@ static void update_background(Ui *ui, float dt)
         ui->bg_index = -1;
         ui->bg_fade = 0;
     }
+    /* What lies under the pictures: the Library's own background on the Library card of Games and in the Library (so that opening the Library changes
+     * nothing behind the cards, and closing it neither), the theme's surface everywhere else. Only one of the two pictures fits in video memory at a
+     * time, so they cannot be mixed. When a picture covers the screen the swap cannot be seen and is made at once (before the picture starts to fade
+     * out in this very update); else the screen dips to black for a moment while it is made. */
+    int want = ui->tab == TAB_LIBRARY || (ui->tab == TAB_GAMES && sel_card(ui) == HOME_LIBRARY);
+    if (ui->tab == TAB_LIBRARY) {
+        ui->bg_lib = 1; /* (the Library draws its own, whatever lay under before) */
+        ui->bg_dip = 0;
+    } else if (want == ui->bg_lib) {
+        ui->bg_dip = clampf(ui->bg_dip - dt * BG_DIP, 0, 1);
+    } else if (bg_cover(ui) >= 1) {
+        ui->bg_lib = want;
+    } else {
+        ui->bg_dip = clampf(ui->bg_dip + dt * BG_DIP, 0, 1);
+        if (ui->bg_dip >= 1)
+            ui->bg_lib = want;
+    }
+
     ui->bg_fade = clampf(ui->bg_fade + dt * BG_FADE, 0, 1);
     if (ui->bg_fade >= 1 && ui->bg_old) {
         tex_free(ui->bg_old);
@@ -1183,6 +1210,8 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     ui->time += dt;
     ui->intro = clampf(ui->intro + dt * 2.2f, 0, 1);
     ui->tab_anim = clampf(ui->tab_anim + dt * 4.0f, 0, 1);
+    if (ui->tab_anim >= 1)
+        ui->lib_calm = 0; /* (a later change of the Library's cards, a new sort, comes up out of the dark as before) */
     if (ui->toast_time > 0)
         ui->toast_time -= dt;
     sort_by_size_again(ui, dt);
@@ -1448,13 +1477,17 @@ static void draw_background(Ui *ui)
         /* The Library has a background of its own (a ribbon of light on black, drawn in code, in the colours of the theme): never a picture of a game, in every theme.
          * It comes up out of the dark with the cards (tab_anim goes from 0.4 to 1 when the tab is opened). */
         theme_backdrop_library(theme_cur(), ui->time);
-        if (ui->tab_anim < 1)
+        if (ui->tab_anim < 1 && !ui->lib_calm) /* (not when it was opened from its card, which has this background already) */
             gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - smooth(ui->tab_anim)))));
         return;
     }
     /* en bild som täcker hela skärmen (färdigtonad, eller den gamla helt under den nya) – då behövs ingen yta under */
-    if (!ui->bg_cur || (ui->bg_fade < 1 && !ui->bg_old))
-        theme_backdrop(theme_cur(), ui->time, 1); /* the theme's surface: shows when a game has no picture (or pictures are off) */
+    if (!ui->bg_cur || (ui->bg_fade < 1 && !ui->bg_old)) {
+        if (ui->bg_lib)
+            theme_backdrop_library(theme_cur(), ui->time); /* the Library card: the Library's own background, so that opening the Library changes nothing behind the cards */
+        else
+            theme_backdrop(theme_cur(), ui->time, 1); /* the theme's surface: shows when a game has no picture (or pictures are off) */
+    }
 
     const u32 tint = RGBA(205, 205, 210, 0);
     int fade = (int)(ui->bg_fade * 255);
@@ -1466,12 +1499,14 @@ static void draw_background(Ui *ui)
     /* A game's picture is darkened at the top (tabs, cards), on the left (text) and at the bottom (buttons) so they stay
      * readable on any picture. The theme's surface is not darkened: it looks the same as on the other screens. The
      * shades follow how much of the picture is shown, so a picture fading in or out takes them with it. */
-    float cover = ui->bg_cur ? (ui->bg_old ? 1.0f : ui->bg_fade) : (ui->bg_old ? 1.0f - ui->bg_fade : 0.0f);
+    float cover = bg_cover(ui);
     if (cover > 0) {
         gfx_gradient_v(0, 0, SCREEN_W, 120, RGBA(0, 0, 0, (int)(165 * cover)), RGBA(0, 0, 0, 0));
         gfx_gradient_h(0, 0, 300, SCREEN_H, RGBA(0, 0, 0, (int)(120 * cover)), RGBA(0, 0, 0, 0));
         gfx_gradient_v(0, 160, SCREEN_W, SCREEN_H - 160, RGBA(0, 0, 0, 0), RGBA(0, 0, 0, (int)(175 * cover)));
     }
+    if (ui->bg_dip > 0) /* the dip to black while the Library's background and the surface change places */
+        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * ui->bg_dip)));
 }
 
 /* The battery on whole pixels, as on the PS5: a terminal 2 x 4 on the LEFT, then a body 21 x 12 with a 1 px outline and 2 px between

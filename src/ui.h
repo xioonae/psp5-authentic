@@ -69,6 +69,9 @@ typedef struct {
     Texture *bg_old, *bg_cur;
     float bg_fade;
     int bg_index;
+    int bg_lib;          /* 1: under the pictures lies the Library's own background (Library card of Games, the Library), 0: the theme's surface */
+    float bg_dip;        /* 0→1→0: a dip to black while the one is swapped for the other (only one of the two fits in video memory at a time) */
+    int lib_calm;        /* 1: the Library opened on its own background already (from its card): nothing comes up out of the dark */
     float still;         /* sekunder sedan markeringen flyttades */
 
     /* titeln bredvid valt kort, anpassad till bredden */
