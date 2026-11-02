@@ -49,7 +49,7 @@ wherever it can, but it doesn't copy the console in everything.
     <td width="50%"><img src="docs/screenshots/manage-plugins.png" alt="Manage Plugins"><br><sub><b>Manage Plugins</b> (Settings → System → Plugins) – the plugins that are installed and where; Confirm opens one to install it to more places or uninstall it from some</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/install-plugin.png" alt="Install New Plugin"><br><sub><b>Install New Plugin</b> – choose a <code>.prx</code> in the File Manager, then where it goes and what it runs in (XMB, Games, PS1)</sub></td>
+    <td width="50%"><img src="docs/screenshots/install-plugin.png" alt="Install New Plugin"><br><sub><b>Install New Plugin</b> – choose a <code>.prx</code> in the File Manager, then which <code>PLUGINS.TXT</code> to edit and what it runs in (XMB, Games, PS1)</sub></td>
     <td width="50%"></td>
   </tr>
 </table>

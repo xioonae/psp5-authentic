@@ -82,9 +82,9 @@ The plugin keeps the seconds of each game in `PSP5/played`, and psp5 authentic a
 
 *Settings → System → Plugins* has a switch for every line of your `PLUGINS.TXT` files (the ARK folder's and `SEPLUGINS`, on the Memory Stick and, on a PSP Go, the internal storage). **Manage Plugins** is the first row:
 
-- **Install New Plugin** opens the File Manager. Find the `.prx`, Confirm on it, then choose where it goes (the ARK folder or `SEPLUGINS`) and switch on *XMB*, *Games* and *PS1*. After a question the plugin file is moved there
-  and the lines are added to that folder's `PLUGINS.TXT`. A file of the same name there is never written over.
-- Confirm on a plugin that is installed: **Install to** lists the places it is not in yet, **Uninstall from** the places it is in. Both ask before they change anything. *Uninstall from* removes the lines only; the plugin file stays.
+- **Install New Plugin** opens the File Manager. Find the `.prx`, Confirm on it, then choose **which `PLUGINS.TXT` to edit** (the ARK folder's or `SEPLUGINS`'s) and switch on *XMB*, *Games* and *PS1*. After a question the lines are added to that `PLUGINS.TXT`
+  (it is made when it isn't there), and they point to the plugin **where it is**: the plugin file is never moved, copied or deleted.
+- Confirm on a plugin that is installed: **Install to** lists the places it is not in yet (in any `PLUGINS.TXT`), **Uninstall from** the places it is in. Both ask before they change anything. *Uninstall from* removes the lines only; the plugin file stays where it is.
 - A plugin needs a restart of the PSP before it does anything.
 
 ## Where your games go

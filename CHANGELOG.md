@@ -108,11 +108,12 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 - **Manage Saved Data sorts by *Last updated*, *Name* and *Size*** (it was *Last updated*, *Size* and *Name (A-Z)*).
 - **New: Manage Plugins** (*Settings → System → Plugins → Manage Plugins*, the first row, above the switches). It installs and uninstalls plugins: it adds and removes the lines of `PLUGINS.TXT`.
   - **Install New Plugin** (the first row) opens the File Manager to choose the plugin. It shows only folders and `.prx` files, and nothing else works there (no copy, move, rename or delete). Confirm on a plugin brings you back.
-    Then you choose where it goes (the ARK folder `ARK_01234` or `SEPLUGINS`, on the Memory Stick, and on the internal storage of a PSP Go) and switch on *XMB*, *Games* and *PS1* (`vsh`, `game`, `pops`).
-    After a question psp5 authentic moves the plugin there and adds one line for each switch to the `PLUGINS.TXT` of that folder (it is made when it isn't there). A plugin that is already in that folder stays,
-    and a file of the same name is never written over.
-  - **Under it, every plugin that is installed**, with where it is (*XMB*, *Games*, *PS1*, *All*). Confirm opens its page: **Install to** lists only the places it is not in yet, **Uninstall from** only the places it is in
-    (one row for each line of the plugin, in each of the four files). Each is a list of switches and a button; the button asks first. *Uninstall from* removes the lines; the plugin file stays where it is.
+    The page shows the file's name and where it rests. Then you choose **which `PLUGINS.TXT` to edit** (the one in the ARK folder `ARK_01234` or in `SEPLUGINS`, on the Memory Stick, and on the internal storage of a PSP Go)
+    and switch on *XMB*, *Games* and *PS1* (`vsh`, `game`, `pops`). After a question psp5 authentic adds one line for each switch to that `PLUGINS.TXT`, and the line points to the plugin **where it is**:
+    **the plugin file is not moved, copied or deleted.** A `PLUGINS.TXT` (and its folder) that isn't there is made. A line that is there already is not added twice.
+  - **Under it, every plugin that is installed**, with where it is (*XMB*, *Games*, *PS1*, *All*). Confirm opens its page: **Install to** lists only the places it is not in yet (every runlevel of every `PLUGINS.TXT` that has no line for it, also one that
+    isn't there yet; the new line points to the file where it rests), **Uninstall from** only the places it is in (one row for each line of the plugin, in each of the four files). Each is a list of switches and a button; the button asks first.
+    *Uninstall from* removes the lines and never the plugin file, which stays where it is.
   - The page *Plugins* now reads all four files: the ARK folder's and `SEPLUGINS` on the Memory Stick, and on a PSP Go with both storages the same two on the internal storage. Switches you changed but did not save are saved before a line is added or removed.
   - New texts in all 11 languages (239 strings).
 

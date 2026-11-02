@@ -571,7 +571,7 @@ static void pm_set_loc(int opt)
     pm_fill_new(); /* the runlevels that are free depend on the place */
 }
 
-/* A new plugin: its file, where it goes, and a switch for each runlevel it is not in already at that place */
+/* A new plugin: its file and where that rests (it stays there: nothing is moved or copied), which PLUGINS.TXT is edited, and a switch for each runlevel it is not in already in that file */
 static void pm_fill_new(void)
 {
     Category *c = &s_cats[PG_PLUGNEW];
@@ -584,8 +584,11 @@ static void pm_fill_new(void)
     if (PM.loc >= PM.loc_n)
         PM.loc = 0;
     info(c, L(S_I_FILE), PM.src_name);
+    char rests[64];
+    plugins_place_label(PM.src, rests, sizeof(rests));
+    info(c, L(S_I_LOCATION), rests);
     if (PM.loc_n) {
-        Item *it = add(c, L(S_I_LOCATION), IT_CHOICE);
+        Item *it = add(c, "PLUGINS.TXT", IT_CHOICE); /* the file whose lines are made: the choices are the folders it can be in */
         it->value = &PM.loc;
         it->opts = PM.loc_opt;
         it->nopts = PM.loc_n;
@@ -594,7 +597,7 @@ static void pm_fill_new(void)
     }
     int rows = 0;
     for (int lv = 0; lv < PLUGIN_LEVELS && PM.loc_n; lv++) {
-        if (plugins_has(&PM.locs[PM.loc], PM.src_name, lv)) { /* it is there already */
+        if (plugins_has(&PM.locs[PM.loc], PM.src, lv)) { /* it is there already */
             PM.lvl_on[lv] = 0;
             continue;
         }
@@ -658,7 +661,7 @@ static void pm_ask(int kind)
 static void pm_apply(int kind)
 {
     flush_plugins();
-    int ok = 0, exists = 0;
+    int ok = 0;
     if (kind == PA_ADD) {
         ok = 1;
         for (int i = 0; i < PM.add_n; i++)
@@ -675,11 +678,9 @@ static void pm_apply(int kind)
         for (int lv = 0; lv < PLUGIN_LEVELS; lv++)
             if (PM.lvl_on[lv])
                 mask |= 1u << lv;
-        int r = plugins_install(PM.src, &PM.locs[PM.loc], mask);
-        ok = r == PLUGIN_OK;
-        exists = r == PLUGIN_EXISTS;
+        ok = plugins_install(PM.src, &PM.locs[PM.loc], mask) == PLUGIN_OK;
     }
-    settings_notice(L(ok ? S_F_DONE : exists ? S_PM_EXISTS : S_F_FAILED));
+    settings_notice(L(ok ? S_F_DONE : S_F_FAILED));
     sound_play(ok ? SND_SELECT : SND_ERROR);
     fill_plugins(0); /* the lines have moved: the switches of the page Plugins are made from the files again */
     int lines[PM_MAX];
@@ -703,7 +704,7 @@ void settings_plugin_new(const char *path)
     snprintf(PM.src_name, sizeof(PM.src_name), "%s", base ? base + 1 : path);
     memset(PM.lvl_on, 0, sizeof(PM.lvl_on));
     PM.loc = 0;
-    S.item[PG_PLUGNEW] = 1; /* the row for the place (the first is only the name of the file) */
+    S.item[PG_PLUGNEW] = 2; /* the row for the PLUGINS.TXT (the first two only say what the file is called and where it rests) */
     page_enter(PG_PLUGNEW);
 }
 
