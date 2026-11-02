@@ -18,6 +18,8 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   how to make psp5 authentic ARK's launcher, how to update, what to do when something goes wrong and what to tell us in an issue.
 - **The internal storage (`ef0:`) is shown whenever the device has one.** Before, a few places (the File Manager, Plugins and *Information*) also asked whether the model is a PSP Go. Now the only question is
   whether the storage answers, as it always was for the games, the music, Saved Data, Console Storage and the FTP server. On a PSP that has no internal storage nothing about it is shown anywhere.
+- **The File Manager lists the internal storage once.** When ARK points `ms0:` at the internal storage (a PSP Go started from it), that is one storage: the File Manager now shows it once, as *System Storage*, and opens straight into it,
+  like the game scan, the music, the plugins, Console Storage and Information already did. With a real Memory Stick as well, the File Manager still starts with the list of both.
 
 ### Network
 

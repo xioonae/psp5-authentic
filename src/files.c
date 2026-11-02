@@ -854,9 +854,11 @@ static void open_list(int pick)
     s_pick = pick;
     s_picked[0] = 0;
     s_ndev = 0;
-    if (dev_present("ms0:/"))
+    int ef = dev_present("ef0:/"); /* the internal storage: shown when it can be opened, on no other condition */
+    /* ARK can point ms0: at the internal storage: that is one storage, listed once and by its real name, ef0: (the game scan and the plugins do the same) */
+    if (dev_present("ms0:/") && !(ef && sys_ms_is_ef()))
         s_devs[s_ndev++] = "ms0:/";
-    if (dev_present("ef0:/")) /* the internal storage: shown when it can be opened, on no other condition */
+    if (ef)
         s_devs[s_ndev++] = "ef0:/";
     s_open = s_menu_anim = s_toast_time = 0;
     s_menu = M_NONE;
