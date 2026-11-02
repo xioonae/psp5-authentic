@@ -137,7 +137,7 @@ There is no password, so everyone on the same network can reach your Memory Stic
 
 ## Covers
 
-psp5 authentic shows each game's own icon and background by itself. If you want your own pictures on the cards, a small tool
+psp5 authentic shows each game's own icon and background by itself (the background in the Games tab; the Library has a background of its own). If you want your own pictures on the cards, a small tool
 for your computer prepares them: `tools/covers.py` (it is in the repository, not in the zips: on the GitHub page use *Code → Download ZIP*).
 It needs Python 3 with two packages: `py -m pip install --user pillow lz4` (on Windows).
 

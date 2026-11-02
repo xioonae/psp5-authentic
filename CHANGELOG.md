@@ -24,6 +24,11 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ### Library
 
+- **The Library has a background of its own.** The picture of a game is **not** shown behind the Library any more (the Library is not darkened either): in every theme it has the same drawn picture on black, at the
+  right: a twisted ribbon of fine dotted lines, a fan of lines to a point, big rings at the bottom right, a little twinkling star and some specks of dust, with a copper light along its edges. It is drawn by the program
+  (no picture file), like the themes and icons. The colours follow your theme: the black has a trace of the theme's own dark, the lines carry some of its light, and the glow is the gold of the PS5 colours (the
+  accent colour of PS1 to PS4). It fades up from black with the cards when you open the Library. *Show Game art* now only matters for the Games tab. The picture is made once and kept in video memory, as the themes are, so
+  after the first frame the Library draws it as one image.
 - **Six ways to sort.** The Sort button has a new popup with a check mark at the one in use: *Name (A-Z)*, *Name (Z-A)*, *Date added (Newest-Oldest)*, *Date added (Oldest-Newest)*,
   *Size (Large-Small)* and *Size (Small-Large)*. A folder goes by the newest (or oldest) game in it, or by the size of all its games together. The disc is always first. The size of a game that
   lives in a folder is counted in the background, so after the start the order by size can change for a moment. *Recently played* is not a choice any more (the Games tab already shows what you

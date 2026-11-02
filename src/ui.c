@@ -850,7 +850,7 @@ static int step_input(Ui *ui, const UiInput *in, float dt, int vertical)
 
 static void update_background(Ui *ui, float dt)
 {
-    int sel = g_theme_art ? ui_selected(ui) : -1; /* bilderna avstängda: bara temats yta */
+    int sel = g_theme_art && ui->tab != TAB_LIBRARY ? ui_selected(ui) : -1; /* pictures off, or the Library (which has a background of its own): only the surface */
     int idx;
     Texture *tex;
     if (loader_take_bg(&idx, &tex)) {
@@ -1444,6 +1444,14 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
 
 static void draw_background(Ui *ui)
 {
+    if (ui->tab == TAB_LIBRARY) {
+        /* The Library has a background of its own (a ribbon of light on black, drawn in code, in the colours of the theme): never a picture of a game, in every theme.
+         * It comes up out of the dark with the cards (tab_anim goes from 0.4 to 1 when the tab is opened). */
+        theme_backdrop_library(theme_cur(), ui->time);
+        if (ui->tab_anim < 1)
+            gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - smooth(ui->tab_anim)))));
+        return;
+    }
     /* en bild som täcker hela skärmen (färdigtonad, eller den gamla helt under den nya) – då behövs ingen yta under */
     if (!ui->bg_cur || (ui->bg_fade < 1 && !ui->bg_old))
         theme_backdrop(theme_cur(), ui->time, 1); /* the theme's surface: shows when a game has no picture (or pictures are off) */
@@ -2263,13 +2271,13 @@ static void draw_empty(Ui *ui)
     text_draw(MARGIN, 160, 0.62f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, on_root(L(S_HINT_APPS)));
 }
 
-/* The Library and Music have the Games background (the selected game's picture, or the theme's surface) under a darkening,
- * the same in both. It lies over the background but under the top bar, so that the tabs, the clock, the battery and the cog
- * wheel are drawn bright in front of it. */
+/* Music has the Games background (the selected game's picture, or the theme's surface) under a darkening. It lies over the background
+ * but under the top bar, so that the tabs, the clock, the battery and the cog wheel are drawn bright in front of it. (The Library has a
+ * background of its own, dark already: it is not darkened.) */
 #define DIM_COLOR RGBA(8, 8, 12, 150)
 static void draw_dim(Ui *ui)
 {
-    if (ui->tab == TAB_MUSIC || (ui->tab == TAB_LIBRARY && ui->list->count)) /* (an empty Library is shown as an empty tab) */
+    if (ui->tab == TAB_MUSIC)
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, DIM_COLOR);
 }
 

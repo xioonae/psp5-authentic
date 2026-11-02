@@ -259,6 +259,19 @@ void gfx_line(float x0, float y0, float x1, float y1, u32 color)
     sceGuDrawArray(GU_LINES, CVERT_FMT, 2, 0, v);
 }
 
+/* A line through the points xy[2n], one pixel wide and not smoothed (the GE has no line smoothing; gfx_stroke is the smooth one, six vertices a point), the
+ * colour of every point on its own: the line goes from one colour to the next. 16 bytes of the display list a point: it is for the many thin lines of a picture. */
+void gfx_polyline(const float *xy, const u32 *colors, int n)
+{
+    if (n < 2)
+        return;
+    CVert *v = sceGuGetMemory(n * sizeof(CVert));
+    for (int i = 0; i < n; i++)
+        v[i] = (CVert){ colors[i], xy[i * 2], xy[i * 2 + 1], 0 };
+    sceGuDisable(GU_TEXTURE_2D);
+    sceGuDrawArray(GU_LINE_STRIP, CVERT_FMT, n, 0, v);
+}
+
 void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint)
 {
     if (!t)

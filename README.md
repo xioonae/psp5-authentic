@@ -13,7 +13,7 @@ wherever it can, but it doesn't copy the console in everything.
     <td width="50%"><img src="docs/screenshots/options.png" alt="Options of a game"><br><sub><b>Options</b> (START) – delete, information and the <i>Keep in Home</i> switch</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/library.png" alt="Library"><br><sub><b>Library</b> – everything on the card in one grid, sorted by name, by when you added a game or by its size</sub></td>
+    <td width="50%"><img src="docs/screenshots/library.png" alt="Library"><br><sub><b>Library</b> – everything on the card in one grid, sorted by name, by when you added a game or by its size, on its own background</sub></td>
     <td width="50%"><img src="docs/screenshots/library-folders.png" alt="Library with folders"><br><sub><b>Folders</b> – the Library can show the folders as cards; the button at the top left chooses what you see</sub></td>
   </tr>
   <tr>
@@ -67,7 +67,8 @@ wherever it can, but it doesn't copy the console in everything.
 - **Library.** The last card of Games. It opens a grid with everything you have, games and apps together, a **Sort** button (by
   name, by what you added or by size, either way round) and a **view** button (*All*, *In folders*, *Outside of folders* or *Both in and out of
   folders*; the folders are cards, Confirm opens one, Back goes back). Folders are the ones the Categories Lite plugin makes. The Library
-  remembers your sorting and view. The cards are rectangles, as on the console; the selected one has a white frame.
+  remembers your sorting and view. The cards are rectangles, as on the console; the selected one has a white frame. Behind it is a background of its own (a drawn
+  ribbon of fine lines on black, in your theme's colours); a game's picture is never shown there.
 - **Console Storage** (*Settings → Storage*). The size of the storage, a coloured bar and the free space, and four rows with their sizes: **Games and Apps** (the list of all your games and apps: sort, mark and delete them),
   Media (music, video and pictures), **Saved Data** (*Manage Saved Data*: the saves of all your games, mark some, delete them and see how much room you get back; ARK's own save folder is locked and can't be deleted) and Other.
   On a PSP Go with a Memory Stick there are two blocks, one for each storage.
@@ -85,7 +86,7 @@ wherever it can, but it doesn't copy the console in everything.
   A setting with several values opens a popup when you press Confirm on it.
 - **Themes.** The colours of the console covers, each with the console's scene behind your games (a beam of light, golden
   dust, haze), plus the classic looks of PS1 to PS4. Highlight a theme to preview it, Confirm to use it. You can turn *Show Game art*
-  off, so the theme is always visible.
+  off (it is for the Games tab: the Library has its own background), so the theme is always visible.
 - **Startup.** A short intro like a console's, with a health notice, soft circles and golden dust in your theme's colours.
   It plays when the PSP starts and wakes up, not when you come back from a game. Any button skips it, and you can turn it off.
 - **Power menu** (SELECT, on every screen: Games, Library, Music, Settings, Information, Manage Saved Data, the File Manager and the USB screen). Exit to XMB, Sleep, Shut down, Restart, Recovery Menu – Confirm does it at once.

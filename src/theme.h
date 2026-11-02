@@ -40,6 +40,10 @@ int theme_from_code(const char *code);
  * `a` = how visible the pattern is. The surface and the light never move, so they are drawn once into a picture in video
  * memory and shown from there (see gfx_snapshot_*); only the old consoles' shapes are drawn again every frame. */
 void theme_backdrop(const Theme *t, float time, float a);
+/* The Library's own background (behind the Library, in every theme, instead of the surface and instead of any picture of a game): a ribbon of fine light on black
+ * at the right, drawn in code. It takes its colours from the theme. It shares the picture in video memory with theme_backdrop(): it is drawn again when the
+ * other one was drawn in between. */
+void theme_backdrop_library(const Theme *t, float time);
 /* Draw the picture again the next time (after something that may have wiped video memory, like sleep) */
 void theme_backdrop_forget(void);
 /* Liten förhandsvisning (för inställningarna) */

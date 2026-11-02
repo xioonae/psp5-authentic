@@ -36,6 +36,8 @@ void gfx_gradient_v(float x, float y, float w, float h, u32 top, u32 bottom);
 void gfx_gradient_v_opaque(float x, float y, float w, float h, u32 top, u32 bottom);
 void gfx_gradient_h(float x, float y, float w, float h, u32 left, u32 right);
 void gfx_line(float x0, float y0, float x1, float y1, u32 color);
+/* A thin line through the points xy[2n] (not smoothed), each point with its own colour: gfx_polyline() is for many lines (16 bytes of the display list a point). */
+void gfx_polyline(const float *xy, const u32 *colors, int n);
 void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint);
 /* A picture of the whole screen, kept in video memory, for something that looks the same every frame (the background):
  * draw it once between gfx_snapshot_begin() and gfx_snapshot_end() (the drawing goes into the picture, not onto the screen),
