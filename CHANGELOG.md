@@ -168,6 +168,7 @@ below are inspired by what the original project found and did about them. The co
 
 ### Docs
 
+- The picture of *Console Information* in the README shows the new *CFW (ARK-5)* row with the version of ARK (in the picture the version is made up: the demo PSP has no ARK).
 - The pictures of *Games*, *Library*, *Library with folders* and *Games and Apps* in the README show the new look (rectangular cards, the title as large as in the Library, *Games and Apps* on *Least used*).
 
 ## 1.2.0 – Controls, new Settings pages, folders in the Library and time played
