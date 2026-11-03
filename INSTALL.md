@@ -95,6 +95,9 @@ The plugin keeps the seconds of each game in `PSP5/played`, and psp5 authentic a
 | Homebrew, PSN and PS1 games | `PSP/GAME` |
 | Music (`.mp3`) | `MUSIC` (sub-folders are fine) |
 
+A game is shown with the title that is in it. If it has none, you see the name of its folder (or of its `.iso` / `.cso` file), so you can name the folder what you want the game to be called.
+A folder with a `PBOOT.PBP` beside its `EBOOT.PBP` (TempGBA's single-game folders) shows the title and the pictures of the `PBOOT.PBP`.
+
 On a PSP Go, psp5 authentic looks in these folders on both the internal storage and a Memory Stick Micro. (With ARK-4 this needs a
 recent ARK-4 when psp5 authentic is started from the internal storage.)
 

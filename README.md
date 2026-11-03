@@ -60,6 +60,8 @@ wherever it can, but it doesn't copy the console in everything.
 
 - **Games (Home).** The games and apps you played last, then the newest you added, and the ones you keep in Home, up to ten cards in one row. The selected card is big, with its
   artwork behind it. ↓ selects the **Play** and **⋯** (options) buttons. A UMD in the drive shows up first. A name that is too long for the screen scrolls after a moment.
+- **Names.** A game is shown with the title that is in the game. If it has none (or an empty one), you see the name of its folder, or the name of its `.iso`, `.cso`, `.zso`, `.dax` or `.jso` file. A folder that
+  has a `PBOOT.PBP` next to its `EBOOT.PBP` (TempGBA's single-game folders) shows the title and the pictures of the `PBOOT.PBP`.
 - **Time played.** A small clock with the time (*54h*, *45min* or *<1min*) on the right of the bottom row, in Games and in the Library.
   With ARK, psp5 authentic installs a tiny helper plugin by itself (nothing to switch on). It runs inside every game (PSP games, ISOs, homebrew and PS1 games), **however you started it** (from psp5 authentic, from the XMB, with or without psp5 authentic as ARK's launcher),
   and counts only the time the PSP is awake. The times are added when psp5 authentic starts next. To turn it off, turn off the two `psp5time.prx` lines in *Settings → System → Plugins*. Without ARK, or with those lines off, nothing is counted.

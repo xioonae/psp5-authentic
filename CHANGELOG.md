@@ -117,6 +117,24 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   - The page *Plugins* now reads all four files: the ARK folder's and `SEPLUGINS` on the Memory Stick, and on a PSP Go with both storages the same two on the internal storage. Switches you changed but did not save are saved before a line is added or removed.
   - New texts in all 11 languages (239 strings).
 
+### Ideas from the original project's issues
+
+psp5 authentic is a fork of [psp5](https://github.com/08Weber/psp5) by Mille Weber (08Weber). Two reports in the issues of the original project described problems that psp5 authentic could have as well, and the changes
+below are inspired by what the original project found and did about them. The code is psp5 authentic's own. Thank you to 08Weber, and to the people who reported the problems there:
+[issue 37](https://github.com/08Weber/psp5/issues/37) (TempGBA single-game folders show as grey cards without a name) and [issue 19](https://github.com/08Weber/psp5/issues/19) (unstable overclock and settings on a PSP Go).
+
+- **A game folder with a `PBOOT.PBP` shows the name and the pictures from it** (inspired by issue 37). TempGBA's single-game folders keep the name and the icon of the game in `PBOOT.PBP`; the `EBOOT.PBP` beside it is the same in
+  all of them, with no title and no pictures, so every game was a grey card without a name. Now the title, the icon and the picture of `PBOOT.PBP` win, as in the XMB, and whatever it lacks stays as the `EBOOT.PBP` has it.
+  The game is still started from the `EBOOT.PBP`, and its kind (homebrew, PSN, PS1) is still the `EBOOT.PBP`'s. A `PBOOT.PBP` that is not a real PBP, or has no title or pictures, changes nothing, and a folder that has only a
+  `PBOOT.PBP` (an installed update) is still not listed. The first start after the update reads the games once more (the list that psp5 authentic remembers is made again; it is also made again when a `PBOOT.PBP` is added, changed or removed).
+- **A game or image with no title is named after its folder or its file.** If the title in a game is missing, empty, only blanks or only a ™ or ®, psp5 authentic now shows the name of the game's folder (`PSP/GAME/<folder>`), or, for an
+  `.iso`, `.cso`, `.zso`, `.dax` or `.jso`, the name of the file without its ending. (An empty title used to be shown as an empty name.) Blanks around a title are dropped.
+- **The overclock and the storage cache are put in force before anything is read** (inspired by issue 19). ARK-5 does that when the first module is loaded after the system has started, and psp5 authentic loaded its first one
+  (the music codecs) after the intro and the game scan, so the PSP could change its clock and cache in the middle of reading files. On a PSP Go with an overclock of 333 MHz or more, the original project saw it lag or hang. psp5 authentic now loads and
+  unloads one module first of all, before any thread is started or any file is read.
+- **A short wait before the PSP restarts, switches off or goes back to the XMB** (inspired by issue 19). The file that was just saved (`SETTINGS.TXT`, `PLUGINS.TXT`) gets 50 milliseconds to be written first, so a settings change
+  is not cut off by the reset.
+
 ### The name
 
 - **The app is called psp5 authentic** wherever you can see it: its name in the XMB (*Game → Memory Stick*) and the picture next to it, the texts of the menus in all 11 languages (*Boot into psp5 authentic*,

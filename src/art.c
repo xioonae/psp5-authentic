@@ -68,7 +68,7 @@ static u32 fnv1a(const char *s, u32 h)
 
 static void cache_path(const Entry *e, const char *ext, char *out, int size)
 {
-    u32 h = fnv1a(e->path, 2166136261u) ^ e->file_size ^ (e->file_time * 2654435761u);
+    u32 h = fnv1a(e->path, 2166136261u) ^ e->file_size ^ (e->file_time * 2654435761u) ^ (e->pboot_stamp * 2246822519u); /* (0 for a game with no PBOOT.PBP: its name stays) */
     if (e->type == ENTRY_UMD) /* alla skivor har samma sökväg */
         h = fnv1a(e->title, fnv1a(e->game_id, h));
     snprintf(out, size, "%s/%08X.%s", s_cache_dir, (unsigned)h, ext);
@@ -90,8 +90,8 @@ static void cover_path(const Entry *e, const char *ext, char *out, int size)
     snprintf(out, size, "%s/%s.%s", s_cover_dir, key, ext);
 }
 
-/* Läser en inbäddad fil (ICON0/PIC1) ur ISO eller PBP – eller filen `umd_name` på UMD-skivan. */
-static void *read_embedded(const Entry *e, u32 offset, u32 size, const char *umd_name)
+/* Läser en inbäddad fil (ICON0/PIC1) ur ISO eller PBP – eller filen `umd_name` på UMD-skivan. `in_pboot`: the picture lies in the PBOOT.PBP beside the EBOOT.PBP. */
+static void *read_embedded(const Entry *e, u32 offset, u32 size, const char *umd_name, int in_pboot)
 {
     if (!size || size > MAX_PNG_SIZE)
         return NULL;
@@ -115,7 +115,13 @@ static void *read_embedded(const Entry *e, u32 offset, u32 size, const char *umd
             iso_close(&r);
         }
     } else {
-        SceUID fd = sceIoOpen(e->path, PSP_O_RDONLY, 0);
+        char pboot[256];
+        const char *file = e->path;
+        if (in_pboot) {
+            entry_pboot_path(e, pboot, sizeof(pboot));
+            file = pboot;
+        }
+        SceUID fd = sceIoOpen(file, PSP_O_RDONLY, 0);
         if (fd >= 0) {
             sceIoLseek32(fd, offset, PSP_SEEK_SET);
             got = sceIoRead(fd, buf, size);
@@ -129,9 +135,9 @@ static void *read_embedded(const Entry *e, u32 offset, u32 size, const char *umd
     return buf;
 }
 
-static int decode_embedded(const Entry *e, u32 offset, u32 size, const char *umd_name, Image *out)
+static int decode_embedded(const Entry *e, u32 offset, u32 size, const char *umd_name, int in_pboot, Image *out)
 {
-    void *png = read_embedded(e, offset, size, umd_name);
+    void *png = read_embedded(e, offset, size, umd_name, in_pboot);
     if (!png)
         return 0;
     int ok = img_decode_png(png, size, out);
@@ -200,7 +206,7 @@ static Texture *load_icon(const Entry *e, int round)
     }
     if (!t) {
         Image img;
-        if (!decode_embedded(e, e->icon_offset, e->icon_size, "ICON0.PNG", &img))
+        if (!decode_embedded(e, e->icon_offset, e->icon_size, "ICON0.PNG", e->pboot_flags & ENTRY_ICON_IN_PBOOT, &img))
             return NULL;
         if (fit_icon(&img)) {
             t = img_to_texture(&img, GU_PSM_8888);
@@ -242,9 +248,9 @@ Texture *art_load_bg(const Entry *e)
 
     Image img;
     int blur;
-    if (decode_embedded(e, e->pic_offset, e->pic_size, "PIC1.PNG", &img)) {
+    if (decode_embedded(e, e->pic_offset, e->pic_size, "PIC1.PNG", e->pboot_flags & ENTRY_PIC_IN_PBOOT, &img)) {
         blur = 0; /* PIC1 visas skarp, som en stor omslagsbild */
-    } else if (decode_embedded(e, e->icon_offset, e->icon_size, "ICON0.PNG", &img)) {
+    } else if (decode_embedded(e, e->icon_offset, e->icon_size, "ICON0.PNG", e->pboot_flags & ENTRY_ICON_IN_PBOOT, &img)) {
         blur = 10; /* ikonen förstoras – kraftig oskärpa ger en mjuk färgyta */
     } else {
         return NULL;

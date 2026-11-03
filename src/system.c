@@ -89,6 +89,17 @@ static void fake_device(void)
 }
 #endif
 
+/* ARK-5 puts the CPU clock (the overclock of SETTINGS.TXT) and the cache of the storage in force when the first module is loaded after the system
+ * has started, not before. psp5 used to load its first one (the music codecs) after the intro and the game scan, so the PSP changed its clock and
+ * its cache in the middle of reading files, which hung or lagged some PSP Gos on an overclock of 333 MHz or more (psp5 2.0.1, issue 19 of
+ * the original project, did the same as this). So it is done first of all, before a thread is started or a file is scanned: one module is loaded and
+ * unloaded again. The result does not matter (the codecs are loaded by music.c when they are needed). */
+static void apply_ark_settings(void)
+{
+    if (sceUtilityLoadModule(PSP_MODULE_AV_AVCODEC) >= 0) /* (an error such as "already loaded" means someone else holds it: not ours to unload) */
+        sceUtilityUnloadModule(PSP_MODULE_AV_AVCODEC);
+}
+
 void sys_init(const char *self_path)
 {
     char path[200];
@@ -107,6 +118,7 @@ void sys_init(const char *self_path)
         else
             sctrlArkGetConfig(&s_conf);
 #endif
+        apply_ark_settings();
         char settings[200], vboot[200];
         snprintf(settings, sizeof(settings), "%sSETTINGS.TXT", s_ark_dir);
         snprintf(vboot, sizeof(vboot), "%sVBOOT.PBP", s_ark_dir);
@@ -415,6 +427,11 @@ void sys_resume_launcher(void)
     sceIoRemove(paused_mark());
 }
 
+/* A short wait before the PSP restarts, switches off or goes back to the XMB: the storage finishes writing the file that was closed a moment ago
+ * (SETTINGS.TXT, PLUGINS.TXT), which a reset would otherwise cut off (psp5 2.0.1 waited like this too, for issue 19 of the original project). */
+#define SETTLE_US 50000
+static void settle(void) { sceKernelDelayThread(SETTLE_US); }
+
 void sys_exit_xmb(void)
 {
     if (!s_has_ark) {
@@ -438,12 +455,23 @@ void sys_exit_xmb(void)
         }
 #endif
     }
+    settle();
     sctrlKernelExitVSH(NULL);
 }
 
-void sys_restart(void) { scePowerRequestColdReset(0); }
+void sys_restart(void)
+{
+    settle();
+    scePowerRequestColdReset(0);
+}
+
 void sys_suspend(void) { scePowerRequestSuspend(); }
-void sys_shutdown(void) { scePowerRequestStandby(); }
+
+void sys_shutdown(void)
+{
+    settle();
+    scePowerRequestStandby();
+}
 
 static int exists(const char *path)
 {

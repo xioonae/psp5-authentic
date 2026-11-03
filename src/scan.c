@@ -4,6 +4,7 @@
 #include <strings.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include "scan.h"
 #include "sfo.h"
 #include "iso.h"
@@ -62,12 +63,12 @@ u32 scan_pack_time(const ScePspDateTime *t)
            (t->hour << 12) | (t->minute << 6) | t->second;
 }
 
-/* Finns filen oförändrad i cachen? Kopierar i så fall posten. */
-static int from_cache(ScanState *s, const char *path, u32 size, u32 time)
+/* Finns filen oförändrad i cachen? Kopierar i så fall posten. `pboot` = the stamp of the PBOOT.PBP beside it (0 = none, and for an image). */
+static int from_cache(ScanState *s, const char *path, u32 size, u32 time, u32 pboot)
 {
     for (int i = 0; i < s->cached.count; i++) {
         const Entry *c = &s->cached.items[i];
-        if (c->file_size == size && c->file_time == time && strcmp(c->path, path) == 0) {
+        if (c->file_size == size && c->file_time == time && c->pboot_stamp == pboot && strcmp(c->path, path) == 0) {
             Entry *e = add_entry(s->list);
             if (e)
                 *e = *c;
@@ -103,16 +104,35 @@ static void strip_marks(char *s)
     }
 }
 
+/* The TITLE of a PARAM.SFO as it is shown: without ™ and ®, without blanks around it. 0 when there is none, or nothing is left of it. */
+static int sfo_title(const u8 *sfo, u32 size, char *out, int out_size)
+{
+    if (!sfo_get_string(sfo, size, "TITLE", out, out_size))
+        return 0;
+    strip_marks(out);
+    char *start = out;
+    while (*start && isspace((u8)*start))
+        start++;
+    int len = strlen(start);
+    while (len > 0 && isspace((u8)start[len - 1]))
+        len--;
+    memmove(out, start, len);
+    out[len] = 0;
+    return len > 0;
+}
+
 void entry_read_sfo(Entry *e, const u8 *sfo, u32 size)
 {
-    sfo_get_string(sfo, size, "TITLE", e->title, sizeof(e->title));
-    strip_marks(e->title);
+    /* TempGBA's EBOOT.PBP, for one, has a TITLE with nothing in it: that must not wipe the name the entry has (its folder, or the name of the image) */
+    char title[sizeof(e->title)];
+    if (sfo_title(sfo, size, title, sizeof(title)))
+        snprintf(e->title, sizeof(e->title), "%s", title);
     sfo_get_string(sfo, size, "DISC_ID", e->game_id, sizeof(e->game_id));
 }
 
 static void add_iso(ScanState *s, const char *path, const char *name, u32 size, u32 time)
 {
-    if (from_cache(s, path, size, time))
+    if (from_cache(s, path, size, time, 0))
         return;
     report(s, name);
 
@@ -177,6 +197,74 @@ static void scan_iso_dir(ScanState *s, const char *dir, int depth)
     sceIoDclose(d);
 }
 
+/* The PBOOT.PBP that lies beside an EBOOT.PBP ("…/Game/EBOOT.PBP" -> "…/Game/PBOOT.PBP") */
+static void pboot_path_of(const char *eboot, char *out, int out_size)
+{
+    const char *slash = strrchr(eboot, '/');
+    snprintf(out, out_size, "%.*sPBOOT.PBP", slash ? (int)(slash - eboot) + 1 : 0, eboot);
+}
+
+void entry_pboot_path(const Entry *e, char *out, int out_size)
+{
+    pboot_path_of(e->path, out, out_size);
+}
+
+/* Its size and time in one number; never 0 (that is "there is no PBOOT.PBP") */
+static u32 pboot_stamp(const SceIoStat *st)
+{
+    u32 h = (u32)st->st_size * 2654435761u ^ scan_pack_time(&st->sce_st_mtime);
+    return h ? h : 1;
+}
+
+/* The PARAM.SFO of a PBP, read from the open file: NULL when the header has no sensible one. */
+static u8 *load_sfo(SceUID fd, const PbpHeader *h, u32 *size)
+{
+    *size = h->icon0_offset - h->param_offset;
+    if (*size == 0 || *size > MAX_SFO_SIZE)
+        return NULL;
+    u8 *sfo = malloc(*size);
+    if (!sfo)
+        return NULL;
+    sceIoLseek32(fd, h->param_offset, PSP_SEEK_SET);
+    if (sceIoRead(fd, sfo, *size) != (int)*size) {
+        free(sfo);
+        return NULL;
+    }
+    return sfo;
+}
+
+/* A PBOOT.PBP beside the EBOOT.PBP. TempGBA's single-game folders keep the name and the pictures of the game in it, and their EBOOT.PBP is the same
+ * in all of them (no title, no pictures); the XMB shows what PBOOT.PBP has, so psp5 does too: its title and its pictures win, and whatever it
+ * lacks stays as the EBOOT.PBP (or the folder name) gave it. The game is still started from the EBOOT.PBP. A PBOOT.PBP that is no PBP is ignored. */
+static void read_pboot(Entry *e, const char *pboot)
+{
+    SceUID fd = sceIoOpen(pboot, PSP_O_RDONLY, 0);
+    if (fd < 0)
+        return;
+    PbpHeader h;
+    if (sceIoRead(fd, &h, sizeof(h)) == sizeof(h) && h.magic == PBP_MAGIC) {
+        u32 sfo_size;
+        u8 *sfo = load_sfo(fd, &h, &sfo_size);
+        if (sfo) {
+            char title[sizeof(e->title)];
+            if (sfo_title(sfo, sfo_size, title, sizeof(title)))
+                snprintf(e->title, sizeof(e->title), "%s", title);
+            free(sfo);
+        }
+        if (h.icon1_offset > h.icon0_offset) {
+            e->icon_offset = h.icon0_offset;
+            e->icon_size = h.icon1_offset - h.icon0_offset;
+            e->pboot_flags |= ENTRY_ICON_IN_PBOOT;
+        }
+        if (h.snd0_offset > h.pic1_offset) {
+            e->pic_offset = h.pic1_offset;
+            e->pic_size = h.snd0_offset - h.pic1_offset;
+            e->pboot_flags |= ENTRY_PIC_IN_PBOOT;
+        }
+    }
+    sceIoClose(fd);
+}
+
 /* 0 = mappen har ingen EBOOT.PBP */
 static int add_eboot(ScanState *s, const char *path, const char *folder)
 {
@@ -184,7 +272,12 @@ static int add_eboot(ScanState *s, const char *path, const char *folder)
     if (sceIoGetstat(path, &st) < 0)
         return 0;
     u32 size = (u32)st.st_size, time = scan_pack_time(&st.sce_st_mtime);
-    if (from_cache(s, path, size, time))
+
+    char pboot[256];
+    SceIoStat pst;
+    pboot_path_of(path, pboot, sizeof(pboot));
+    u32 stamp = sceIoGetstat(pboot, &pst) >= 0 ? pboot_stamp(&pst) : 0;
+    if (from_cache(s, path, size, time, stamp))
         return 1;
     report(s, folder);
 
@@ -209,22 +302,17 @@ static int add_eboot(ScanState *s, const char *path, const char *folder)
     e->file_size = size;
     e->file_time = time;
 
-    u32 sfo_size = h.icon0_offset - h.param_offset;
-    if (sfo_size > 0 && sfo_size <= MAX_SFO_SIZE) {
-        u8 *sfo = malloc(sfo_size);
-        if (sfo) {
-            sceIoLseek32(fd, h.param_offset, PSP_SEEK_SET);
-            if (sceIoRead(fd, sfo, sfo_size) == (int)sfo_size) {
-                char cat[8] = "";
-                entry_read_sfo(e, sfo, sfo_size);
-                sfo_get_string(sfo, sfo_size, "CATEGORY", cat, sizeof(cat));
-                if (strcmp(cat, "EG") == 0)
-                    e->type = ENTRY_PSN;
-                else if (strcmp(cat, "ME") == 0)
-                    e->type = ENTRY_POPS;
-            }
-            free(sfo);
-        }
+    u32 sfo_size;
+    u8 *sfo = load_sfo(fd, &h, &sfo_size);
+    if (sfo) {
+        char cat[8] = "";
+        entry_read_sfo(e, sfo, sfo_size);
+        sfo_get_string(sfo, sfo_size, "CATEGORY", cat, sizeof(cat));
+        if (strcmp(cat, "EG") == 0)
+            e->type = ENTRY_PSN;
+        else if (strcmp(cat, "ME") == 0)
+            e->type = ENTRY_POPS;
+        free(sfo);
     }
 
     e->icon_size = h.icon1_offset - h.icon0_offset;
@@ -232,6 +320,11 @@ static int add_eboot(ScanState *s, const char *path, const char *folder)
     e->pic_size = h.snd0_offset - h.pic1_offset;
     e->pic_offset = e->pic_size ? h.pic1_offset : 0;
     sceIoClose(fd);
+
+    if (stamp) {
+        e->pboot_stamp = stamp;
+        read_pboot(e, pboot);
+    }
     return 1;
 }
 
