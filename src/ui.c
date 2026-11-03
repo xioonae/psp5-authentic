@@ -885,8 +885,13 @@ static void update_background(Ui *ui, float dt)
     /* What lies under the pictures: the Library's own background on the Library card of Games and in the Library (so that opening the Library changes
      * nothing behind the cards, and closing it neither), the theme's surface everywhere else. Only one of the two pictures fits in video memory at a
      * time, so they cannot be mixed. When a picture covers the screen the swap cannot be seen and is made at once (before the picture starts to fade
-     * out in this very update); else the screen dips to black for a moment while it is made. */
+     * out in this very update); else the screen dips to black for a moment while it is made.
+     * Leaving the Library card for a game: the Library's background stays under the cards until the game's picture is there, and the picture fades in over it
+     * (the picture is the game's own, else its icon blurred: art_load_bg). The theme's surface comes only for a game that has nothing to show - the loader answered
+     * with no picture - or when Show Game art is off, and then through the dip. */
     int want = ui->tab == TAB_LIBRARY || (ui->tab == TAB_GAMES && sel_card(ui) == HOME_LIBRARY);
+    if (!want && ui->bg_lib && ui->tab == TAB_GAMES && sel >= 0 && ui->bg_index != sel) /* (the picture of this game has not been answered yet) */
+        want = 1;
     if (ui->tab == TAB_LIBRARY) {
         ui->bg_lib = 1; /* (the Library draws its own, whatever lay under before) */
         ui->bg_dip = 0;
@@ -894,6 +899,8 @@ static void update_background(Ui *ui, float dt)
         ui->bg_dip = clampf(ui->bg_dip - dt * BG_DIP, 0, 1);
     } else if (bg_cover(ui) >= 1) {
         ui->bg_lib = want;
+    } else if (ui->bg_cur) { /* the game's picture is fading in over the Library's background: the swap waits until it covers the screen, and is made then, unseen */
+        ui->bg_dip = clampf(ui->bg_dip - dt * BG_DIP, 0, 1);
     } else {
         ui->bg_dip = clampf(ui->bg_dip + dt * BG_DIP, 0, 1);
         if (ui->bg_dip >= 1)

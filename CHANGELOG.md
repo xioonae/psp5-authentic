@@ -54,8 +54,8 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   after the first frame the Library draws it as one image.
 - **The Library card shows the Library's background.** With the Library card chosen in the Games tab, the screen behind the cards is the Library's own background, so opening the Library changes nothing behind the cards
   (it does not come up out of the dark when it is opened from its card) and closing it brings you back to the same background. Moving from a game with a picture to the Library card fades the picture out over the Library's
-  background. In every other move between the Library card and a game (and with *Show Game art* off) the screen dips to black for a quarter of a second while the theme's surface and the Library's background change places
-  (the two cannot be mixed in video memory); the game's picture then fades in as before.
+  background. Moving from the Library card to a game keeps the Library's background until the game's picture has loaded, and the picture fades in over it. A game with no picture of its own shows its icon, blurred, as before;
+  a game that has neither gets the theme's background. Only then (and with *Show Game art* off) the screen dips to black for a quarter of a second while the two backgrounds change places (they cannot be mixed in video memory).
 - **Six ways to sort.** The Sort button has a new popup with a check mark at the one in use: *Name (A-Z)*, *Name (Z-A)*, *Date added (Newest-Oldest)*, *Date added (Oldest-Newest)*,
   *Size (Large-Small)* and *Size (Small-Large)*. A folder goes by the newest (or oldest) game in it, or by the size of all its games together. The disc is always first. The size of a game that
   lives in a folder is counted in the background, so after the start the order by size can change for a moment. *Recently played* is not a choice any more (the Games tab already shows what you
