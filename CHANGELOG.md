@@ -76,6 +76,8 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ### Information
 
+- **Console Information shows the whole version of ARK.** The row that said *CFW* and *ARK-5* is now called *CFW (ARK-4)* or *CFW (ARK-5)* (the number is ARK's major version), and on the right it shows the whole version that ARK reports, for example *4.20.69*
+  (major, minor and micro version, as the PSP's SystemControl gives them). If ARK gives no sensible number, the row shows a dash. Without ARK there is no row, as before. There is nothing new to translate.
 - **New row: Last played** (date and time), right under *Modified*. It is there for every game and app psp5 authentic knows a time for, **also for the UMD disc in the drive** (by its disc ID,
   from psp5 authentic or from the XMB, like the time played, which the disc already had). Games you played before this version, games you never played and a disc without a disc ID have no such row.
 

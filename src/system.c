@@ -42,6 +42,7 @@ ARKConfig *sctrlArkGetConfig_ark4(ARKConfig *conf);
 
 static ARKConfig s_conf;
 static int s_ark;        /* 4, 5 eller 0 = ingen ARK */
+static char s_ark_full[24]; /* its whole version as text ("4.20.69"), "" when it did not give one */
 static int s_model = -1; /* kuKernelGetModel(), -1 = okänd */
 static int s_has_ark;
 static int s_is_launcher;
@@ -84,10 +85,23 @@ static void fake_device(void)
     const char *p;
     if ((p = strstr(buf, "model=")))
         s_model = atoi(p + 6);
-    if ((p = strstr(buf, "ark=")))
+    if ((p = strstr(buf, "ark="))) {
         s_ark = atoi(p + 4);
+        snprintf(s_ark_full, sizeof(s_ark_full), "%d.%d.0", s_ark, s_ark == 4 ? 20 : 0); /* (made up: the demo has no ARK to ask) */
+    }
 }
 #endif
+
+/* "4.20.69" from the three numbers that ARK's SystemControl gives: sctrlSEGetVersion() is the major version, sctrlHENGetVersion() the minor and
+ * sctrlHENGetMinorVersion() the micro version (read in the source of ARK-4 and ARK-5). "" when one of them is not a sensible number: without ARK the
+ * functions are not there and give 0 or an error value. */
+static void ark_version_text(int major, int minor, int micro, char *out, int size)
+{
+    if (major < 1 || major > 99 || minor < 0 || minor > 999 || micro < 0 || micro > 999)
+        out[0] = 0;
+    else
+        snprintf(out, size, "%d.%d.%d", major, minor, micro);
+}
 
 /* ARK-5 puts the CPU clock (the overclock of SETTINGS.TXT) and the cache of the storage in force when the first module is loaded after the system
  * has started, not before. psp5 used to load its first one (the music codecs) after the intro and the game scan, so the PSP changed its clock and
@@ -108,6 +122,7 @@ void sys_init(const char *self_path)
     if (launch_supported()) {
         int major = sctrlSEGetVersion();
         s_ark = major == 4 ? 4 : 5; /* ARK-4 ger 4, ARK-5 ger 5 */
+        ark_version_text(major, sctrlHENGetVersion(), sctrlHENGetMinorVersion(), s_ark_full, sizeof(s_ark_full));
         s_model = kuKernelGetModel();
         s_ms_is_ef = sctrlKernelMsIsEf() == 1;
         memset(&s_conf, 0, sizeof(s_conf));
@@ -385,6 +400,7 @@ void sys_about(SysAbout *a)
 
 int sys_has_ark(void) { return s_has_ark; }
 int sys_ark_version(void) { return s_ark; }
+const char *sys_ark_full_version(void) { return s_ark_full; }
 int sys_model(void) { return s_model; }
 int sys_ms_is_ef(void) { return s_ms_is_ef; }
 int sys_is_psp1000(void) { return s_model == 0; }

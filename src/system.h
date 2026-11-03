@@ -51,6 +51,8 @@ int sys_avls(void);
 int sys_set_avls(int on);
 /* ARK:s huvudversion: 4 (ARK-4), 5 (ARK-5) eller 0 (ingen ARK, t.ex. PPSSPP) */
 int sys_ark_version(void);
+/* The whole version of ARK as text, e.g. "4.20.69" (major.minor.micro as ARK's SystemControl gives them); "" when there is no ARK or it gave no sensible numbers */
+const char *sys_ark_full_version(void);
 /* PSP-modell (kuKernelGetModel): 0 = PSP-1000, 1 = PSP-2000, 2/3/6/8 = PSP-3000,
  * 4 = PSP Go, 10 = PSP Street, -1 = okänd */
 int sys_model(void);

@@ -385,8 +385,9 @@ static void fill_about(Category *c)
     snprintf(v, sizeof(v), "%u.%u%u", a.devkit >> 24, (a.devkit >> 16) & 0xFF, (a.devkit >> 8) & 0xFF); /* 0x06060110 is 6.61 */
     info(c, L(S_ABOUT_SYSTEM), v);
     if (sys_ark_version()) {
-        snprintf(v, sizeof(v), "ARK-%d", sys_ark_version());
-        info(c, "CFW", v);
+        static char cfw[24]; /* (a row keeps the pointer to its label, so it must outlive this function) */
+        snprintf(cfw, sizeof(cfw), "CFW (ARK-%d)", sys_ark_version());
+        info(c, cfw, sys_ark_full_version()[0] ? sys_ark_full_version() : "-");
     }
     info(c, APP_NAME, PSP5_VERSION);
     info(c, L(S_ABOUT_ORIGINAL), "08Weber"); /* psp5 authentic is a fork of psp5, which Mille Weber (08Weber) made */
