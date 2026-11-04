@@ -44,6 +44,9 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
     The Wi-Fi connection row of Settings starts it the same way. This is for the case that a computer says "No route to host" although the PSP shows its address (it was reported on a real PSP). The change has not been tried on a PSP.
   - **A hint for WLAN Power Save.** When the PSP's own *WLAN Power Save* (XMB: *Settings → Power Save Settings*) is on, the PSP's Wi-Fi sleeps and may not answer the computer at all ("No route to host"). The FTP screen
     then says so under "Waiting for a computer", until a computer is connected. The new text is in all 11 languages. INSTALL.md has a list of what to check.
+- **A guide for when the computer cannot find the PSP** ([docs/FTP-TROUBLESHOOTING.md](docs/FTP-TROUBLESHOOTING.md), linked from INSTALL.md and the README). The PSP joins the Wi-Fi and shows its address, but the computer says *No route to host* or times out. The guide starts with the quick checks (*WLAN Power Save*, the same
+  network, client isolation) and then shows the workaround for some routers: a *static ARP entry* on the computer, with the commands to add, check and remove it on Linux, Windows and macOS, how to find the PSP's address and MAC address (the MAC address is in *Settings → System → Console Information*), and what the FTP screen
+  means when a connection times out (five minutes of silence from one program) or the server stops (the PSP lost its Wi-Fi: *The connection was lost*).
 
 ### Library
 

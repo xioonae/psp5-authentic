@@ -154,6 +154,8 @@ There is no password, so everyone on the same network can reach your Memory Stic
 - Switch off **WLAN Power Save** in the PSP's own settings (*Settings → Power Save Settings → WLAN Power Save*, in the XMB). With it on, the PSP's Wi-Fi sleeps between the router's messages and may not answer
   the computer's question "who has this address?". psp5 authentic shows a hint under "Waiting for a computer" when it is on.
 - Try `ping` with the PSP's address from the computer: if there is no answer, the network is the problem, not the FTP program.
+- If the computer still cannot find the PSP although all of that is right, tell the computer which MAC address belongs to the PSP's address (a *static ARP entry*). It is a workaround for networks where the computer's "who has this address?" question does not get through.
+  Step by step for Linux, Windows and macOS, with the commands to add and to remove it: [docs/FTP-TROUBLESHOOTING.md](docs/FTP-TROUBLESHOOTING.md). Or copy the files with *Settings → Storage → USB Mode* instead.
 
 ## Covers
 
