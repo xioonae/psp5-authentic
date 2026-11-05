@@ -1540,8 +1540,8 @@ static int battery_bars(int percent)
 static void draw_battery(float x, float y, int percent, int charging, float time, float a)
 {
     float body = x + BAT_TERM_W;
-    gfx_rect(x, y + 4, BAT_TERM_W, 4, with_alpha(LIGHT, 0.85f * a));
-    gfx_round_rect(body, y, BAT_BODY_W, BAT_H, 2.5f, with_alpha(LIGHT, 0.85f * a));
+    gfx_rect(x, y + 4, BAT_TERM_W, 4, with_alpha(LIGHT, a)); /* (the outline is opaque: as light as the clock and the tag) */
+    gfx_round_rect(body, y, BAT_BODY_W, BAT_H, 2.5f, with_alpha(LIGHT, a));
     gfx_round_rect(body + 1, y + 1, BAT_BODY_W - 2, BAT_H - 2, 1.5f, with_alpha(DARK, a));
     if (percent < 0)
         return;
