@@ -155,7 +155,7 @@ When you paste somewhere a file or a folder of that name is already, the File Ma
 - **Rename** keeps both: the keyboard opens with `name (2)` typed in.
 - **Cancel** (or ○) stops the whole copy or move.
 
-**Apply to All** (△) uses your answer for the rest of the items without asking again. A copy into the folder it is already in can only be renamed. Copies keep the dates of the originals.
+**Apply to All** (△) uses your answer for the rest of the items without asking again (*Rename* is greyed out while it is on, because it needs a name each time). A copy into the folder it is already in can only be renamed. Copies keep the dates of the originals.
 
 ## FTP Server
 
