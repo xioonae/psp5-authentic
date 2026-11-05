@@ -30,6 +30,10 @@ const char *netlink_ip(void);
 /* The same as a number: a << 24 | b << 16 | c << 8 | d (0 = none). */
 unsigned netlink_ip_value(void);
 
+/* The last valid address observed through FTP or the Wi-Fi dialog, retained after disconnect and in <data_dir>/lastip.txt across starts.
+ * Empty until one is known. Reading it never starts or changes a network connection. */
+const char *netlink_last_ip(void);
+
 /* Disconnects and stops the network libraries. Also when nothing was started. */
 void netlink_stop(void);
 

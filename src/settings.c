@@ -363,15 +363,6 @@ static void fmt_bytes(char *out, int size, unsigned long long b)
         snprintf(out, size, "%u KB", (unsigned)(b / 1024));
 }
 
-static void about_space(Category *c, const char *label, unsigned long long free_b, unsigned long long total_b)
-{
-    char f[24], t[24], v[48];
-    fmt_bytes(f, sizeof(f), free_b);
-    fmt_bytes(t, sizeof(t), total_b);
-    snprintf(v, sizeof(v), L(S_ABOUT_FREE_OF), f, t);
-    info(c, label, v);
-}
-
 /* The rows of About, asked of the PSP now (the battery changes): called when the menu is built and every time About comes into view. */
 static void fill_about(Category *c)
 {
@@ -396,10 +387,9 @@ static void fill_about(Category *c)
         snprintf(v, sizeof(v), "%02X:%02X:%02X:%02X:%02X:%02X", a.mac[0], a.mac[1], a.mac[2], a.mac[3], a.mac[4], a.mac[5]);
         info(c, L(S_ABOUT_MAC), v);
     }
-    if (a.has_ms)
-        about_space(c, L(S_F_MS), a.ms_free, a.ms_total);
-    if (a.has_ef)
-        about_space(c, L(S_F_INTERNAL), a.ef_free, a.ef_total);
+    info(c, L(S_ABOUT_IP), a.last_ip[0] ? a.last_ip : L(S_ABOUT_NO_IP));
+    fmt_bytes(v, sizeof(v), a.ram_free);
+    info(c, L(S_ABOUT_RAM_FREE), v);
     if (a.battery) {
         if (a.percent >= 0) {
             snprintf(v, sizeof(v), a.charging ? "%d %%, %s" : "%d %%", a.percent, L(S_ABOUT_CHARGING));

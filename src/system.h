@@ -32,8 +32,8 @@ typedef struct {
     unsigned char mac[6];     /* the Wi-Fi address */
     int battery;              /* a battery is in the PSP */
     int percent, charging, mv, celsius, mah_left, mah_full; /* -1 = the PSP does not say; celsius is whole degrees (the PSP gives hundredths: system.c) */
-    int has_ms, has_ef;       /* the Memory Stick (ms0:) / the internal storage of a PSP Go (ef0:) can be read */
-    unsigned long long ms_free, ms_total, ef_free, ef_total;
+    unsigned ram_free;        /* unallocated user RAM, outside the C allocator's heap */
+    char last_ip[16];         /* last IPv4 address observed by psp5; empty until one is recorded */
 } SysAbout;
 void sys_about(SysAbout *out);
 

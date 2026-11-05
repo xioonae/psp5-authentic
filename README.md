@@ -33,7 +33,7 @@ wherever it can, but it doesn't copy the console in everything.
     <td width="50%"><img src="docs/screenshots/settings-system.png" alt="Settings, System"><br><sub><b>Settings → System</b> – console information, appearance, language, ARK's settings, performance and plugins</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/settings-console-information.png" alt="Settings, Console Information"><br><sub><b>System → Console Information</b> – model, system software, the version of ARK, MAC address, storage, battery, and where psp5 authentic comes from</sub></td>
+    <td width="50%"><img src="docs/screenshots/settings-console-information.png" alt="Settings, Console Information"><br><sub><b>System → Console Information</b> – model, system software, the version of ARK, MAC address, last IP address, free RAM, battery, and where psp5 authentic comes from</sub></td>
     <td width="50%"><img src="docs/screenshots/settings-appearance.png" alt="Settings, Appearance"><br><sub><b>System → Appearance</b> – highlight a theme to see it, Confirm to use it (here Cosmic Red)</sub></td>
   </tr>
   <tr>
@@ -79,13 +79,14 @@ wherever it can, but it doesn't copy the console in everything.
 - **Settings** (the cog wheel). One list at a time, like the console's: Confirm opens a page, Back goes back one. The first list has six pages:
   - *psp5 authentic* – boot into psp5 authentic, sounds, startup animation, battery percentage, clear the image cache.
   - *Network* – the PSP's own Wi-Fi screen and the FTP Server.
-  - *System* – *Console Information* (nickname, model, system software, the whole version of ARK, MAC address, storage, battery, and where psp5 authentic comes from), *Appearance* (*Show Game art* and the themes),
+  - *System* – *Console Information* (nickname, model, system software, the whole version of ARK, MAC address, last IP address, free RAM, battery, and where psp5 authentic comes from), *Appearance* (*Show Game art* and the themes),
     *Language*, *ARK-5 Settings* or *ARK-4 Settings* (ARK's own options: USB charge, WPA2, hide pictures, regions ...), *Performance* (CPU speed, extra memory, caches) and *Plugins* (switch each plugin on or off, and *Manage Plugins* to install a new plugin and to install or uninstall one in more or fewer places).
   - *Storage* – Console Storage (see above), the File Manager and USB Mode.
   - *Screen and Sound* – the PSP's own brightness, backlight timer (psp5 authentic remembers it), volume, equalizer and AVLS.
   - *Controls* – the PSP's own confirm button, and which buttons confirm, go back, open the options and the power menu.
 
   A setting with several values opens a popup when you press Confirm on it.
+  The *last IP address* in Console Information is the one that the Wi-Fi window or the FTP Server got last, kept after a restart; it may have changed since.
 - **Themes.** The colours of the console covers, each with the console's scene behind your games (a beam of light, golden
   dust, haze), plus the classic looks of PS1 to PS4. Highlight a theme to preview it, Confirm to use it. You can turn *Show Game art*
   off (it is for the Games tab: the Library has its own background), so the theme is always visible.

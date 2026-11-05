@@ -21,6 +21,7 @@
 #include "system.h"
 #include "launch.h"
 #include "arkcfg.h"
+#include "netlink.h"
 
 #define USBSTOR_EF_DRIVERNAME "USBStorEFlash_Driver"
 /* finns när launcherläget är pausat för att psp5 gick till XMB */
@@ -353,19 +354,6 @@ int sys_set_avls(int on)
     return impose_get(IMPOSE_AVLS);
 }
 
-/* free and total space of a drive (ms0:, ef0:): the same call the file manager makes */
-static int device_space(const char *dev, unsigned long long *free_b, unsigned long long *total_b)
-{
-    struct { u32 max_clusters, free_clusters, max_sectors, sector_size, sectors_per_cluster; } info;
-    void *p = &info;
-    if (sceIoDevctl(dev, 0x02425818, &p, sizeof(p), NULL, 0) < 0)
-        return 0;
-    unsigned long long cluster = (unsigned long long)info.sector_size * info.sectors_per_cluster;
-    *free_b = (unsigned long long)info.free_clusters * cluster;
-    *total_b = (unsigned long long)info.max_clusters * cluster;
-    return 1;
-}
-
 /* scePowerGetBatteryTemp: the SDK says degrees Celsius, but a PSP gives the temperature in hundredths of a degree (36.87 °C comes as 3687 - psp5 showed
  * "3687 °C" first). A battery is never 100 °C, so a number from 100 up is hundredths and is rounded to whole degrees; below that it is taken as it
  * is (should a PSP give whole degrees); a negative number is the PSP not saying (-1). */
@@ -394,8 +382,8 @@ void sys_about(SysAbout *a)
         a->mah_left = scePowerGetBatteryRemainCapacity();
         a->mah_full = scePowerGetBatteryFullCapacity();
     }
-    a->has_ms = device_space("ms0:", &a->ms_free, &a->ms_total);
-    a->has_ef = device_space("ef0:", &a->ef_free, &a->ef_total); /* the internal storage: there when the PSP answers for it, whatever the model */
+    a->ram_free = sceKernelTotalFreeMemSize();
+    snprintf(a->last_ip, sizeof(a->last_ip), "%s", netlink_last_ip());
 }
 
 int sys_has_ark(void) { return s_has_ark; }

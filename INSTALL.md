@@ -149,6 +149,8 @@ clears the marks, and at the top it cancels a waiting copy or move before it lea
 
 There is no password, so everyone on the same network can reach your Memory Stick while the screen is open. Use it at home, and close it when you are done. The PSP stays awake while it runs.
 
+*Settings → System → Console Information → Last IP address* shows the last address that the PSP's Wi-Fi window or the FTP Server got (kept after a restart), in case you need it again. It may have changed: use the address on the open FTP screen.
+
 **If your computer says "No route to host" (or cannot find the address at all)** although the PSP shows an address:
 - The computer and the PSP must be on the same network (the same router; not a guest network, and no "client isolation" or "AP isolation" in the router).
 - Switch off **WLAN Power Save** in the PSP's own settings (*Settings → Power Save Settings → WLAN Power Save*, in the XMB). With it on, the PSP's Wi-Fi sleeps between the router's messages and may not answer

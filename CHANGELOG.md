@@ -8,7 +8,7 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 ### Memory
 
 - **The launcher leaves memory free again.** psp5 authentic is meant to keep 7 MB of the PSP's memory free for what is not its own: ARK's Recovery menu (it needs 4 MB), the MP3 decoder, Wi-Fi and the threads. But the toolchain it is built with read the
-  setting for that as "take everything except 512 KB", so on a PSP-1000 only 0.6 MB of the 24 MB was free while the launcher ran (measured on a real PSP-1000). It keeps 8 MB free now, and its own memory (the heap) is about 13 MB instead of about 21, which is more than it needs.
+  setting for that as "take everything except 512 KB", so on a PSP-1000 only 0.6 MB of the 24 MB was free while the launcher ran (measured on a real PSP-1000). It keeps 8 MB free now, and its own memory (the heap) is about 13 MB instead of about 21, which is more than it needs. *Settings → System → Console Information → Free RAM* shows how much is free.
 - **A progressive JPEG album cover that needs a lot of memory is not decoded.** Such a cover has to be held whole while it is decoded: up to 15 MB for one of 1600 × 1600 pixels. A cover that would need more than 5 MB (about 1300 × 1300 pixels at the most, 930 × 930 when the colours
   are kept at full size) is not shown any more (the limit was only the number of pixels, 1600 × 1600). Ordinary covers, and every JPEG that is not progressive, are not affected.
 
@@ -79,6 +79,9 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ### Information
 
+- **Console Information: new rows *Last IP address* and *Free RAM*, and no storage rows.** *Last IP address* is the last address that the PSP's own Wi-Fi window or the FTP Server got. It is kept after the Wi-Fi is closed and after a restart (`lastip.txt` in psp5 authentic's folder), and until there is one it says *Not recorded yet*.
+  It is an old address, not a sign that the Wi-Fi is on: it may have changed, and an FTP program needs the address on the open FTP screen. A connection that is made outside psp5 authentic is not seen. *Free RAM* is the memory that is free right now, outside psp5 authentic's own heap; it is read when the page is opened.
+  The rows for the Memory Stick and for the PSP Go's internal storage are gone: the space of both is in *Settings → Storage → Console Storage*. The new texts are in all 11 languages.
 - **Console Information shows the whole version of ARK.** The row that said *CFW* and *ARK-5* is now called *CFW (ARK-4)* or *CFW (ARK-5)* (the number is ARK's major version), and on the right it shows the whole version that ARK reports, for example *4.20.69*
   (major, minor and micro version, as the PSP's SystemControl gives them). If ARK gives no sensible number, the row shows a dash. Without ARK there is no row, as before. There is nothing new to translate.
 - **New row: Last played** (date and time), right under *Modified*. It is there for every game and app psp5 authentic knows a time for, **also for the UMD disc in the drive** (by its disc ID,
@@ -171,7 +174,7 @@ below are inspired by what the original project found and did about them. The co
 
 ### Docs
 
-- The picture of *Console Information* in the README shows the new *CFW (ARK-5)* row with the version of ARK (in the picture the version is made up: the demo PSP has no ARK).
+- The picture of *Console Information* in the README is scrolled down to the new rows: *CFW (ARK-5)* with the version of ARK, *Last IP address* and *Free RAM*. The version of ARK, the MAC address and the RAM in it are the demo PSP's (it has no ARK), and the demo has not been on Wi-Fi, so it says *Not recorded yet*.
 - The pictures of *Games*, *Library*, *Library with folders* and *Games and Apps* in the README show the new look (rectangular cards, the title as large as in the Library, *Games and Apps* on *Least used*).
 
 ## 1.2.0 – Controls, new Settings pages, folders in the Library and time played

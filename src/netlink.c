@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "netlink.h"
+#include "system.h"
 
 #define MODULE_ALREADY_LOADED 0x80111102 /* the answer of a load that was done before (wifi.c has the same) */
 #define JOIN_MS 60000                    /* a connection that is not made in a minute has failed */
@@ -27,6 +28,8 @@ static unsigned s_since;
 static int s_fresh;                                                              /* the clock has not been read since netlink_attach() */
 static int s_up;
 static char s_ip[16];
+static char s_last_ip[16];
+static int s_last_loaded;
 
 /* arkMenu registers a handler for the events of the access point control too (it does nothing with them): the connection is watched by asking its state */
 static void apctl_event(int prev_state, int new_state, int event, int error, void *arg)
@@ -78,6 +81,38 @@ static unsigned parse_ip(const char *s)
     return (a << 24) | (b << 16) | (c << 8) | d;
 }
 
+const char *netlink_last_ip(void)
+{
+    if (!s_last_loaded) {
+        char path[64], buf[17] = "";
+        s_last_loaded = 1;
+        snprintf(path, sizeof(path), "%s/lastip.txt", g_data_dir);
+        FILE *f = fopen(path, "rb");
+        if (f) {
+            size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+            int ok = !ferror(f) && n < sizeof(buf) - 1 && strlen(buf) == n;
+            fclose(f);
+            if (ok && parse_ip(buf))
+                snprintf(s_last_ip, sizeof(s_last_ip), "%s", buf);
+        }
+    }
+    return s_last_ip;
+}
+
+static void remember_ip(const char *ip)
+{
+    if (!strcmp(netlink_last_ip(), ip))
+        return;
+    snprintf(s_last_ip, sizeof(s_last_ip), "%s", ip);
+    char path[64];
+    snprintf(path, sizeof(path), "%s/lastip.txt", g_data_dir);
+    FILE *f = fopen(path, "wb");
+    if (f) {
+        fwrite(s_last_ip, 1, strlen(s_last_ip), f);
+        fclose(f);
+    }
+}
+
 int netlink_state(unsigned now_ms)
 {
     int st = 0;
@@ -90,8 +125,9 @@ int netlink_state(unsigned now_ms)
     if (st == PSP_NET_APCTL_STATE_GOT_IP) {
         SceNetApctlInfo info;
         memset(&info, 0, sizeof info);
-        if (sceNetApctlGetInfo(PSP_NET_APCTL_INFO_IP, &info) >= 0 && parse_ip(info.ip)) {
+        if (sceNetApctlGetInfo(PSP_NET_APCTL_INFO_IP, &info) >= 0 && memchr(info.ip, 0, sizeof(info.ip)) && parse_ip(info.ip)) {
             snprintf(s_ip, sizeof s_ip, "%s", info.ip);
+            remember_ip(s_ip);
             s_up = 1;
             return LINK_UP;
         }
@@ -115,8 +151,28 @@ unsigned netlink_ip_value(void)
     return s_ip[0] ? parse_ip(s_ip) : 0;
 }
 
+static int current_ip(char out[16])
+{
+    int st = 0;
+    if (s_apctl < 0 || !netlink_switch_on() || sceNetApctlGetState(&st) < 0 || st != PSP_NET_APCTL_STATE_GOT_IP)
+        return 0;
+    SceNetApctlInfo info;
+    memset(&info, 0, sizeof info);
+    if (sceNetApctlGetInfo(PSP_NET_APCTL_INFO_IP, &info) < 0)
+        return 0;
+    if (!memchr(info.ip, 0, sizeof(info.ip)))
+        return 0;
+    if (!parse_ip(info.ip))
+        return 0;
+    snprintf(out, 16, "%s", info.ip);
+    return 1;
+}
+
 void netlink_stop(void)
 {
+    char ip[16];
+    if (current_ip(ip)) /* the Wi-Fi dialog can connect without netlink_attach()/netlink_state() */
+        remember_ip(ip);
     if (s_connecting)
         sceNetApctlDisconnect();
     s_connecting = 0;
