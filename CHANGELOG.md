@@ -173,6 +173,23 @@ below are inspired by what the original project found and did about them. The co
 - **Games and Apps starts on *Least used***, the first choice of its Sort popup (it started on the second). **Choosing a sort starts the list at the top**, in *Games and Apps* and in *Manage Saved Data*
   (the list did not scroll back before).
 
+### File Manager
+
+- **A question when a name is taken.** When you paste (copy or move) a file or a folder where something of that name is already, psp5 authentic asks instead of making `name (2)` by itself: **Replace**, **Skip**, **Merge** (a folder onto a folder only), **Rename** or **Cancel**. Skip is chosen first, so a press of ✕ loses nothing; Replace is red.
+  - *Replace* is safe: the old one is only moved aside, the new one is made, and then the old one is removed. If the copy fails, the card is full, or you press ○, the old one comes back as it was.
+  - *Merge* puts the files into the folder that is there; a name that is taken inside it is asked in the same way. With a move, the original folder is removed when it is empty (what you skipped stays in it).
+  - *Rename* opens the keyboard with `name (2)` already typed in. A name that is taken or cannot be used keeps the question open.
+  - **Apply to All** (△ in the question, shown when more names may be taken): the answer is used for the rest without asking again. One answer is kept for a folder onto a folder and one for everything else, so *Merge* for all does not decide what happens to the files inside. *Rename* for all does not open the keyboard: each gets the next free name.
+  - A copy into the folder the item is in has no old one to replace: it only offers *Rename* and *Cancel*.
+  - ○ cancels the whole copy or move. What was done stays done; a half-made copy is removed (but a merge keeps the files that arrived whole, and never touches what was there).
+- **Rename and New Folder look first.** A name that is taken says *That name is already taken.* instead of being left to the PSP (which, on some systems, replaces the file without a word). A change of capitals only (`a.txt` to `A.txt`) works. A name that ends in a dot or a space, has a control character or is longer than 255 bytes is refused as a bad name.
+- **A copy keeps the dates of the original** (a file made by a copy used to get the time of now, so *Modified* in Information changed with every copy or move to the other storage). Folders keep theirs too.
+- **A move on the same card is checked.** The PSP's rename call may take only the name of the new place and rename the thing where it is (the PSP emulator does; real PSPs were not tested). If that happens the file is put back and moved by copying, so it never ends up renamed in the wrong folder.
+- **A move to the other storage** that cannot remove one of the originals says *Copied, but the original could not be removed.* and goes on with the rest. A folder cannot be put into itself: *A folder can't be put into itself.*
+- **Names**: a copy of `a.tar.gz` is `a (2).tar.gz` (it was `a.tar (2).gz`); a name that is near the longest a FAT name can be is cut, not in the middle of a character, so that ` (2)` fits.
+- **A card that is nearly full**: the size of what has a name that is taken is not counted at the start any more (it may be skipped, merged or replaced); a big file is checked when its turn comes, and a write that fails on a full card says *Not enough space* instead of *Failed*.
+- 9 new texts in all 11 languages.
+
 ### Date and time
 
 - **New: *Settings → System → Date and Time*** (under *Language*). It has four rows:
@@ -201,6 +218,7 @@ below are inspired by what the original project found and did about them. The co
 
 ### Docs
 
+- New picture in the README: the File Manager's question about a name that is taken (`file-manager-conflict.png`; the folders in it are the demo's).
 - New picture in the README: *System → Date and Time* (`settings-date-time.png`). The pictures of *System*, *Appearance*, *Console Information*, *Console Storage*, *Manage Plugins* and *Install New Plugin* are made again for the new titles (see *Settings*) and, for *System*, the new row; the time in *Date and Time* is a test value.
 - The picture of the themes in the README (`theme.png`) is made again: PS3 is black and gold now.
 - The picture of *Install New Plugin* in the README shows the page as it is now: *File*, *Location* (where the file is), *PLUGINS.TXT* (the one that is edited) and the three switches. The folder and the file name in it are the demo's.
