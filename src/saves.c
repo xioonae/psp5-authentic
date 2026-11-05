@@ -40,6 +40,7 @@
 #include "sound.h"
 #include "system.h"
 #include "theme.h"
+#include "datetime.h"
 
 #define SAVE_ROOT  "PSP/SAVEDATA"
 #define PATH_LEN   256
@@ -811,12 +812,7 @@ static void watch_new_entries(void)
 
 static void fmt_time(char *out, int size, u32 t)
 {
-    if (!t) {
-        out[0] = 0;
-        return;
-    }
-    snprintf(out, size, "%04u-%02u-%02u %02u:%02u", (unsigned)((t >> 26) + 1980), (unsigned)((t >> 22) & 15),
-             (unsigned)((t >> 17) & 31), (unsigned)((t >> 12) & 31), (unsigned)((t >> 6) & 63));
+    dt_text_stored(out, size, t); /* as the player chose in Settings -> System -> Date and Time; an empty text for 0 */
 }
 
 /* The row's texts, cut to fit: the game, then (if there is room) the title of the save in a dimmer colour */

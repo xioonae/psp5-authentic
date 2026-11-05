@@ -22,6 +22,7 @@
 #include "sound.h"
 #include "system.h"
 #include "theme.h"
+#include "datetime.h"
 #include "umd.h"
 
 /* the same layout as the settings */
@@ -160,13 +161,14 @@ static void location_rows(const Entry *e)
     }
 }
 
-/* a packed time (scan_pack_time()) as "2026-10-28 14:05"; no row when the time is not known (0) */
+/* a packed time (scan_pack_time()) as the date and time that psp5 shows; no row when the time is not known (0) */
 static void time_row(const char *label, u32 t)
 {
     if (!t)
         return;
-    add_rowf(label, "%04u-%02u-%02u %02u:%02u", (unsigned)((t >> 26) + 1980), (unsigned)((t >> 22) & 15),
-             (unsigned)((t >> 17) & 31), (unsigned)((t >> 12) & 31), (unsigned)((t >> 6) & 63));
+    char text[40];
+    dt_text_stored(text, sizeof(text), t); /* as the player chose in Settings -> System -> Date and Time ("2026.10.28 14:05" is the standard) */
+    add_row(label, text);
 }
 
 static void modified_row(const Entry *e)

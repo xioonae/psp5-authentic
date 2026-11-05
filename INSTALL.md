@@ -130,6 +130,17 @@ Where to go from there:
 - **← → in Music**: previous / next track · hold to seek.
 - **A name that is too long** scrolls after a moment: the name next to the big card, the selected card in the Library, and the highlighted row in the File Manager, *Manage Saved Data* and *Games and Apps*.
 
+## Date and time
+
+*Settings → System → Date and Time* (under *Language*) changes how psp5 authentic shows the date and the time: the clock at the top, the *Modified* and *Last played* dates in *Information* and the dates in *Manage Saved Data*.
+
+- *Current Date and Time* only shows what psp5 authentic shows now.
+- *Daylight Saving* removes or adds one hour (*Remove One Hour*, *Keep Unchanged*, *Add One Hour*). Use it when the PSP's own clock is an hour off for you, or when you want the summer time or the winter time.
+- *Date Format* is `YYYY.MM.DD`, `MM.DD.YYYY` or `DD.MM.YYYY`, and *Time Format* the 24-hour or the 12-hour clock.
+
+It changes only what psp5 authentic shows. The PSP's own clock and settings stay as they are (set them in the XMB, under *Settings → System Settings*), and so do the dates of your files: the FTP Server tells your computer the real ones.
+(The choices are the lines `dst=`, `datefmt=` and `timefmt=` of `PSP5/psp5.cfg`; deleting them gives the standard again.)
+
 ## File Manager
 
 *Settings → Storage → File Manager* lets you manage files right on the PSP. Confirm opens a folder, □ marks

@@ -30,7 +30,7 @@ wherever it can, but it doesn't copy the console in everything.
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/settings.png" alt="Settings"><br><sub><b>Settings</b> – six pages, one list; Confirm opens one, Back goes back</sub></td>
-    <td width="50%"><img src="docs/screenshots/settings-system.png" alt="Settings, System"><br><sub><b>Settings → System</b> – console information, appearance, language, ARK's settings, performance and plugins</sub></td>
+    <td width="50%"><img src="docs/screenshots/settings-system.png" alt="Settings, System"><br><sub><b>Settings → System</b> – console information, appearance, language, date and time, ARK's settings, performance and plugins</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/settings-console-information.png" alt="Settings, Console Information"><br><sub><b>System → Console Information</b> – model, system software, the version of ARK, MAC address, last IP address, free RAM, battery, and where psp5 authentic comes from</sub></td>
@@ -50,7 +50,7 @@ wherever it can, but it doesn't copy the console in everything.
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/install-plugin.png" alt="Install New Plugin"><br><sub><b>Install New Plugin</b> – choose a <code>.prx</code> in the File Manager, then which <code>PLUGINS.TXT</code> to edit and what it runs in (XMB, Games, PS1)</sub></td>
-    <td width="50%"></td>
+    <td width="50%"><img src="docs/screenshots/settings-date-time.png" alt="Settings, Date and Time"><br><sub><b>System → Date and Time</b> – the date and time that psp5 authentic shows, with Daylight Saving (one hour less or more), the date format and the 12- or 24-hour clock. The time in the picture is a test value.</sub></td>
   </tr>
 </table>
 
@@ -80,12 +80,13 @@ wherever it can, but it doesn't copy the console in everything.
   - *psp5 authentic* – boot into psp5 authentic, sounds, startup animation, battery percentage, clear the image cache.
   - *Network* – the PSP's own Wi-Fi screen and the FTP Server.
   - *System* – *Console Information* (nickname, model, system software, the whole version of ARK, MAC address, last IP address, free RAM, battery, and where psp5 authentic comes from), *Appearance* (*Show Game art* and the themes),
-    *Language*, *ARK-5 Settings* or *ARK-4 Settings* (ARK's own options: USB charge, WPA2, hide pictures, regions ...), *Performance* (CPU speed, extra memory, caches) and *Plugins* (switch each plugin on or off, and *Manage Plugins* to install a new plugin and to install or uninstall one in more or fewer places).
+    *Language*, *Date and Time* (the date and time that psp5 authentic shows: *Daylight Saving* removes or adds one hour, *Date Format* and *Time Format* choose how they are written; the PSP's own clock is never changed), *ARK-5 Settings* or *ARK-4 Settings* (ARK's own options: USB charge, WPA2, hide pictures, regions ...), *Performance* (CPU speed, extra memory, caches) and *Plugins* (switch each plugin on or off, and *Manage Plugins* to install a new plugin and to install or uninstall one in more or fewer places).
   - *Storage* – Console Storage (see above), the File Manager and USB Mode.
   - *Screen and Sound* – the PSP's own brightness, backlight timer (psp5 authentic remembers it), volume, equalizer and AVLS.
   - *Controls* – the PSP's own confirm button, and which buttons confirm, go back, open the options and the power menu.
 
   A setting with several values opens a popup when you press Confirm on it.
+  The title of a page is its own name (*Appearance*, not *System > Appearance*).
   The *last IP address* in Console Information is the one that the Wi-Fi window or the FTP Server got last, kept after a restart; it may have changed since.
 - **Themes.** The colours of the console covers, each with the console's scene behind your games (a beam of light, golden
   dust, haze), plus the classic looks of PS1 to PS4 in the colours of those consoles' own themes. Highlight a theme to preview it, Confirm to use it. You can turn *Show Game art*

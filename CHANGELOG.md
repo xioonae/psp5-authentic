@@ -89,6 +89,7 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ### Settings
 
+- **The title of a Settings page is its own name** (*Appearance*, *Date and Time*, *Install New Plugin*), not the whole way to it (*System > Appearance*).
 - **Settings look like the console's.** One list at a time instead of two columns: the first list has six pages, each with an icon, and Confirm opens one; Back goes back one list, and Back on the first list closes
   Settings. The list scrolls like the file manager's and Manage Saved Data's: the highlight moves down the rows you can see and the list only moves when the highlight would leave the screen (before, the list kept the
   highlight on the last row and moved with every step, both up and down). A thin bar at the right shows where you are in a long list. The short description at the top of each page is gone. **← and → do nothing in Settings any more** (the D-pad and the analog stick sideways): with one list at a time they had nothing left to do; ✕ opens, ○ goes back, ↑ ↓ move.
@@ -172,6 +173,18 @@ below are inspired by what the original project found and did about them. The co
 - **Games and Apps starts on *Least used***, the first choice of its Sort popup (it started on the second). **Choosing a sort starts the list at the top**, in *Games and Apps* and in *Manage Saved Data*
   (the list did not scroll back before).
 
+### Date and time
+
+- **New: *Settings → System → Date and Time*** (under *Language*). It has four rows:
+  - *Current Date and Time* shows the date and time that psp5 authentic shows now, for example `2026.10.28 14:05`. It is only shown: it is not a button.
+  - *Daylight Saving*: *Remove One Hour*, *Keep Unchanged* (the standard) or *Add One Hour*.
+  - *Date Format*: `YYYY.MM.DD` (the standard), `MM.DD.YYYY` or `DD.MM.YYYY`.
+  - *Time Format*: *24-Hour Clock* (the standard) or *12-Hour Clock* (`2:05 PM`).
+- **They change what psp5 authentic shows, everywhere**: the clock at the top, the *Modified* and *Last played* dates in Information, and the dates in Manage Saved Data. The PSP's own clock and settings are never changed: the XMB, the games and the files that psp5 authentic writes keep the real time, and the FTP Server still tells the computer the real dates of the files.
+- **Dates are written with points now**: `2026.10.28 14:05`, where it was `2026-10-28 14:05` (the same order, so nothing changes for you unless you pick another format).
+- The three choices are kept in `psp5.cfg` (`dst`, `datefmt`, `timefmt`).
+- New texts in all 11 languages (10 strings).
+
 ### Themes
 
 - **PS1, PS2, PS3 and PS4 have the colours of the real consoles' themes.** PS1 is grey with a warm lamp, PS2 is black with blue-violet light, PS3 is black with gold and cream (it was blue), and PS4 is blue-violet with purple at the lower right (it was a bright cyan-blue).
@@ -188,6 +201,7 @@ below are inspired by what the original project found and did about them. The co
 
 ### Docs
 
+- New picture in the README: *System → Date and Time* (`settings-date-time.png`). The pictures of *System*, *Appearance*, *Console Information*, *Console Storage*, *Manage Plugins* and *Install New Plugin* are made again for the new titles (see *Settings*) and, for *System*, the new row; the time in *Date and Time* is a test value.
 - The picture of the themes in the README (`theme.png`) is made again: PS3 is black and gold now.
 - The picture of *Install New Plugin* in the README shows the page as it is now: *File*, *Location* (where the file is), *PLUGINS.TXT* (the one that is edited) and the three switches. The folder and the file name in it are the demo's.
 - The picture of *Console Information* in the README is scrolled down to the new rows: *CFW (ARK-5)* with the version of ARK, *Last IP address* and *Free RAM*. The version of ARK, the MAC address and the RAM in it are the demo PSP's (it has no ARK), and the demo has not been on Wi-Fi, so it says *Not recorded yet*.

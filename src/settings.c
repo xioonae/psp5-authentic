@@ -22,6 +22,7 @@
 #include "popup.h"
 #include "gameops.h"
 #include "storage.h"
+#include "datetime.h"
 
 #define TITLE_Y     34.0f
 #define LIST_X      24.0f  /* the same sides as the list of the file manager: 24 px from the edges of the screen */
@@ -38,7 +39,7 @@
 #define TEXT_DIM  RGBA(160, 162, 172, 255)
 #define LIGHT     RGBA(236, 236, 240, 255)
 
-typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO, IT_THEME, IT_PAGE, IT_LANG, IT_STORE } ItemType;
+typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO, IT_THEME, IT_PAGE, IT_LANG, IT_STORE, IT_DATETIME } ItemType; /* IT_DATETIME: the date and time psp5 shows now (only shown: ✕ does nothing) */
 
 /* the icons of the first list (drawn here, no image files) */
 enum { ICO_NONE, ICO_APP, ICO_NETWORK, ICO_SYSTEM, ICO_STORAGE, ICO_SCREEN, ICO_CONTROLS };
@@ -66,10 +67,10 @@ typedef struct {
     int count;
 } Category; /* a page: a list of rows */
 
-/* The pages. PG_ROOT is the first list; the six rows of it open the pages after it; the rows of PG_SYSTEM open the six after that. */
-enum { PG_ROOT, PG_PSP5, PG_NETWORK, PG_SYSTEM, PG_STORAGE, PG_SCREEN, PG_CONTROLS, PG_INFO, PG_APPEAR, PG_LANG, PG_ARK, PG_PERF, PG_PLUGINS, PG_CSTORE,
+/* The pages. PG_ROOT is the first list; the six rows of it open the pages after it; the rows of PG_SYSTEM open the seven after that (Date and Time is the one after the storage page). */
+enum { PG_ROOT, PG_PSP5, PG_NETWORK, PG_SYSTEM, PG_STORAGE, PG_SCREEN, PG_CONTROLS, PG_INFO, PG_APPEAR, PG_LANG, PG_ARK, PG_PERF, PG_PLUGINS, PG_CSTORE, PG_DATETIME,
        PG_PLUGMGR, PG_PLUGEDIT, PG_PLUGADD, PG_PLUGDEL, PG_PLUGNEW, PG_COUNT };
-static const signed char PARENT[PG_COUNT] = { -1, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_STORAGE,
+static const signed char PARENT[PG_COUNT] = { -1, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_STORAGE, PG_SYSTEM,
                                               PG_PLUGINS, PG_PLUGMGR, PG_PLUGEDIT, PG_PLUGEDIT, PG_PLUGMGR };
 
 /* The actions that Settings does itself (an IT_ACTION with one of these is not given to main.c): the buttons of Manage Plugins */
@@ -110,7 +111,9 @@ static const char *OPT_HIGHMEM[5], *OPT_MSCACHE[4], *OPT_INFERNO[3], *OPT_LOGOS[
 static const char *OPT_UMDREG[4], *OPT_VSHREG[14], *OPT_LANG[LANG_COUNT];
 static const char *OPT_BUTTON[CTL_COUNT];                                     /* the PSP's setting, then ✕ ○ □ △ (each is shown with its symbol, too) */
 static const char *OPT_EQ[5];                                                 /* the equalizer: off and the XMB's four */
-static const char *OPT_PSP_CONFIRM[2];                                       /* the PSP's own confirm button: Cross or Circle */
+static const char *OPT_PSP_CONFIRM[2];
+static const char *OPT_DST[3], *OPT_TIMEFMT[2];                              /* Date and Time: one hour less / as it is / one hour more; the 24-hour and the 12-hour clock */
+static const char *const OPT_DATEFMT[] = { "YYYY.MM.DD", "MM.DD.YYYY", "DD.MM.YYYY" }; /* (the same in every language) */                                       /* the PSP's own confirm button: Cross or Circle */
 static const char *const OPT_START_SELECT[] = { "START", "SELECT" };          /* the options button */
 static const char *const OPT_SELECT_START[] = { "SELECT", "START" };          /* the power menu button: the same setting, the other way round */
 
@@ -145,6 +148,11 @@ static void build_options(void)
     OPT_BUTTON[CTL_CIRCLE] = OPT_PSP_CONFIRM[1] = L(S_BTN_CIRCLE);
     OPT_BUTTON[CTL_SQUARE] = L(S_BTN_SQUARE);
     OPT_BUTTON[CTL_TRIANGLE] = L(S_BTN_TRIANGLE);
+    OPT_DST[DT_DST_REMOVE] = L(S_DT_DST_REMOVE);
+    OPT_DST[DT_DST_KEEP] = L(S_DT_DST_KEEP);
+    OPT_DST[DT_DST_ADD] = L(S_DT_DST_ADD);
+    OPT_TIMEFMT[DT_TIME_24] = L(S_DT_24H);
+    OPT_TIMEFMT[DT_TIME_12] = L(S_DT_12H);
 }
 
 /* ARK:s runlevel i PLUGINS.TXT → läsbar text */
@@ -718,6 +726,7 @@ static void build(int rebuild)
     s_cats[PG_INFO].name = L(S_CAT_INFO);
     s_cats[PG_APPEAR].name = L(S_CAT_APPEARANCE);
     s_cats[PG_LANG].name = L(S_LANGUAGE);
+    s_cats[PG_DATETIME].name = L(S_DATETIME);
     s_cats[PG_ARK].name = s_ark_name;
     s_cats[PG_PERF].name = L(S_CAT_PERF);
     s_cats[PG_PLUGINS].name = L(S_CAT_PLUGINS);
@@ -756,6 +765,7 @@ static void build(int rebuild)
     page_row(c, PG_INFO, 0);
     page_row(c, PG_APPEAR, 0);
     page_row(c, PG_LANG, 0);
+    page_row(c, PG_DATETIME, 0);
     page_row(c, PG_ARK, 0);
     page_row(c, PG_PERF, 0);
     page_row(c, PG_PLUGINS, 0);
@@ -850,6 +860,16 @@ static void build(int rebuild)
         it->action = i;
         it->own = 1;
     }
+
+    /* Date and Time: what psp5 shows, never the PSP's own clock (datetime.c). The first row only shows the date and time that psp5 shows now, the others are choices kept in psp5.cfg. */
+    c = &s_cats[PG_DATETIME];
+    add(c, L(S_DT_CURRENT), IT_DATETIME);
+    choice(c, L(S_DT_DST), &g_dt_dst, OPT_DST, N(OPT_DST));
+    c->items[c->count - 1].own = 1;
+    choice(c, L(S_DT_DATE_FORMAT), &g_dt_date, OPT_DATEFMT, N(OPT_DATEFMT));
+    c->items[c->count - 1].own = 1;
+    choice(c, L(S_DT_TIME_FORMAT), &g_dt_time, OPT_TIMEFMT, N(OPT_TIMEFMT));
+    c->items[c->count - 1].own = 1;
 
     /* ARK's own settings (SETTINGS.TXT): what the old System category had */
     c = &s_cats[PG_ARK];
@@ -1368,6 +1388,9 @@ static void draw_item(const Item *it, float y, const Theme *shown, float a)
     case IT_PAGE: /* a page has a value only in Manage Plugins: where the plugin is installed */
         snprintf(value, sizeof(value), "%s", it->info);
         break;
+    case IT_DATETIME: /* the time psp5 shows now, in the formats that are chosen */
+        dt_text(value, sizeof(value), dt_now());
+        break;
     case IT_ACTION:
     case IT_STORE:
         break; /* an action has no value to show (a storage row is drawn by draw_store_page) */
@@ -1518,15 +1541,13 @@ void settings_draw(void)
     gfx_begin(RGBA(20, 20, 24, 255));
     const Theme *shown = shown_theme();
     draw_background(shown);
-    /* the title: Settings on the first list, else where you are (System > Appearance) */
+    /* the title: Settings on the first list, else the name of the page that is open (Appearance, not System > Appearance) */
     {
         char title[96];
         if (S.page == PG_ROOT)
             snprintf(title, sizeof(title), "%s", L(S_SETTINGS));
-        else if (PARENT[S.page] == PG_ROOT)
-            snprintf(title, sizeof(title), "%s", c->name);
         else
-            snprintf(title, sizeof(title), "%s > %s", s_cats[PARENT[S.page]].name, c->name);
+            snprintf(title, sizeof(title), "%s", c->name);
         text_draw(LIST_X + 4 + slide, TITLE_Y, text_fit(0.95f, 0.6f, 0, LIST_W - 8, title), 0, fade(TEXT_MAIN, a), ALIGN_LEFT, title);
     }
 

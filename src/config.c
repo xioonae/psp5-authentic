@@ -8,6 +8,7 @@
 #include "sound.h"
 #include "lang.h"
 #include "theme.h"
+#include "datetime.h"
 
 unsigned char g_boot_anim = 1;
 unsigned char g_battery_pct = 0; /* off until the player turns it on */
@@ -54,6 +55,12 @@ void config_load(const char *data_dir)
             g_ctl_back = controls_from_code(p + 5);
         if ((p = strstr(buf, "options=")))
             g_ctl_options = !strncmp(p + 8, "select", 6);
+        if ((p = strstr(buf, "dst=")) && p[4] >= '0' && p[4] <= '2')
+            g_dt_dst = p[4] - '0';
+        if ((p = strstr(buf, "datefmt=")) && p[8] >= '0' && p[8] <= '2')
+            g_dt_date = p[8] - '0';
+        if ((p = strstr(buf, "timefmt=")) && p[8] >= '0' && p[8] <= '1')
+            g_dt_time = p[8] - '0';
         if (g_ctl_confirm == g_ctl_back && g_ctl_confirm != CTL_PSP) /* a file with the same button twice: back goes to the PSP's */
             g_ctl_back = CTL_PSP;
     }
@@ -64,10 +71,11 @@ void config_save(const char *data_dir)
 {
     char path[200], buf[384];
     snprintf(path, sizeof(path), "%s/psp5.cfg", data_dir);
-    int n = snprintf(buf, sizeof(buf), "sound=%d\nbootanim=%d\nlang=%s\ntheme=%s\nthemeart=%d\nbatterypct=%d\nlibrarysort=%d\nlibview=%d\nconfirm=%s\nback=%s\noptions=%s\n",
+    int n = snprintf(buf, sizeof(buf), "sound=%d\nbootanim=%d\nlang=%s\ntheme=%s\nthemeart=%d\nbatterypct=%d\nlibrarysort=%d\nlibview=%d\nconfirm=%s\nback=%s\noptions=%s\ndst=%d\ndatefmt=%d\ntimefmt=%d\n",
                      g_sound_on ? 1 : 0, g_boot_anim ? 1 : 0, lang_code(g_lang_setting), theme_cur()->code,
                      g_theme_art ? 1 : 0, g_battery_pct ? 1 : 0, g_lib_sort < CONFIG_LIB_SORTS ? g_lib_sort : 0, g_lib_view <= 3 ? g_lib_view : 0,
-                     controls_code(g_ctl_confirm), controls_code(g_ctl_back), g_ctl_options ? "select" : "start");
+                     controls_code(g_ctl_confirm), controls_code(g_ctl_back), g_ctl_options ? "select" : "start",
+                     g_dt_dst <= DT_DST_ADD ? g_dt_dst : DT_DST_KEEP, g_dt_date <= DT_DATE_DMY ? g_dt_date : DT_DATE_YMD, g_dt_time <= DT_TIME_12 ? g_dt_time : DT_TIME_24);
     if (g_backlight_off >= BACKLIGHT_OFF_MIN && g_backlight_off <= BACKLIGHT_OFF_MAX)
         n += snprintf(buf + n, sizeof(buf) - n, "backlightoff=%d\n", g_backlight_off);
     SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);

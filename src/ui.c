@@ -28,6 +28,7 @@
 #include "playtime.h"
 #include "popup.h"
 #include "config.h"
+#include "datetime.h"
 #include "testrun.h"
 
 /* layout (480×272) */
@@ -1579,14 +1580,11 @@ static void draw_top_bar(Ui *ui)
 
     /* klockan, batteriet och Wi-Fi ändras sakta – systemet frågas en gång i sekunden, inte varje bild */
     static float polled_at = -10;
-    static char clock_text[8];
+    static char clock_text[16]; /* "17:54", or "12:05 PM" with the 12-hour clock */
     static int sys_present, sys_charging, sys_level = -1, sys_wifi;
     if (fabsf(ui->time - polled_at) >= 1.0f) { /* även om tiden har nollställts */
         polled_at = ui->time;
-        ScePspDateTime now;
-        clock_text[0] = 0;
-        if (sceRtcGetCurrentClockLocalTime(&now) >= 0)
-            snprintf(clock_text, sizeof(clock_text), "%02d:%02d", now.hour, now.minute);
+        dt_clock_text(clock_text, sizeof(clock_text)); /* the PSP's clock as psp5 shows it (Settings -> System -> Date and Time) */
         int battery = scePowerIsBatteryExist();
         sys_present = battery ? 1 : 0;
         sys_charging = battery && scePowerIsBatteryCharging() > 0;

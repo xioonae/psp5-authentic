@@ -16,7 +16,11 @@
  *   back=psp         (the button that goes back: the same words)
  *   options=start    (start = START opens the options and SELECT the power menu, select = the other way round)
  *   backlightoff=120  (seconds: the backlight auto-off time chosen in Settings -> Display and Sound; psp5 sets it again at every start, because
- *                      the PSP forgets it at a restart. The line is not there until a time has been chosen) */
+ *                      the PSP forgets it at a restart. The line is not there until a time has been chosen)
+ *   dst=1            (Settings -> System -> Date and Time, Daylight Saving: 0 = one hour less, 1 = as the PSP has it, 2 = one hour more; datetime.h)
+ *   datefmt=0        (0 = YYYY.MM.DD, 1 = MM.DD.YYYY, 2 = DD.MM.YYYY)
+ *   timefmt=0        (0 = 24-hour clock, 1 = 12-hour clock)
+ *                    These three only change what psp5 SHOWS; the PSP's own clock and settings are never written. */
 extern unsigned char g_boot_anim;
 extern unsigned char g_battery_pct;
 #define CONFIG_LIB_SORTS 6 /* the ways to sort the Library (LIB_SORT_COUNT in ui.h) */
