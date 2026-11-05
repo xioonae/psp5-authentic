@@ -16,6 +16,10 @@
 #define BLOCK 512 /* stereo-par per utmatning, ~12 ms */
 #define VOICES 4
 #define PI 3.14159265f
+/* A sound that is started again before it has ended (holding a direction in a menu starts "move" every few tens of milliseconds, and the recording is 0.37 s
+ * long) is not cut: it fades out in a straight line over this many samples (5.8 ms) while the new one plays from its start in another voice. A cut in the
+ * middle of the wave is a step of up to 10 % of full scale (the recording itself never steps more than 0.7 %), and ten of them a second are a crackle. */
+#define RELEASE 256
 
 typedef struct {
     short *data;
@@ -27,6 +31,7 @@ typedef struct {
     int len;
     volatile int pos;
     volatile int active;
+    volatile int release; /* > 0: the samples of the fade-out that are left (RELEASE at the start of it); the voice ends when it reaches 0 */
 } Voice;
 
 unsigned char g_sound_on = 1;
@@ -311,6 +316,39 @@ static void build_sounds(void)
 
 /* --- mixer --- */
 
+/* One block of the output: the voices added up (mono, copied to both sides), the fade-out of sound_fade_out() and the limit at full scale. */
+static void mix_block(short *out)
+{
+    for (int i = 0; i < BLOCK; i++) {
+        int mix = 0;
+        for (int v = 0; v < VOICES; v++) {
+            Voice *vo = &s_voices[v];
+            if (!vo->active)
+                continue;
+            int pos = vo->pos;
+            if (pos >= vo->len) {
+                vo->active = 0;
+                continue;
+            }
+            int sample = vo->data[pos];
+            int rel = vo->release;
+            if (rel > 0) { /* started again: down to nothing in a straight line, and then the voice is free */
+                sample = sample * rel / RELEASE;
+                vo->release = --rel;
+                if (rel == 0)
+                    vo->active = 0;
+            }
+            mix += sample;
+            vo->pos = pos + 1;
+        }
+        if (s_fade > 0)
+            mix = mix * (s_fade * BLOCK - i) / (24 * BLOCK);
+        if (mix > 32767) mix = 32767;
+        if (mix < -32768) mix = -32768;
+        out[i * 2] = out[i * 2 + 1] = (short)mix;
+    }
+}
+
 static int audio_thread(SceSize args, void *argp)
 {
     /* ljuden räknas fram här, i bakgrunden, så att starten inte blir långsammare */
@@ -336,26 +374,7 @@ static int audio_thread(SceSize args, void *argp)
         }
         short *out = s_out[buf];
         buf ^= 1;
-        for (int i = 0; i < BLOCK; i++) {
-            int mix = 0;
-            for (int v = 0; v < VOICES; v++) {
-                Voice *vo = &s_voices[v];
-                if (!vo->active)
-                    continue;
-                int pos = vo->pos;
-                if (pos >= vo->len) {
-                    vo->active = 0;
-                    continue;
-                }
-                mix += vo->data[pos];
-                vo->pos = pos + 1;
-            }
-            if (s_fade > 0)
-                mix = mix * (s_fade * BLOCK - i) / (24 * BLOCK);
-            if (mix > 32767) mix = 32767;
-            if (mix < -32768) mix = -32768;
-            out[i * 2] = out[i * 2 + 1] = (short)mix;
-        }
+        mix_block(out);
         if (s_fade > 0 && --s_fade == 0)
             for (int v = 0; v < VOICES; v++)
                 s_voices[v].active = 0;
@@ -399,18 +418,28 @@ void sound_play(SoundId id)
 {
     if (!g_sound_on || s_thread < 0 || !s_built || id >= SND_COUNT)
         return;
-    /* samma ljud igen (t.ex. snabb bläddring): starta om i samma röst */
+    /* The same sound again (fast scrolling): the one that is playing is not cut, it fades out (see RELEASE) and the new one gets a voice of its own. */
+    for (int v = 0; v < VOICES; v++)
+        if (s_voices[v].active && s_voices[v].release == 0 && s_voices[v].data == s_samples[id].data)
+            s_voices[v].release = RELEASE;
     Voice *pick = NULL;
-    for (int v = 0; v < VOICES && !pick; v++)
-        if (s_voices[v].active && s_voices[v].data == s_samples[id].data)
-            pick = &s_voices[v];
     for (int v = 0; v < VOICES && !pick; v++)
         if (!s_voices[v].active)
             pick = &s_voices[v];
-    if (!pick)
-        pick = &s_voices[0];
+    if (!pick) { /* all busy (more than four starts between two blocks): one that is fading out already, else the one that is furthest on */
+        for (int v = 0; v < VOICES && !pick; v++)
+            if (s_voices[v].release > 0)
+                pick = &s_voices[v];
+        if (!pick) {
+            pick = &s_voices[0];
+            for (int v = 1; v < VOICES; v++)
+                if (s_voices[v].pos > pick->pos)
+                    pick = &s_voices[v];
+        }
+    }
     /* rösten stängs först så att mixern aldrig läser en halvt bytt röst */
     pick->active = 0;
+    pick->release = 0;
     pick->pos = 0;
     pick->data = s_samples[id].data;
     pick->len = s_samples[id].len;

@@ -172,6 +172,12 @@ below are inspired by what the original project found and did about them. The co
 - **Games and Apps starts on *Least used***, the first choice of its Sort popup (it started on the second). **Choosing a sort starts the list at the top**, in *Games and Apps* and in *Manage Saved Data*
   (the list did not scroll back before).
 
+### Sound
+
+- **No more crackling when you scroll fast.** Holding a direction, or pressing it quickly, starts the *move* sound again before the last one has ended (the recording is 0.37 s long). psp5 authentic used to start the sound over from its beginning in the middle of the old one. That cuts the wave and makes a click, and
+  a held direction repeats 12 to 22 times a second, so that is a crackle. Now the old one fades out in a straight line over 5.8 milliseconds while the new one starts in a voice of its own. The recordings were never the problem: the largest step between two neighbouring samples is 215 in the file, and a cut made steps of up to about 3,300. The same goes
+  for every other sound and for your own `.wav` files. Two different sounds at the same time (a *select* over a *move*) are still just added, as before.
+
 ### Docs
 
 - The picture of *Console Information* in the README is scrolled down to the new rows: *CFW (ARK-5)* with the version of ARK, *Last IP address* and *Free RAM*. The version of ARK, the MAC address and the RAM in it are the demo PSP's (it has no ARK), and the demo has not been on Wi-Fi, so it says *Not recorded yet*.
