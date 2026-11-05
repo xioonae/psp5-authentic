@@ -174,8 +174,10 @@ below are inspired by what the original project found and did about them. The co
 
 ### Sound
 
+- **New sounds: all five are as loud as one another.** *Move* and the startup sound used to be quieter than *select*, *back* and *error*; now they are balanced (the same average level, peaks between -4 and -8 dBFS). They are 16-bit mono files at 44.1 kHz in `PSP/GAME/PSP5`, as before, and psp5 authentic plays them
+  **as they are**: the gain that it used to apply (2.5 times, 8 dB, for the older, quieter recordings) is gone, because it would clip the new ones. That goes for your own `.wav` files too: if you made some for an earlier version, they play 8 dB quieter now (make them louder with `tools/convert_sounds.py`'s notes in mind: peaks around -4 to -8 dBFS).
 - **No more crackling when you scroll fast.** Holding a direction, or pressing it quickly, starts the *move* sound again before the last one has ended (the recording is 0.37 s long). psp5 authentic used to start the sound over from its beginning in the middle of the old one. That cuts the wave and makes a click, and
-  a held direction repeats 12 to 22 times a second, so that is a crackle. Now the old one fades out in a straight line over 5.8 milliseconds while the new one starts in a voice of its own. The recordings were never the problem: the largest step between two neighbouring samples is 215 in the file, and a cut made steps of up to about 3,300. The same goes
+  a held direction repeats 12 to 22 times a second, so that is a crackle. Now the old one fades out in a straight line over 5.8 milliseconds while the new one starts in a voice of its own. The recordings were never the problem: a cut made steps up to 16 times larger than the largest step between two neighbouring samples inside the recording. The same goes
   for every other sound and for your own `.wav` files. Two different sounds at the same time (a *select* over a *move*) are still just added, as before.
 
 ### Docs

@@ -12,7 +12,8 @@ What it does to a recording:
   - ffmpeg decodes it and resamples it to 44.1 kHz (the rate the sound engine mixes at)
   - stereo is mixed down to mono (the engine is mono), keeping the average loudness of the two channels
   - silence below -60 dBFS is cut off at the end, and at the start down to 1 ms (decoder delay, reverb tail)
-The level is left alone: psp5 applies one gain to all sounds (FILE_GAIN in src/sound.c).
+The level is left alone, and psp5 plays the files as they are (there is no gain): make the five recordings as loud as one
+another, with peaks around -4 to -8 dBFS like the ones in res/sounds (louder than that would clip when two sounds overlap).
 Needs ffmpeg on the PATH.
 """
 import array

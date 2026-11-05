@@ -16,9 +16,9 @@
 #define BLOCK 512 /* stereo-par per utmatning, ~12 ms */
 #define VOICES 4
 #define PI 3.14159265f
-/* A sound that is started again before it has ended (holding a direction in a menu starts "move" every few tens of milliseconds, and the recording is 0.37 s
- * long) is not cut: it fades out in a straight line over this many samples (5.8 ms) while the new one plays from its start in another voice. A cut in the
- * middle of the wave is a step of up to 10 % of full scale (the recording itself never steps more than 0.7 %), and ten of them a second are a crackle. */
+/* A sound that is started again before it has ended (holding a direction in a menu starts "move" every 45 to 85 ms, and the recording is 0.36 s long) is not cut:
+ * it fades out in a straight line over this many samples (5.8 ms) while the new one plays from its start in another voice. A cut in the middle of the wave is a
+ * step of up to 16 times the largest step inside the recording, and 12 to 22 of them a second are a crackle. */
 #define RELEASE 256
 
 typedef struct {
@@ -186,9 +186,8 @@ static float gen_boot(float t)
  * file is not an error: the built-in sound is used. tools/convert_sounds.py makes these files. */
 #define WAV_MAX_BYTES (3 << 20) /* ~17 s of mono; the longest sound is the 5 s startup sound */
 #define WAV_MIN_FRAMES 64       /* the end fade needs at least this many */
-/* The recordings are about 8 dB quieter than the built-in sounds were (average level over the five
- * sounds; they keep their levels relative to each other). One gain for all of them. */
-#define FILE_GAIN 2.5f
+/* The recordings are played as they are: there is no gain. They are made to be as loud as one another (the same average level, peaks between -4 and -8 dBFS),
+ * so a gain would only clip them (the older, quieter recordings were played with a gain of 2.5). */
 
 static unsigned rd16(const unsigned char *p) { return p[0] | p[1] << 8; }
 static unsigned rd32(const unsigned char *p) { return p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; }
@@ -266,14 +265,12 @@ static int load_wav(SoundId id, const char *name)
         return 0;
     }
 
-    /* convert in place to mono + gain: sample i is written at byte 2i, which is always in front of the data
+    /* convert in place to mono: sample i is written at byte 2i, which is always in front of the data
      * of every frame still to be read (data_off >= 20) */
     short *out = (short *)b;
     for (unsigned i = 0; i < frames; i++) {
         const unsigned char *s = b + data_off + i * 2 * ch;
-        int m = ch == 2 ? (rds16(s) + rds16(s + 2)) / 2 : rds16(s);
-        float v = m * FILE_GAIN;
-        out[i] = (short)(v > 32767.0f ? 32767 : v < -32768.0f ? -32768 : v);
+        out[i] = (short)(ch == 2 ? (rds16(s) + rds16(s + 2)) / 2 : rds16(s)); /* (a mix of two 16-bit samples is a 16-bit sample) */
     }
     for (unsigned i = frames - 64; i < frames; i++)
         out[i] = (short)(out[i] * (int)(frames - i) / 64); /* no click at the end, as in render() */
