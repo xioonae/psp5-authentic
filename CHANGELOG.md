@@ -172,6 +172,12 @@ below are inspired by what the original project found and did about them. The co
 - **Games and Apps starts on *Least used***, the first choice of its Sort popup (it started on the second). **Choosing a sort starts the list at the top**, in *Games and Apps* and in *Manage Saved Data*
   (the list did not scroll back before).
 
+### Themes
+
+- **PS1, PS2, PS3 and PS4 have the colours of the real consoles' themes.** PS1 is grey with a warm lamp, PS2 is black with blue-violet light, PS3 is black with gold and cream (it was blue), and PS4 is blue-violet with purple at the lower right (it was a bright cyan-blue).
+  The colours were measured from pictures of the four themes. The moving shapes took them too (PS2's towers and orbs are blue-violet, PS3's waves warm cream, PS4's waves and particles blue), and so did the switches, the bars and the Library's picture, which follow the theme's accent.
+  The lamp, the beam of light and the haze are still the same for every theme, so the look is close to the pictures but not the same pixel for pixel.
+
 ### Sound
 
 - **New sounds: all five are as loud as one another.** *Move* and the startup sound used to be quieter than *select*, *back* and *error*; now they are balanced (the same average level, peaks between -4 and -8 dBFS). They are 16-bit mono files at 44.1 kHz in `PSP/GAME/PSP5`, as before, and psp5 authentic plays them
@@ -182,6 +188,7 @@ below are inspired by what the original project found and did about them. The co
 
 ### Docs
 
+- The picture of the themes in the README (`theme.png`) is made again: PS3 is black and gold now.
 - The picture of *Install New Plugin* in the README shows the page as it is now: *File*, *Location* (where the file is), *PLUGINS.TXT* (the one that is edited) and the three switches. The folder and the file name in it are the demo's.
 - The picture of *Console Information* in the README is scrolled down to the new rows: *CFW (ARK-5)* with the version of ARK, *Last IP address* and *Free RAM*. The version of ARK, the MAC address and the RAM in it are the demo PSP's (it has no ARK), and the demo has not been on Wi-Fi, so it says *Not recorded yet*.
 - The pictures of *Games*, *Library*, *Library with folders* and *Games and Apps* in the README show the new look (rectangular cards, the title as large as in the Library, *Games and Apps* on *Least used*).

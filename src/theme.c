@@ -35,15 +35,16 @@ static const Theme THEMES[] = {
       RGBA(236, 242, 252, 82), RGBA(172, 182, 198, 42), 0, C(214, 220, 230), C(64, 68, 76), DECO_SPOT, C(240, 244, 252), C(214, 222, 238) },
     { "teal", "Chroma Teal", C(17, 79, 85), C(22, 86, 92), C(5, 23, 25),
       RGBA(146, 244, 232, 78), RGBA(42, 182, 172, 42), RGBA(126, 126, 255, 40), C(66, 214, 204), C(20, 60, 62), DECO_SPOT, C(190, 248, 240), C(110, 230, 215) },
-    /* PS1–PS4, som PS5:s Utseende */
-    { "ps1", "PS1", C(108, 108, 116), C(116, 116, 124), C(46, 46, 52),
-      RGBA(244, 244, 248, 56), RGBA(176, 176, 186, 30), 0, C(224, 224, 232), C(80, 80, 88), DECO_PS1, C(246, 246, 252), 0 },
-    { "ps2", "PS2", C(6, 10, 28), C(14, 20, 46), C(2, 2, 8),
-      RGBA(60, 110, 255, 58), RGBA(40, 80, 210, 40), 0, C(96, 146, 255), C(18, 24, 48), DECO_PS2, C(150, 190, 255), 0 },
-    { "ps3", "PS3", C(26, 42, 86), C(36, 54, 100), C(8, 13, 32),
-      RGBA(190, 210, 255, 50), RGBA(120, 150, 220, 34), 0, C(156, 194, 255), C(30, 40, 66), DECO_PS3, C(206, 220, 255), 0 },
-    { "ps4", "PS4", C(6, 50, 134), C(18, 62, 144), C(4, 18, 58),
-      RGBA(124, 184, 255, 70), RGBA(60, 140, 255, 42), 0, C(76, 156, 255), C(20, 46, 96), DECO_PS4, C(160, 208, 255), 0 },
+    /* PS1–PS4, som PS5:s Utseende. Färgerna är mätta ur förlagorna (de fyra färgbilderna av PS1–PS4:s riktiga teman): grå konsol med
+     * varm lampa, svart med blåvioletta ljus, svart med guld och kräm, och blåviolett med lila nere till höger. */
+    { "ps1", "PS1", C(52, 52, 50), C(53, 51, 49), C(41, 45, 48),
+      RGBA(255, 241, 203, 205), RGBA(54, 58, 54, 164), 0, C(222, 220, 214), C(74, 74, 72), DECO_PS1, C(255, 246, 221), 0 },
+    { "ps2", "PS2", C(3, 3, 44), C(3, 3, 62), C(0, 0, 1),
+      RGBA(60, 50, 255, 255), RGBA(40, 40, 112, 170), RGBA(0, 0, 16, 90), C(104, 100, 255), C(14, 14, 44), DECO_PS2, C(216, 234, 255), 0 },
+    { "ps3", "PS3", C(14, 13, 11), C(12, 11, 9), C(8, 7, 6),
+      RGBA(255, 237, 209, 255), RGBA(237, 209, 169, 44), 0, C(226, 200, 150), C(36, 33, 29), DECO_PS3, C(255, 246, 232), 0 },
+    { "ps4", "PS4", C(14, 38, 100), C(20, 56, 141), C(22, 0, 6),
+      RGBA(132, 230, 255, 255), RGBA(90, 126, 245, 173), RGBA(43, 35, 114, 230), C(116, 150, 255), C(28, 34, 84), DECO_PS4, C(255, 255, 255), 0 },
 };
 #define THEME_COUNT (int)(sizeof(THEMES) / sizeof(THEMES[0]))
 _Static_assert(THEME_COUNT == THEME_FIRST_CLASSIC + 4, "PS1-PS4 ska komma sist");
@@ -119,15 +120,15 @@ static void deco_ps2(float time, float a)
         float x = 240 + 220 * (0.5f + 0.5f * sinf(i * 2.1f + time * 0.07f * (1 + i * 0.3f)));
         float y = 60 + 150 * (0.5f + 0.5f * sinf(i * 1.3f + 1 + time * 0.05f * (1 + i * 0.2f)));
         float rr = 30 + i * 9;
-        gfx_dot(x, y, rr, RGBA(36, 76, 220, (int)(34 * a)), 1);
-        gfx_dot(x, y, rr * 0.22f, RGBA(120, 170, 255, (int)(40 * a)), 1);
+        gfx_dot(x, y, rr, RGBA(50, 48, 230, (int)(34 * a)), 1);
+        gfx_dot(x, y, rr * 0.22f, RGBA(140, 140, 255, (int)(40 * a)), 1);
     }
     for (int i = 0; i < 13; i++) {
         float x = 236 + i * 18.5f;
         float h = 28 + 80 * (0.5f + 0.5f * sinf(i * 1.7f + time * (0.25f + (i % 4) * 0.06f)));
         float wdt = 9 + (i % 3) * 2;
-        gfx_gradient_v(x, SCREEN_H - h, wdt, h, RGBA(60, 110, 255, 0), RGBA(60, 110, 255, (int)(46 * a)));
-        gfx_rect(x, SCREEN_H - h, wdt, 1, RGBA(150, 190, 255, (int)(60 * a)));
+        gfx_gradient_v(x, SCREEN_H - h, wdt, h, RGBA(72, 66, 255, 0), RGBA(72, 66, 255, (int)(46 * a)));
+        gfx_rect(x, SCREEN_H - h, wdt, 1, RGBA(168, 164, 255, (int)(60 * a)));
     }
     gfx_blend_add(0);
 }
@@ -159,7 +160,7 @@ static void deco_ps3(float time, float a)
 {
     gfx_blend_add(1);
     for (int w = 0; w < 3; w++)
-        wave(time, 150 + w * 9, 20 - w * 5, 0.32f + w * 0.07f, w * 1.7f, RGBA(255, 255, 255, 0),
+        wave(time, 150 + w * 9, 20 - w * 5, 0.32f + w * 0.07f, w * 1.7f, RGBA(255, 236, 205, 0),
              30 - w * 8, 12, 110 - w * 25, a);
     gfx_blend_add(0);
 }
@@ -168,14 +169,14 @@ static void deco_ps3(float time, float a)
 static void deco_ps4(float time, float a)
 {
     gfx_blend_add(1);
-    wave(time, 176, 26, 0.22f, 0.4f, RGBA(140, 200, 255, 0), 70, 14, 60, a);
-    wave(time, 196, 18, 0.28f, 2.2f, RGBA(140, 200, 255, 0), 44, 12, 46, a);
+    wave(time, 176, 26, 0.22f, 0.4f, RGBA(150, 180, 255, 0), 70, 14, 60, a);
+    wave(time, 196, 18, 0.28f, 2.2f, RGBA(150, 180, 255, 0), 44, 12, 46, a);
     for (int i = 0; i < 16; i++) {
         float speed = 9 + (i % 5) * 4;
         float y = SCREEN_H + 10 - fmodf(time * speed + i * 37.0f, SCREEN_H + 30);
         float x = fmodf(i * 61.7f, SCREEN_W) + sinf(time * 0.6f + i) * 8;
         float fade = clampf((SCREEN_H + 10 - y) / 60, 0, 1) * clampf(y / 60, 0, 1);
-        gfx_circle(x, y, 1.3f + (i % 3) * 0.6f, RGBA(180, 220, 255, (int)(150 * fade * a))); /* three sizes, so few images */
+        gfx_circle(x, y, 1.3f + (i % 3) * 0.6f, RGBA(190, 205, 255, (int)(150 * fade * a))); /* three sizes, so few images */
     }
     gfx_blend_add(0);
 }
