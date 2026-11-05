@@ -33,7 +33,8 @@
 #define RIGHT_W     284.0f /* to 456 */
 #define ROW_H       26.0f
 #define LIST_TOP    58.0f
-#define LIST_BOTTOM 236.0f
+#define LIST_ROWS   7      /* rows shown at once, as in Settings, the File Manager and Manage Saved Data */
+#define LIST_BOTTOM (LIST_TOP + LIST_ROWS * ROW_H)
 
 #define MAX_ROWS    80
 #define MAX_SFO     (64 * 1024)
@@ -57,7 +58,7 @@ static Row s_rows[MAX_ROWS];
 static int s_n;
 static struct {
     float open, time, scroll;
-    int sel;
+    int sel, top;         /* the chosen row, and the first row shown (the list moves only when the chosen row would leave the ones shown) */
     int index;            /* in the game list */
     int measure_row;      /* row waiting for the folder count, or -1 */
     int repeat_dir;
@@ -428,11 +429,16 @@ int info_update(const UiInput *in, float dt)
         return 1;
     }
 
-    /* keep the selected row visible, as in the settings */
-    float target = 0, y = S.sel * ROW_H, visible = LIST_BOTTOM - LIST_TOP - ROW_H;
-    if (y > visible)
-        target = y - visible;
-    S.scroll = approach(S.scroll, target, 14.0f, dt);
+    /* the highlight moves through the rows that are shown, and the list moves only when it would leave them (as in Settings, the File Manager and Manage
+     * Saved Data); a caption above the row that comes to the top comes with it */
+    if (S.sel < S.top) {
+        S.top = S.sel;
+        while (S.top > 0 && s_rows[S.top - 1].header)
+            S.top--;
+    }
+    if (S.sel > S.top + LIST_ROWS - 1)
+        S.top = S.sel - (LIST_ROWS - 1);
+    S.scroll = approach(S.scroll, S.top * ROW_H, 14.0f, dt);
     return 0;
 }
 

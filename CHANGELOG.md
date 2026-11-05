@@ -79,6 +79,8 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ### Information
 
+- **The list of the Information screen scrolls like Settings, the File Manager and Manage Saved Data.** The highlight used to stay on the last row shown and the list moved with every step; now the highlight moves down through the rows that are shown (seven) and the list moves only when it would leave them. A caption (such as *PARAM.SFO*) comes into view with the row under it when you go back up. Every other list already scrolled this way (the Music list, the Library, Manage Saved Data, Games and Apps, Settings and the choices of a setting, the File Manager).
+
 - **Console Information: new rows *Last IP address* and *Free RAM*, and no storage rows.** *Last IP address* is the last address that the PSP's own Wi-Fi window or the FTP Server got. It is kept after the Wi-Fi is closed and after a restart (`lastip.txt` in psp5 authentic's folder), and until there is one it says *Not recorded yet*.
   It is an old address, not a sign that the Wi-Fi is on: it may have changed, and an FTP program needs the address on the open FTP screen. A connection that is made outside psp5 authentic is not seen. *Free RAM* is the memory that is free right now, outside psp5 authentic's own heap; it is read when the page is opened.
   The rows for the Memory Stick and for the PSP Go's internal storage are gone: the space of both is in *Settings → Storage → Console Storage*. The new texts are in all 11 languages.
