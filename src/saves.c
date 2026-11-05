@@ -1270,6 +1270,7 @@ typedef struct {
 
 #define HEADER_RIGHT (LIST_X + LIST_W + 16 + PANEL_W) /* 456: the right edge of the details */
 #define SORT_BASELINE 52.0f
+#define SORT_TEXT_SIZE 0.56f /* the size of the Sort text (it shrinks to 0.4 when the line is long): the size of the Library's */
 #define SORT_FRAME_H  20.0f /* the frame of the Sort button is centred on its text, which shrinks when the label is long */
 
 static StrId sort_name(int sort)
@@ -1324,7 +1325,7 @@ static void header_layout(Header *h)
     snprintf(line, sizeof(line), "%s: %s", L(S_SORT), L(sort_name(S.sort)));
     h->sort_x = SORT_X;
     limit = h->has_sel ? HEADER_RIGHT - sel_w - 12 : HEADER_RIGHT - BAR_W - 12;
-    h->sort_size = fit_line(h->sort, sizeof(h->sort), line, 0.5f, 0.4f, fmaxf(limit - h->sort_x - 9, 60));
+    h->sort_size = fit_line(h->sort, sizeof(h->sort), line, SORT_TEXT_SIZE, 0.4f, fmaxf(limit - h->sort_x - 9, 60));
     h->sort_w = text_width(h->sort_size, 0, h->sort);
 }
 
