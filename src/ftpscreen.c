@@ -208,17 +208,18 @@ static void draw_running(float t)
     text_ellipsis(line, sizeof line, s->name, 0.56f, 340);
     text_draw(SCREEN_W / 2, 215, 0.56f, 0, GREY, ALIGN_CENTER, line);
     float bw = 260, bx = (SCREEN_W - bw) / 2;
+    u32 accent = theme_cur()->accent; /* the bar is drawn as the storage bars: their background, the theme's colour, a straight end on the progress */
     gfx_round_rect(bx, 223, bw, 4, 2, RGBA(255, 255, 255, 40));
     gameops_fmt_size(num, sizeof num, s->done);
     if (s->total > 0) { /* a file that goes out: how far it has come */
         float f = (float)((double)s->done / (double)s->total);
         f = f < 0 ? 0 : f > 1 ? 1 : f;
         if (f > 0)
-            gfx_round_rect(bx, 223, bw * f < 4 ? 4 : bw * f, 4, 2, GREEN);
+            gfx_bar_fill(bx, 223, bw * f < 4 ? 4 : bw * f, 4, 2, accent);
         gameops_fmt_size(num2, sizeof num2, s->total);
         snprintf(line, sizeof line, "%s / %s", num, num2);
     } else { /* a file that comes in: the size is not known */
-        gfx_round_rect(bx, 223, bw, 4, 2, RGBA(120, 220, 150, 110));
+        gfx_bar_fill(bx, 223, bw, 4, 2, COLOR_ALPHA(accent, (int)(((accent >> 24) & 0xFF) * 0.45f)));
         snprintf(line, sizeof line, "%s", num);
     }
     text_draw(SCREEN_W / 2, 241, 0.5f, 0, GREY, ALIGN_CENTER, line);

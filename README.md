@@ -45,7 +45,7 @@ wherever it can, but it doesn't copy the console in everything.
     <td width="50%"><img src="docs/screenshots/power-menu.png" alt="Power menu"><br><sub><b>Power menu</b> (SELECT) – exit to the XMB, sleep, shut down, restart, recovery menu</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/ftp-server.png" alt="FTP Server"><br><sub><b>FTP Server</b> (Settings → Network) – copy files to and from your computer over Wi-Fi: the address to type, who is connected and the file that is going</sub></td>
+    <td width="50%"><img src="docs/screenshots/ftp-server.png" alt="FTP Server"><br><sub><b>FTP Server</b> (Settings → Network) – copy files to and from your computer over Wi-Fi: the address to type, who is connected and the file that is going, with a progress bar in the theme's colour</sub></td>
     <td width="50%"><img src="docs/screenshots/manage-plugins.png" alt="Manage Plugins"><br><sub><b>Manage Plugins</b> (Settings → System → Plugins) – the plugins that are installed and where; Confirm opens one to install it to more places or uninstall it from some</sub></td>
   </tr>
   <tr>

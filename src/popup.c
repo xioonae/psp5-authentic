@@ -84,8 +84,8 @@ void popup_progress(const char *title, const char *current, float fraction, u32 
     text_ellipsis(name, sizeof(name), current, 0.5f, w - 32);
     text_draw(x + 16, y + 44, 0.5f, 0, TEXT_DIM, ALIGN_LEFT, name);
     gfx_round_rect(x + 16, y + 54, w - 32, 6, 3, RGBA(255, 255, 255, 40));
-    if (f > 0)
-        gfx_round_rect(x + 16, y + 54, (w - 32) * f, 6, 3, accent);
+    if (f > 0) /* as the storage bars: the left end is the bar's, the end of the progress is straight */
+        gfx_bar_fill(x + 16, y + 54, (w - 32) * f, 6, 3, accent);
     char pct[8];
     snprintf(pct, sizeof(pct), "%d %%", (int)(f * 100));
     text_draw(x + w - 16, y + 26, 0.56f, 0, TEXT_DIM, ALIGN_RIGHT, pct);

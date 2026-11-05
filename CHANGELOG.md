@@ -170,6 +170,10 @@ below are inspired by what the original project found and did about them. The co
   of the selected card in the Library, and the highlighted row of the File Manager, *Manage Saved Data* and *Games and Apps* (the rows that are not highlighted are still cut with "..."). The names in
   Settings and in the popups are not changed.
 - **The bar that shows how full a storage is ends with a straight line** where the used part stops (it was round). This is for *Console Storage*, *Manage Saved Data*, *Games and Apps* and the File Manager.
+- **The bar of the FTP Server and the bar of a copy, move or delete look like the storage bars.** The bar on the FTP Server screen (the file that is being sent or received) and the bar in the panel of a copy, a move or a
+  delete (the File Manager, *Manage Saved Data* and *Games and Apps*) have the same background as the storage bars and are drawn in the theme's colour (the FTP bar was always green), and the part that is done ends
+  with a straight line, not a round end. A file that comes in over FTP (the size is not known) shows the whole bar in a fainter theme colour. USB Mode has no such bar: the computer reads and writes the card directly, and
+  the PSP cannot see which file moves or how far it has got.
 - **Hold ↑ or ↓ in a popup to move fast.** The first step comes at once, then it repeats after a third of a second. This was missing in the options popup of a game, the Sort and view popups of the Library
   and the power menu (SELECT); the popups of the other screens did it already. A direction that is held when a popup opens still does not move it.
 - **Games and Apps starts on *Least used***, the first choice of its Sort popup (it started on the second). **Choosing a sort starts the list at the top**, in *Games and Apps* and in *Manage Saved Data*
