@@ -182,6 +182,7 @@ below are inspired by what the original project found and did about them. The co
 
 ### Docs
 
+- The picture of *Install New Plugin* in the README shows the page as it is now: *File*, *Location* (where the file is), *PLUGINS.TXT* (the one that is edited) and the three switches. The folder and the file name in it are the demo's.
 - The picture of *Console Information* in the README is scrolled down to the new rows: *CFW (ARK-5)* with the version of ARK, *Last IP address* and *Free RAM*. The version of ARK, the MAC address and the RAM in it are the demo PSP's (it has no ARK), and the demo has not been on Wi-Fi, so it says *Not recorded yet*.
 - The pictures of *Games*, *Library*, *Library with folders* and *Games and Apps* in the README show the new look (rectangular cards, the title as large as in the Library, *Games and Apps* on *Least used*).
 
