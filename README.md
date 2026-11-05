@@ -53,7 +53,7 @@ wherever it can, but it doesn't copy the console in everything.
     <td width="50%"><img src="docs/screenshots/settings-date-time.png" alt="Settings, Date and Time"><br><sub><b>System → Date and Time</b> – the date and time that psp5 authentic shows, with Daylight Saving (one hour less or more), the date format and the 12- or 24-hour clock. The time in the picture is a test value.</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/file-manager-conflict.png" alt="File Manager, a name that is taken"><br><sub><b>File Manager</b> – when a name is taken: <i>Replace</i>, <i>Skip</i>, <i>Merge</i> (folders), <i>Rename</i> or <i>Cancel</i>, with <i>Apply to All</i> (△) for the rest</sub></td>
+    <td width="50%"><img src="docs/screenshots/file-manager-conflict.png" alt="File Manager, a name that is taken"><br><sub><b>File Manager</b> – when a name is taken: <i>Overwrite</i>, <i>Skip</i>, <i>Merge</i> (folders), <i>Rename</i> or <i>Cancel</i>, with <i>Apply to All</i> (△) for the rest</sub></td>
     <td width="50%"></td>
   </tr>
 </table>
@@ -103,7 +103,7 @@ wherever it can, but it doesn't copy the console in everything.
   one after the other. You can also show the battery percentage (*Settings → psp5 authentic*). A Wi-Fi sign is shown while the PSP's Wi-Fi switch is
   on. At the very end of the top bar is the cog wheel.
 - **File Manager** (*Settings → Storage*). Browse the Memory Stick (and the internal storage on a PSP Go) and copy,
-  move, rename, delete or make folders. When a name is taken it asks: *Replace*, *Skip*, *Merge* (folders), *Rename* or *Cancel*, with *Apply to All* for the rest.
+  move, rename, delete or make folders. When a name is taken it asks: *Overwrite*, *Skip*, *Merge* (folders), *Rename* or *Cancel*, with *Apply to All* for the rest.
 - **FTP Server** (*Settings → Network → FTP Server*). Copy files to and from the PSP over Wi-Fi: the PSP's own Wi-Fi window opens so that you choose one of your saved connections, and psp5 authentic shows the address to type
   into an FTP program or the file manager of your computer. It shows who is connected and the file that is going. There is no password, so use it on your own network. If the computer cannot connect, INSTALL.md has a list of what to check (WLAN Power Save of the PSP, the network), and [docs/FTP-TROUBLESHOOTING.md](docs/FTP-TROUBLESHOOTING.md) has a step-by-step workaround for networks where the computer cannot find the PSP (a static ARP entry; Linux, Windows, macOS).
 - **Sounds and languages.** Menu sounds (you can turn them off). 11 languages: psp5 authentic follows the PSP's language; Swedish and

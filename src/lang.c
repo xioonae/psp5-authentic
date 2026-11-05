@@ -674,7 +674,7 @@ static const char *const T[S_COUNT][NL] = {
                      "Un dossier portant ce nom existe déjà ici.", "Ya existe una carpeta con este nombre aquí.", "Esiste già una cartella con questo nome.",
                      "Er staat hier al een map met deze naam.", "Já existe aqui uma pasta com este nome.", "Папка с таким именем уже есть.",
                      "同じ名前のフォルダが既にあります。", "Složka s tímto názvem tu už je." },
-    [S_F_CF_REPLACE] = { "Replace", "Ersätt", "Ersetzen", "Remplacer", "Reemplazar", "Sostituisci", "Vervangen", "Substituir", "Заменить", "置き換える", "Nahradit" },
+    [S_F_CF_REPLACE] = { "Overwrite", "Skriv över", "Überschreiben", "Écraser", "Sobrescribir", "Sovrascrivi", "Overschrijven", "Sobrescrever", "Перезаписать", "上書き", "Přepsat" },
     [S_F_CF_SKIP] = { "Skip", "Hoppa över", "Überspringen", "Ignorer", "Omitir", "Salta", "Overslaan", "Ignorar", "Пропустить", "スキップ", "Přeskočit" },
     [S_F_CF_MERGE] = { "Merge", "Slå ihop", "Zusammenführen", "Fusionner", "Combinar", "Unisci", "Samenvoegen", "Combinar", "Объединить", "統合", "Sloučit" },
     [S_F_CF_ALL] = { "Apply to All", "Använd på Alla", "Auf Alle Anwenden", "Appliquer à Tous", "Aplicar a Todos", "Applica a Tutti", "Op Alles Toepassen", "Aplicar a Todos",

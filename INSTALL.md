@@ -149,13 +149,13 @@ clears the marks, and at the top it cancels a waiting copy or move before it lea
 
 When you paste somewhere a file or a folder of that name is already, the File Manager asks what to do:
 
-- **Replace** puts the new one there and removes the old one, but only after the new one has arrived: if something goes wrong, or you press ○, the old one is still there.
+- **Overwrite** puts the new one there and removes the old one, but only after the new one has arrived: if something goes wrong, or you press ○, the old one is still there.
 - **Skip** leaves the old one and does not copy this one (it is the one that is chosen first).
 - **Merge** (for a folder onto a folder) puts the files into the folder that is there; a name that is taken inside it is asked again.
 - **Rename** keeps both: the keyboard opens with `name (2)` typed in.
 - **Cancel** (or ○) stops the whole copy or move.
 
-**Apply to All** (△) uses your answer for the rest of the items without asking again (*Rename* is greyed out while it is on, because it needs a name each time). A copy into the folder it is already in can only be renamed. Copies keep the dates of the originals.
+**Apply to All** (△) uses your answer for the rest of the items without asking again. With it on, *Rename* does not open the keyboard: every item gets the next free name by itself (`name (2)`, `name (3)` and so on). A copy into the folder it is already in can only be renamed. Copies keep the dates of the originals.
 
 ## FTP Server
 

@@ -90,7 +90,8 @@ static char s_ask_sub[24];   /* size of the one file that goes, else empty */
 /* --- arbetstråden --- */
 enum { OP_COPY, OP_MOVE, OP_DELETE };
 enum { R_OK, R_FAILED, R_NO_SPACE, R_CANCELLED, R_NOT_DELETED, R_INTO_ITSELF }; /* R_NOT_DELETED: moved to another card, but the original could not all be removed */
-/* What can be done when a name is taken in the place where a file or a folder is to go (the question of the screen; the worker waits for it) */
+/* What can be done when a name is taken in the place where a file or a folder is to go (the question of the screen; the worker waits for it). CF_REPLACE is
+ * the choice that the screen calls Overwrite. */
 enum { CF_REPLACE, CF_SKIP, CF_MERGE, CF_RENAME, CF_CANCEL, CF_NONE = -1 };
 static struct {
     SceUID thread;
@@ -1188,13 +1189,8 @@ static void cf_answer(int choice, const char *name)
     W.ask = 2; /* (last: the worker reads the answer when it sees this) */
 }
 
-/* Rename asks for a name, so it cannot be an answer for all: while "for all" is on it is greyed out, ↑ ↓ pass over it and ✕ does nothing on it */
-static int cf_enabled(int k)
-{
-    return !(s_cf_show_all && s_cf_all && s_cf_act[k] == CF_RENAME);
-}
-
-/* The question: ↑ ↓ choose, ✕ answers, △ turns "for all" on and off, ○ cancels the whole copy or move. Rename asks for the name first (it starts at "name (2)"). */
+/* The question: ↑ ↓ choose, ✕ answers, △ turns "for all" on and off, ○ cancels the whole copy or move. Rename asks for the name first (it starts at "name (2)")
+ * unless "for all" is on: then the worker takes the next free name each time. */
 static void cf_update(const UiInput *in, int move)
 {
     if (!s_cf) {
@@ -1202,37 +1198,18 @@ static void cf_update(const UiInput *in, int move)
         s_cf = 1;
     }
     if (move) {
-        int next = s_cf_sel;
-        do
-            next += move;
-        while (next >= 0 && next < s_cf_n && !cf_enabled(next));
-        if (next >= 0 && next < s_cf_n && next != s_cf_sel) {
+        int next = (int)clampf(s_cf_sel + move, 0, s_cf_n - 1);
+        if (next != s_cf_sel)
             sound_play(SND_MOVE);
-            s_cf_sel = next;
-        }
+        s_cf_sel = next;
     }
     if ((in->pressed & PSP_CTRL_TRIANGLE) && s_cf_show_all) {
         s_cf_all ^= 1;
         sound_play(SND_SELECT);
-        if (!cf_enabled(s_cf_sel)) { /* the highlight was on Rename: it goes to Skip (else to the first one that can be chosen) */
-            int to = -1;
-            for (int k = 0; k < s_cf_n && to < 0; k++)
-                if (s_cf_act[k] == CF_SKIP && cf_enabled(k))
-                    to = k;
-            for (int k = 0; k < s_cf_n && to < 0; k++)
-                if (cf_enabled(k))
-                    to = k;
-            if (to >= 0)
-                s_cf_sel = to;
-        }
     }
     if (in->pressed & PSP_CTRL_CROSS) {
         int act = s_cf_act[s_cf_sel];
-        if (!cf_enabled(s_cf_sel)) {
-            sound_play(SND_ERROR);
-            return;
-        }
-        if (act == CF_RENAME) {
+        if (act == CF_RENAME && !(s_cf_show_all && s_cf_all)) {
             char alt[MAX_PATH], full[MAX_PATH], typed[256];
             if (!unique_dest(alt, sizeof(alt), W.ask_dir, W.ask_name, W.ask_src_dir))
                 snprintf(alt, sizeof(alt), "%s", W.ask_name);
@@ -1629,9 +1606,7 @@ static void draw_conflict(void)
     for (int k = 0; k < s_cf_n; k++) {
         float ry = y + top + k * POPUP_ITEM;
         u32 col = s_cf_act[k] == CF_REPLACE ? POPUP_DANGER : POPUP_TEXT;
-        if (!cf_enabled(k)) /* (Rename while "for all" is on: grey, and never the one that is chosen) */
-            col = fade(POPUP_TEXT_DIM, 0.55f);
-        else if (k == s_cf_sel)
+        if (k == s_cf_sel)
             popup_choice(x + POPUP_EDGE, ry, w - 2 * POPUP_EDGE, POPUP_ITEM, a);
         else
             col = fade(col, 0.8f);
