@@ -1907,7 +1907,7 @@ static void draw_details(Ui *ui)
     if (type[0]) { /* the tag and the title are as large as in the Library (the same sizes, the tag 15 high) */
         float bw = ceilf(text_width(0.5f, 1, type)) + 12; /* (whole pixels) */
         float ty = floorf(LABEL_Y - 12.5f + 0.5f); /* tagg och versaler har samma mitt, som i Biblioteket */
-        gfx_round_rect(tx, ty, bw, 15, 3, with_alpha(LIGHT, 0.92f * la * fade));
+        gfx_round_rect(tx, ty, bw, 15, 3, with_alpha(LIGHT, la * fade)); /* (opaque, like the face of the clock of the time played) */
         text_draw(tx + bw / 2, ty + 11.5f, 0.5f, 1, with_alpha(DARK, la * fade), ALIGN_CENTER, type);
         tx += bw + 8;
     }
@@ -2122,7 +2122,7 @@ static void draw_library(Ui *ui)
     }
     if (type) {
         float bw = ceilf(text_width(0.5f, 1, type)) + 12;
-        gfx_round_rect(MARGIN, BOTTOM_Y - 8, bw, 15, 3, with_alpha(LIGHT, 0.92f * ui_a));
+        gfx_round_rect(MARGIN, BOTTOM_Y - 8, bw, 15, 3, with_alpha(LIGHT, ui_a));
         text_draw(MARGIN + bw / 2, BOTTOM_Y + 3.5f, 0.5f, 1, with_alpha(DARK, ui_a), ALIGN_CENTER, type);
         float tx = MARGIN + bw + 8;
         const char *played = play_text(ui, i); /* the pill with the time played is on the right of the row: the title stops before it */
