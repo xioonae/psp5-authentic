@@ -20,6 +20,7 @@
 #include "osd.h"
 #include "power.h"
 #include "popup.h"
+#include "look.h"
 #include "gameops.h"
 #include "storage.h"
 #include "datetime.h"
@@ -1302,13 +1303,6 @@ static void draw_background(const Theme *t)
     theme_backdrop(t, S.time, 1);
 }
 
-static void draw_toggle(float x, float y, int on, u32 on_color, float a)
-{
-    /* 26 x 14 with a knob 10 across, 2 px from the edge on every side: all on whole pixels */
-    gfx_round_rect(x, y, 26, 14, 7, fade(on ? on_color : RGBA(74, 76, 84, 255), a));
-    gfx_circle(on ? x + 19 : x + 7, y + 7, 5, fade(on ? LIGHT : RGBA(196, 196, 202, 255), a));
-}
-
 /* The icon of a category, in a box of 16 x 16 round (cx, cy) */
 static void draw_icon(int icon, float cx, float cy, float a)
 {
@@ -1344,7 +1338,7 @@ static void draw_icon(int icon, float cx, float cy, float a)
     }
 }
 
-static void draw_item(const Item *it, float y, const Theme *shown, float a)
+static void draw_item(const Item *it, float y, float a)
 {
     float right = LIST_X + LIST_W - 10, left = LIST_X + 8;
     char value[64] = "";
@@ -1354,7 +1348,7 @@ static void draw_item(const Item *it, float y, const Theme *shown, float a)
     }
     switch (it->type) {
     case IT_TOGGLE:
-        draw_toggle(right - 26, y + 6, *it->value != 0, theme_toggle_on(shown), a);
+        look_switch(right - 26, y + 6, *it->value != 0, a);
         right -= 34;
         snprintf(value, sizeof(value), "%s", it->info); /* plugins: var den laddas */
         break;
@@ -1363,7 +1357,7 @@ static void draw_item(const Item *it, float y, const Theme *shown, float a)
         int g = it->glyph ? it->glyph(*it->value) : -1; /* a button: its symbol at the end of the row, the words (if any) before it */
         if (g >= 0) {
             float bw = gfx_button_width(g);
-            gfx_button(right - ceilf(bw / 2), y + 13, 6.5f, g, fade(LIGHT, a), fade(RGBA(20, 20, 26, 255), a));
+            gfx_button(right - ceilf(bw / 2), y + 13, 6.5f, g, look_fade(LOOK_HINT_PLATE, a), look_fade(LOOK_HINT_MARK, a));
             right -= ceilf(bw) + (value[0] ? 6 : 0);
         }
         break;
@@ -1427,7 +1421,7 @@ static void draw_store_page(float a)
             snprintf(line, sizeof(line), L(S_CS_SIZE), num);
             text_draw(bx, y + 14, text_fit(0.6f, 0.46f, 0, bw, line), 0, fade(TEXT_MAIN, a), ALIGN_LEFT, line);
             /* the bar: the colours of what is on the storage one after the other, the rest is free */
-            gfx_round_rect(bx, y + 22, bw, 6, 3, RGBA(255, 255, 255, (int)(40 * a)));
+            gfx_round_rect(bx, y + 22, bw, 6, 3, look_fade(LOOK_BAR_TRACK, a));
             unsigned long long part[ST_ROWS] = { si->games, si->media, si->saved, si->other };
             float x = bx;
             for (int r = 0; r < ST_ROWS; r++) {
@@ -1504,7 +1498,7 @@ static void draw_popup(void)
         int g = it->glyph ? it->glyph(k) : -1;
         if (g >= 0) { /* a value that is a button: its symbol first, then the words, if there are any */
             float bw = ceilf(gfx_button_width(g));
-            gfx_button(tx + bw / 2, ry + 14, 6.5f, g, fade(LIGHT, a), fade(RGBA(20, 20, 26, 255), a * (k == S.pop_sel ? 1.0f : 0.9f)));
+            gfx_button(tx + bw / 2, ry + 14, 6.5f, g, look_fade(LOOK_HINT_PLATE, a), look_fade(LOOK_HINT_MARK, a * (k == S.pop_sel ? 1.0f : 0.9f)));
             tx += bw + 8;
         }
         if (it->opts[k][0])
@@ -1565,7 +1559,7 @@ void settings_draw(void)
             float x0 = LIST_X + (c->items[i].icon ? 8 + ICON_W : 4);
             gfx_rect(x0, y + ROW_H - 1, LIST_X + LIST_W - 4 - x0, 1, RGBA(255, 255, 255, (int)(26 * a)));
         }
-        draw_item(&c->items[i], y, shown, a);
+        draw_item(&c->items[i], y, a);
     }
     gfx_clip_reset();
     if (S.page != PG_CSTORE && c->count > LIST_ROWS) { /* the bar at the right: where the shown part is in the whole list (the file manager's) */

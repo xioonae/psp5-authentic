@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdio.h>
 #include "popup.h"
+#include "look.h"
 
 #define TEXT_MAIN POPUP_TEXT
 #define TEXT_DIM  POPUP_TEXT_DIM
@@ -73,7 +74,7 @@ void popup_toast(const char *msg, float a)
     text_draw(SCREEN_W / 2, y + 18.5f, 0.62f, 0, fade(RGBA(240, 240, 245, 255), a), ALIGN_CENTER, msg);
 }
 
-void popup_progress(const char *title, const char *current, float fraction, u32 accent, int back_button, const char *cancel)
+void popup_progress(const char *title, const char *current, float fraction, int back_button, const char *cancel)
 {
     float f = fraction < 0 ? 0 : fraction > 1 ? 1 : fraction;
     float w = 300, h = 96, x = (SCREEN_W - w) / 2, y = 84;
@@ -83,13 +84,11 @@ void popup_progress(const char *title, const char *current, float fraction, u32 
     char name[96];
     text_ellipsis(name, sizeof(name), current, 0.5f, w - 32);
     text_draw(x + 16, y + 44, 0.5f, 0, TEXT_DIM, ALIGN_LEFT, name);
-    gfx_round_rect(x + 16, y + 54, w - 32, 6, 3, RGBA(255, 255, 255, 40));
-    if (f > 0) /* as the storage bars: the left end is the bar's, the end of the progress is straight */
-        gfx_bar_fill(x + 16, y + 54, (w - 32) * f, 6, 3, accent);
+    look_bar(x + 16, y + 54, w - 32, 6, f > 0 ? (w - 32) * f : 0, 1); /* as the storage bars: the left end is the bar's, the end of the progress is straight */
     char pct[8];
     snprintf(pct, sizeof(pct), "%d %%", (int)(f * 100));
     text_draw(x + w - 16, y + 26, 0.56f, 0, TEXT_DIM, ALIGN_RIGHT, pct);
     /* the cancel hint: the button's symbol and its name */
-    gfx_button(x + 23, y + h - 16, 6.5f, back_button, RGBA(236, 236, 240, 255), RGBA(20, 20, 26, 255));
+    gfx_button(x + 23, y + h - 16, 6.5f, back_button, LOOK_HINT_PLATE, LOOK_HINT_MARK);
     text_draw(x + 34, y + h - 11.5f, 0.54f, 0, TEXT_MAIN, ALIGN_LEFT, cancel);
 }

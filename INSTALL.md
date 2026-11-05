@@ -113,7 +113,7 @@ Every screen uses the same few buttons for the same things:
 | START | **Options**: of the selected game, app or file (not on the Library card) · START again closes the options |
 | SELECT | **Power menu** on every screen: Exit to XMB, Sleep, Shut down, Restart, Recovery Menu (Confirm does it at once, Back or SELECT closes). It does not open while a popup is open or a copy, move or delete is running. |
 | L / R | **Switch tabs**: Games and Music (not in the Library: ○ closes it) · in a long list a page up / down |
-| □ △ | Extras on a few screens only: mark / select all in a list (*Manage Saved Data*, the File Manager), □ pauses the music |
+| □ △ | Extras on a few screens only: mark (the highlight stays on the row) / select all in a list (*Manage Saved Data*, the File Manager), □ pauses the music |
 | HOME | Back to the XMB (not as custom launcher)|
 
 By default ✕ confirms and ○ goes back (the other way round when the PSP itself is set to confirm with ○). **Settings → Controls** changes that:
@@ -143,7 +143,7 @@ It changes only what psp5 authentic shows. The PSP's own clock and settings stay
 
 ## File Manager
 
-*Settings → Storage → File Manager* lets you manage files right on the PSP. Confirm opens a folder, □ marks
+*Settings → Storage → File Manager* lets you manage files right on the PSP. Confirm opens a folder, □ marks (the highlight stays on the row)
 files, Options (START) shows what you can do (copy, move, paste, rename, delete, new folder) and Back goes back (the first Back
 clears the marks, and at the top it cancels a waiting copy or move before it leaves).
 

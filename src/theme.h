@@ -17,8 +17,7 @@ typedef struct {
     u32 glow;           /* mjukt ljus uppe till vänster */
     u32 haze;           /* svagt dis längs nederkanten */
     u32 sheen;          /* andra ljuset nere till höger (Chroma), 0 = inget */
-    u32 accent;         /* reglage, förlopp, laddningsprickar */
-    u32 card;           /* kort som inte har laddat sin bild än */
+    u32 accent;         /* the warm light of the old consoles' backdrop and the dust of the start-up animation (PS1-PS4 have no dust colour): the background only, nothing else is coloured with it (look.h) */
     u8 deco;
     u32 beam;           /* ljusstrålen från lampan uppe till vänster, med dis nere till vänster (alla teman) */
     u32 dust;           /* bandet av gyllene damm (bara PS5:s färger, annars 0 = inget damm) */
@@ -48,7 +47,5 @@ void theme_backdrop_library(const Theme *t, float time);
 void theme_backdrop_forget(void);
 /* Liten förhandsvisning (för inställningarna) */
 void theme_swatch(const Theme *t, float x, float y, float w, float h, float a);
-/* Temats färg för ett påslaget reglage */
-u32 theme_toggle_on(const Theme *t);
 
 #endif

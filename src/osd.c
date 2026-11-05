@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include "osd.h"
 #include "gfx.h"
+#include "look.h"
 #include "launch.h"
 #include "testrun.h"
 
@@ -103,11 +104,9 @@ void osd_draw(void)
     gfx_round_rect(x, y, w, h, h / 2, RGBA(34, 35, 41, (int)(255 * a)));
     u32 light = RGBA(240, 240, 245, (int)(255 * a)), dim = RGBA(240, 240, 245, (int)(70 * a));
     draw_speaker(x + 16, y + h / 2, s_level, s_muted, light, dim);
-    /* stapeln som på PS5: tunn ljus fyllning på en svag bana */
+    /* the bar is drawn as every bar (look.h): light grey on a trace of white, the end of the level straight */
     float bx = x + 46, bw = w - 46 - 42, by = y + h / 2 - 2;
-    gfx_round_rect(bx, by, bw, 4, 2, RGBA(255, 255, 255, (int)(45 * a)));
-    if (s_level > 0.005f)
-        gfx_round_rect(bx, by, fmaxf(4, bw * s_level), 4, 2, light);
+    look_bar(bx, by, bw, 4, s_level > 0.005f ? fmaxf(4, bw * s_level) : 0, a);
     char num[8];
     snprintf(num, sizeof(num), "%d", s_muted ? 0 : s_volume);
     text_draw(x + w - 18, y + h / 2 + 5, 0.62f, 0, light, ALIGN_RIGHT, num);

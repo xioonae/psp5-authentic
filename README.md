@@ -45,7 +45,7 @@ wherever it can, but it doesn't copy the console in everything.
     <td width="50%"><img src="docs/screenshots/power-menu.png" alt="Power menu"><br><sub><b>Power menu</b> (SELECT) – exit to the XMB, sleep, shut down, restart, recovery menu</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/ftp-server.png" alt="FTP Server"><br><sub><b>FTP Server</b> (Settings → Network) – copy files to and from your computer over Wi-Fi: the address to type, who is connected and the file that is going, with a progress bar in the theme's colour</sub></td>
+    <td width="50%"><img src="docs/screenshots/ftp-server.png" alt="FTP Server"><br><sub><b>FTP Server</b> (Settings → Network) – copy files to and from your computer over Wi-Fi: the address to type, who is connected and the file that is going, with a progress bar</sub></td>
     <td width="50%"><img src="docs/screenshots/manage-plugins.png" alt="Manage Plugins"><br><sub><b>Manage Plugins</b> (Settings → System → Plugins) – the plugins that are installed and where; Confirm opens one to install it to more places or uninstall it from some</sub></td>
   </tr>
   <tr>
@@ -92,7 +92,7 @@ wherever it can, but it doesn't copy the console in everything.
   A setting with several values opens a popup when you press Confirm on it.
   The title of a page is its own name (*Appearance*, not *System > Appearance*).
   The *last IP address* in Console Information is the one that the Wi-Fi window or the FTP Server got last, kept after a restart; it may have changed since.
-- **Themes.** The colours of the console covers, each with the console's scene behind your games (a beam of light, golden
+- **Themes.** A theme is the background: the colours of the console covers, each with the console's scene behind your games (a beam of light, golden
   dust, haze), plus the classic looks of PS1 to PS4 in the colours of those consoles' own themes. Highlight a theme to preview it, Confirm to use it. You can turn *Show Game art*
   off (it is for the Games tab: the Library has its own background), so the theme is always visible.
 - **Startup.** A short intro like a console's, with a health notice, soft circles and golden dust in your theme's colours.

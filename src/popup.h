@@ -53,8 +53,8 @@ void popup_ask(const char (*lines)[96], int nlines, float line_h, const char *su
 /* A message in the middle of the screen (not modal: the screen is not dimmed). */
 void popup_toast(const char *msg, float a);
 /* Copy / move / delete in progress: dims the screen and draws the panel with the title, the name of what is being
- * handled, the bar (`fraction` 0..1, in the colour `accent`) and, at the bottom, the hint for cancelling: the symbol of
+ * handled, the bar (`fraction` 0..1: look.h) and, at the bottom, the hint for cancelling: the symbol of
  * `back_button` (BTN_CIRCLE or BTN_CROSS) and `cancel`. */
-void popup_progress(const char *title, const char *current, float fraction, u32 accent, int back_button, const char *cancel);
+void popup_progress(const char *title, const char *current, float fraction, int back_button, const char *cancel);
 
 #endif

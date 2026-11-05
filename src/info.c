@@ -22,6 +22,7 @@
 #include "sound.h"
 #include "system.h"
 #include "theme.h"
+#include "look.h"
 #include "datetime.h"
 #include "umd.h"
 
@@ -453,7 +454,7 @@ static void draw_left(float a, float slide)
     if (slot && slot->state == SLOT_READY && slot->tex)
         gfx_tex(slot->tex, x, y, w, h, RGBA(255, 255, 255, (int)(255 * a)));
     else
-        gfx_round_rect(x, y, w, h, w / 12, fade(theme_cur()->card, a));
+        gfx_round_rect(x, y, w, h, w / 12, fade(LOOK_CARD, a));
 
     char lines[3][96];
     int n = text_wrap(S.e.title, 0.6f, w, lines, 3);

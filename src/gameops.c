@@ -462,5 +462,5 @@ void gameops_draw(void)
     if (D.thread < 0)
         return;
     float f = D.total ? (float)D.done / (float)D.total : 0;
-    popup_progress(L(S_F_DELETING), D.current, f, theme_cur()->accent, controls_glyph(PSP_CTRL_CIRCLE), L(S_F_CANCEL));
+    popup_progress(L(S_F_DELETING), D.current, f, controls_glyph(PSP_CTRL_CIRCLE), L(S_F_CANCEL));
 }

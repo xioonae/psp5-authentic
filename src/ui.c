@@ -27,6 +27,7 @@
 #include "power.h"
 #include "playtime.h"
 #include "popup.h"
+#include "look.h"
 #include "config.h"
 #include "datetime.h"
 #include "testrun.h"
@@ -1086,7 +1087,7 @@ static void lib_header(const Ui *ui, LibHeader *h)
 {
     char num[16];
     snprintf(num, sizeof(num), "%d", view(ui)->count);
-    float count_w = text_width(0.6f, 0, num);
+    float count_w = text_width(SORT_SIZE, 0, num); /* (the view text and its number are as large as the text of the Sort button) */
     sort_text(ui, h->sort, sizeof(h->sort));
     h->sort_w = text_width(SORT_SIZE, 0, h->sort);
     h->sort_r = SCREEN_W - MARGIN + SORT_PAD;
@@ -1095,15 +1096,15 @@ static void lib_header(const Ui *ui, LibHeader *h)
     char name[FOLDER_NAME_MAX + 8];
     snprintf(name, sizeof(name), "%s:", open ? ui->lib_open_name : view_label(ui->lib_view)); /* "All: 15", "Racing: 3" */
     float pad = open ? 0 : SORT_PAD; /* (a folder's name has no frame) */
-    float gap = fmaxf(3.0f, ceilf(text_width(0.6f, 0, " "))); /* a space between the colon and the number (whole pixels) */
+    float gap = fmaxf(3.0f, ceilf(text_width(SORT_SIZE, 0, " "))); /* a space between the colon and the number (whole pixels) */
     float room = h->sort_l - 12 - MARGIN - 2 * pad; /* for the text of the view button, with a gap before the Sort button */
     float room_n = room - gap - count_w;            /* ... with the number of cards next to it */
     h->show_count = 1;
-    h->view_size = text_fit(0.66f, 0.45f, 0, room_n, name);
+    h->view_size = text_fit(SORT_SIZE, 0.45f, 0, room_n, name);
     if (text_width(h->view_size, 0, name) > room_n) { /* too long in this language even at the smallest size: the number goes first */
         h->show_count = 0;
         room_n = room;
-        h->view_size = text_fit(0.66f, 0.45f, 0, room_n, name);
+        h->view_size = text_fit(SORT_SIZE, 0.45f, 0, room_n, name);
     }
     if (room_n < 24)
         room_n = 24;
@@ -1744,7 +1745,7 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
         int loading = !library && !folder && (!slot || slot->state == SLOT_EMPTY || slot->state == SLOT_LOADING);
         float breath = loading ? 0.5f + 0.5f * sinf(ui->time * 4.0f + list_index) : 0;
         float pa = alpha * (1 - shown);
-        u32 cc = theme_cur()->card; /* temats färg, andas medan bilden laddas */
+        u32 cc = LOOK_CARD; /* the card's own colour (look.h), breathes while the picture loads */
         if (library) { /* the same colour as a game without a picture; the picture is one image on the card's whole pixels */
             int tint = (int)lerpf(200, 255, focus); /* as dim as a picture is when it is not selected */
             card_plate(l, t, rt - l, b - t, r, RGBA(cc & 0xFF, (cc >> 8) & 0xFF, (cc >> 16) & 0xFF, (int)(255 * pa)));
@@ -2011,8 +2012,7 @@ static void draw_menu(Ui *ui)
         float room = w - 32;
         if (item == MI_KEEP) { /* a switch, as in Settings: 26 x 14, the knob 10 across */
             float tx = x + w - 16 - 26, ty = ry + 7;
-            gfx_round_rect(tx, ty, 26, 14, 7, with_alpha(ui->menu_kept ? theme_toggle_on(theme_cur()) : RGBA(74, 76, 84, 255), a));
-            gfx_circle(ui->menu_kept ? tx + 19 : tx + 7, ty + 7, 5, with_alpha(ui->menu_kept ? LIGHT : RGBA(196, 196, 202, 255), a));
+            look_switch(tx, ty, ui->menu_kept, a);
             room -= 34;
         } else if (ui->menu_kind == MENU_SORT && k == ui->lib_sort) { /* a check mark for the way the Library is sorted now */
             float cx = x + w - 16 - 6, cy = ry + MENU_ITEM_H / 2;
@@ -2053,7 +2053,7 @@ static void draw_library(Ui *ui)
     char num[16];
     snprintf(num, sizeof(num), "%d", v->count);
     if (hd.show_count)
-        text_draw(hd.count_x, head_y, 0.6f, 0, with_alpha(TEXT_DIM, ui_a), ALIGN_LEFT, num); /* (on the baseline of the text before it, not of the Sort button: the label is larger and sits lower) */
+        text_draw(hd.count_x, head_y, SORT_SIZE, 0, with_alpha(TEXT_MAIN, ui_a), ALIGN_LEFT, num);
 
     /* the Sort button: selected with ↑ from a card under it, it gets the frame of a chosen entry; ✕ opens the popup. Its frame
      * is gone for as long as the top bar has the focus (sort_frame), so moving along the top bar never brings it back. */
@@ -2063,7 +2063,7 @@ static void draw_library(Ui *ui)
         popup_frame_around(sort_mid, 22, &fy, &fh);
         popup_choice(hd.sort_l, fy, hd.sort_r - hd.sort_l, fh, sort_shown * ui_a);
     }
-    text_draw(SCREEN_W - MARGIN, 53, SORT_SIZE, 0, with_alpha(sort_shown > 0.5f ? TEXT_MAIN : TEXT_DIM, ui_a), ALIGN_RIGHT, hd.sort);
+    text_draw(SCREEN_W - MARGIN, 53, SORT_SIZE, 0, with_alpha(TEXT_MAIN, ui_a), ALIGN_RIGHT, hd.sort); /* (white, like the view text at the left) */
 
     if (!v->count) { /* the view has nothing in it (no folders, or nothing outside them): the button above changes the view */
         text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, ui_a), ALIGN_LEFT, L(ui->lib_view == LIB_VIEW_FOLDERS ? S_LIB_NO_IN : S_LIB_NO_OUT));
@@ -2217,9 +2217,7 @@ static void draw_music(Ui *ui)
         int seek = ui->seeking || ui->seek_show > 0;
         float el = seek ? ui->seek_pos : music_elapsed(), du = music_duration();
         float bw = pw - 28, bxx = px + 14, by = py + ph - 30;
-        gfx_round_rect(bxx, by, bw, 3, 1.5f, RGBA(255, 255, 255, (int)(50 * a)));
-        if (du > 0)
-            gfx_round_rect(bxx, by, fmaxf(3, bw * clampf(el / du, 0, 1)), 3, 1.5f, with_alpha(theme_cur()->accent, a));
+        look_bar(bxx, by, bw, 3, du > 0 ? fmaxf(3, bw * clampf(el / du, 0, 1)) : 0, a); /* as every bar (look.h): the end of what is played is straight */
         if (du > 0 && ui->seeking) /* spolning: en knopp på målet */
             gfx_circle(bxx + bw * clampf(el / du, 0, 1), by + 1.5f, 4.5f, with_alpha(LIGHT, a));
         char e[12], d[12];
@@ -2239,7 +2237,7 @@ static void draw_music(Ui *ui)
         text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_LOADING_MUSIC));
         for (int i = 0; i < 3; i++) { /* tre punkter som pulserar i tur och ordning */
             float p = 0.5f + 0.5f * sinf(ui->time * 6.0f - i * 0.9f);
-            gfx_circle(MARGIN + 4 + i * 12, 140, 2 + p, COLOR_ALPHA(theme_cur()->accent, (int)((90 + 165 * p) * a)));
+            gfx_circle(MARGIN + 4 + i * 12, 140, 2 + p, COLOR_ALPHA(TEXT_MAIN, (int)((90 + 165 * p) * a)));
         }
         return;
     }
@@ -2363,7 +2361,7 @@ void ui_draw_scanning(int done, const char *name, float time)
     /* tre punkter som pulserar i tur och ordning */
     for (int i = 0; i < 3; i++) {
         float p = 0.5f + 0.5f * sinf(time * 6.0f - i * 0.9f);
-        gfx_circle(MARGIN + 4 + i * 12, 140, 2 + p, COLOR_ALPHA(theme_cur()->accent, (int)(90 + 165 * p)));
+        gfx_circle(MARGIN + 4 + i * 12, 140, 2 + p, COLOR_ALPHA(TEXT_MAIN, (int)(90 + 165 * p)));
     }
     char line[96];
     snprintf(line, sizeof(line), "%d  ·  %.60s", done, name);

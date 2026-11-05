@@ -170,10 +170,15 @@ below are inspired by what the original project found and did about them. The co
   of the selected card in the Library, and the highlighted row of the File Manager, *Manage Saved Data* and *Games and Apps* (the rows that are not highlighted are still cut with "..."). The names in
   Settings and in the popups are not changed.
 - **The bar that shows how full a storage is ends with a straight line** where the used part stops (it was round). This is for *Console Storage*, *Manage Saved Data*, *Games and Apps* and the File Manager.
-- **The bar of the FTP Server and the bar of a copy, move or delete look like the storage bars.** The bar on the FTP Server screen (the file that is being sent or received) and the bar in the panel of a copy, a move or a
-  delete (the File Manager, *Manage Saved Data* and *Games and Apps*) have the same background as the storage bars and are drawn in the theme's colour (the FTP bar was always green), and the part that is done ends
-  with a straight line, not a round end. A file that comes in over FTP (the size is not known) shows the whole bar in a fainter theme colour. USB Mode has no such bar: the computer reads and writes the card directly, and
-  the PSP cannot see which file moves or how far it has got.
+- **The theme is the background only.** A theme colours the background (the surface, the light, the haze, the dust, the shapes of the old consoles) and the start-up animation, and nothing else: everything on top of it looks the same in every theme, with the colours of the console's own screens.
+  - **Bars** (the free space in the File Manager, *Manage Saved Data* and *Games and Apps*, the bar of the FTP Server, the panel of a copy, a move or a delete, the song position in Music, the volume): one background (a trace of white), one light grey for the part that is done or used, and a straight end on that part. *Console Storage* keeps the colours of what is on the storage, on the same background.
+    A file that comes in over FTP, whose size is not known, shows the whole bar in a fainter grey. USB Mode has no such bar: the computer reads and writes the card directly, and the PSP cannot see which file moves or how far it has got.
+  - **Switches** (Settings, and *Keep in Home* in a card's popup): a grey track with a light knob at the right when it is on, a darker track with a knob at the left that is only a ring when it is off.
+  - **Ticks** (a marked row in the File Manager, *Manage Saved Data* and *Games and Apps*, and *Apply to All*): a rounded square with a light fill and a lighter edge, not a circle, with a white check mark in it when it is ticked; a row that is not marked has the same box without the check mark. A marked row is **not highlighted** any more, only ticked.
+  - **The buttons in the hints** (✕ ○ □ △ and the START / SELECT pills): a light grey plate with a dark grey mark, and **no dark capsule behind them** (the File Manager, *Manage Saved Data*, *Games and Apps*, the FTP Server, USB Mode, the progress panel and the Controls page of Settings).
+  - **Cards** that have no picture (yet), and the picture places of Information and *Manage Saved Data*, are one near-black colour. The three dots of the Loading screens are the colour of the text. The small previews in *System → Appearance* have a white strip under the picture in every theme.
+- **The text of the Library's top row is one size and one colour.** The view text and the number of cards (*All: 14*) are as small as the text of the Sort button (they were larger), and the Sort text is white like the view text (it was grey until the button was chosen). In *Manage Saved Data* and *Games and Apps* the Sort text is white too, like the rest of the text.
+- **Marking with □ does not move the highlight.** In the File Manager, *Manage Saved Data* and *Games and Apps* it only marks (or unmarks) the row; ↓ goes to the next one.
 - **Hold ↑ or ↓ in a popup to move fast.** The first step comes at once, then it repeats after a third of a second. This was missing in the options popup of a game, the Sort and view popups of the Library
   and the power menu (SELECT); the popups of the other screens did it already. A direction that is held when a popup opens still does not move it.
 - **Games and Apps starts on *Least used***, the first choice of its Sort popup (it started on the second). **Choosing a sort starts the list at the top**, in *Games and Apps* and in *Manage Saved Data*
@@ -211,7 +216,7 @@ below are inspired by what the original project found and did about them. The co
 ### Themes
 
 - **PS1, PS2, PS3 and PS4 have the colours of the real consoles' themes.** PS1 is grey with a warm lamp, PS2 is black with blue-violet light, PS3 is black with gold and cream (it was blue), and PS4 is blue-violet with purple at the lower right (it was a bright cyan-blue).
-  The colours were measured from pictures of the four themes. The moving shapes took them too (PS2's towers and orbs are blue-violet, PS3's waves warm cream, PS4's waves and particles blue), and so did the switches, the bars and the Library's picture, which follow the theme's accent.
+  The colours were measured from pictures of the four themes. The moving shapes took them too (PS2's towers and orbs are blue-violet, PS3's waves warm cream, PS4's waves and particles blue). (The switches, the bars and the cards no longer follow the theme: see *The theme is the background only* below.)
   The lamp, the beam of light and the haze are still the same for every theme, so the look is close to the pictures but not the same pixel for pixel.
 
 ### Sound

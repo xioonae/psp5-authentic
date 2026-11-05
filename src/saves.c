@@ -36,6 +36,7 @@
 #include "power.h"
 #include "playtime.h"
 #include "popup.h"
+#include "look.h"
 #include "sfo.h"
 #include "sound.h"
 #include "system.h"
@@ -995,10 +996,8 @@ static void mark_highlighted(void)
         sound_play(SND_ERROR);
         return;
     }
-    s->marked ^= 1;
+    s->marked ^= 1; /* (the highlight stays on the row) */
     sound_play(SND_SELECT);
-    if (S.sel < T.count - 1)
-        S.sel++;
 }
 
 /* ✕: ask before deleting the marked saves (or the highlighted one) */
@@ -1180,14 +1179,6 @@ int saves_update(const UiInput *in, float dt)
 /* ---------------------------------------------------------------------- */
 /* drawing */
 
-static void draw_check(float cx, float cy, float a)
-{
-    gfx_circle(cx, cy, 6, fade(theme_toggle_on(theme_cur()), a));
-    float xy[6] = { cx - 3, cy, cx - 1, cy + 2.2f, cx + 3, cy - 2.4f };
-    u32 col[3] = { fade(LIGHT, a), fade(LIGHT, a), fade(LIGHT, a) };
-    gfx_stroke(xy, col, 3, 1.5f);
-}
-
 /* a padlock for the saves that can't be deleted */
 static void draw_lock(float cx, float cy, float a)
 {
@@ -1211,8 +1202,6 @@ static void draw_rows(float a, float slide)
             lay_row(s);
         int sel = i == S.sel && !S.ask;
         float ka = a * (1 - S.sort_anim); /* the highlight gives way to the Sort button's */
-        if (s->marked)
-            gfx_rect(LIST_X, y, LIST_W, ROW_H, fade(COLOR_ALPHA(theme_cur()->accent, 46), a));
         if (sel) {
             gfx_rect(LIST_X, y, LIST_W, ROW_H, RGBA(255, 255, 255, (int)(16 * ka)));
             gfx_frame(LIST_X, y, LIST_W, ROW_H, 1, fade(RGBA(232, 232, 236, 230), ka));
@@ -1222,10 +1211,8 @@ static void draw_rows(float a, float slide)
         float x = ROW_ICON_X + slide, cy = y + ROW_H / 2;
         if (s->locked)
             draw_lock(x + 6, cy, a);
-        else if (s->marked)
-            draw_check(x + 6, cy, a);
         else
-            gfx_ring(x, cy - 6, 12, 12, 6, fade(RGBA(255, 255, 255, 90), a));
+            look_tick(x + LOOK_TICK_SIZE / 2, cy, s->marked, a);
         u32 col = !s->ready ? TEXT_DIM : s->matched ? TEXT_MAIN : RGBA(200, 202, 212, 255); /* no game: a bit dimmer */
         if (sel && s->name_over) /* the highlighted name does not shrink or stay cut: it scrolls after a moment */
             text_draw_marquee(x + 20, y + 16.5f, 0.58f, 0, fade(col, a), s->main_room, s->ready && s->game[0] ? s->game : s->dir, S.name_t);
@@ -1251,7 +1238,7 @@ static void draw_panel(float a, float slide)
     if (S.pic && S.pic_sel == S.sel)
         gfx_tex(S.pic, x, y, PIC_W, PIC_H, RGBA(255, 255, 255, (int)(255 * a * S.pic_alpha)));
     else
-        gfx_round_rect(x, y, PIC_W, PIC_H, PIC_W / 12, fade(theme_cur()->card, a));
+        gfx_round_rect(x, y, PIC_W, PIC_H, PIC_W / 12, fade(LOOK_CARD, a));
     if (!T.listed || S.sel >= T.count || !S.pan_ready)
         return;
     const Save *s = &T.items[S.sel];
@@ -1354,12 +1341,11 @@ static void draw_header(float a, float slide)
         popup_frame_around(popup_label_mid(SORT_BASELINE, h.sort_size), SORT_FRAME_H, &fy, &fh);
         popup_choice(h.sort_x - 9 + slide, fy, h.sort_w + 18, fh, on * a);
     }
-    text_draw(h.sort_x + slide, SORT_BASELINE, h.sort_size, 0, fade(on > 0.5f ? TEXT_MAIN : TEXT_DIM, a), ALIGN_LEFT, h.sort);
+    text_draw(h.sort_x + slide, SORT_BASELINE, h.sort_size, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, h.sort); /* (as white as the rest of the text) */
 
     if (h.has_free) { /* as in the file manager */
         text_draw(HEADER_RIGHT, 28, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_RIGHT, h.free);
-        gfx_round_rect(HEADER_RIGHT - BAR_W, 34, BAR_W, 4, 2, fade(RGBA(255, 255, 255, 40), a));
-        gfx_bar_fill(HEADER_RIGHT - BAR_W, 34, BAR_W * clampf(h.used, 0.02f, 1), 4, 2, fade(theme_cur()->accent, a)); /* (a straight end) */
+        look_bar(HEADER_RIGHT - BAR_W, 34, BAR_W, 4, BAR_W * clampf(h.used, 0.02f, 1), a); /* (a straight end) */
     }
     if (h.has_sel)
         text_draw(HEADER_RIGHT, 52, 0.5f, 0, fade(TEXT_MAIN, a), ALIGN_RIGHT, h.sel);
@@ -1407,9 +1393,8 @@ static void draw_hints(float a)
     Hint h[4];
     float size, w = hints_layout(h, &size);
     float x = SCREEN_W - 22 - w, y = 252;
-    gfx_round_rect(x - 9, y - 10, w + 18, 20, 10, RGBA(0, 0, 0, (int)(110 * a)));
     for (int i = 0; i < 4; i++) {
-        gfx_button(x + 6.5f, y, 6.5f, h[i].btn, fade(LIGHT, a), fade(DARK, a));
+        gfx_button(x + 6.5f, y, 6.5f, h[i].btn, look_fade(LOOK_HINT_PLATE, a), look_fade(LOOK_HINT_MARK, a));
         x += 18;
         text_draw(x, y + 4.5f, size, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, h[i].text);
         x += ceilf(text_width(size, 0, h[i].text)) + 14;
@@ -1459,7 +1444,7 @@ static void draw_progress(void)
     if (W.thread < 0)
         return;
     float f = W.total ? clampf((float)W.done / (float)W.total, 0, 1) : 0;
-    popup_progress(L(S_F_DELETING), W.current, f, theme_cur()->accent, controls_glyph(PSP_CTRL_CIRCLE), L(S_F_CANCEL));
+    popup_progress(L(S_F_DELETING), W.current, f, controls_glyph(PSP_CTRL_CIRCLE), L(S_F_CANCEL));
 }
 
 void saves_draw(void)

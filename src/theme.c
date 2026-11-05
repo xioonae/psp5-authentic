@@ -16,35 +16,35 @@ unsigned char g_theme = 0;
 unsigned char g_theme_art = 1;
 
 static const Theme THEMES[] = {
-    /* code, namn, intro, surf_top, surf_bottom, glow, haze, sheen, accent, card, deco, beam, dust */
+    /* code, namn, intro, surf_top, surf_bottom, glow, haze, sheen, accent, deco, beam, dust */
     { "ps5", "PS5", C(36, 41, 52), C(48, 46, 50), C(22, 23, 29),
-      RGBA(215, 200, 190, 95), RGBA(92, 126, 132, 80), 0, C(238, 238, 242), C(40, 41, 48), DECO_SPOT, C(255, 216, 184), C(255, 178, 100) },
+      RGBA(215, 200, 190, 95), RGBA(92, 126, 132, 80), 0, C(238, 238, 242), DECO_SPOT, C(255, 216, 184), C(255, 178, 100) },
     { "black", "Midnight Black", C(26, 26, 29), C(30, 30, 34), C(9, 9, 11),
-      RGBA(150, 156, 172, 62), RGBA(90, 96, 112, 32), 0, C(206, 210, 220), C(30, 30, 35), DECO_SPOT, C(206, 210, 226), C(178, 186, 214) },
+      RGBA(150, 156, 172, 62), RGBA(90, 96, 112, 32), 0, C(206, 210, 220), DECO_SPOT, C(206, 210, 226), C(178, 186, 214) },
     { "red", "Cosmic Red", C(83, 19, 29), C(96, 22, 32), C(26, 7, 11),
-      RGBA(255, 128, 128, 72), RGBA(210, 60, 72, 42), 0, C(238, 76, 88), C(62, 22, 28), DECO_SPOT, C(255, 196, 188), C(255, 140, 120) },
+      RGBA(255, 128, 128, 72), RGBA(210, 60, 72, 42), 0, C(238, 76, 88), DECO_SPOT, C(255, 196, 188), C(255, 140, 120) },
     { "pink", "Nova Pink", C(99, 33, 75), C(112, 40, 84), C(30, 10, 25),
-      RGBA(255, 172, 214, 78), RGBA(232, 110, 172, 42), 0, C(246, 136, 190), C(70, 30, 56), DECO_SPOT, C(255, 208, 232), C(255, 160, 205) },
+      RGBA(255, 172, 214, 78), RGBA(232, 110, 172, 42), 0, C(246, 136, 190), DECO_SPOT, C(255, 208, 232), C(255, 160, 205) },
     { "purple", "Galactic Purple", C(61, 35, 107), C(68, 40, 114), C(17, 9, 35),
-      RGBA(204, 172, 255, 78), RGBA(142, 100, 222, 42), 0, C(176, 136, 244), C(50, 36, 80), DECO_SPOT, C(226, 208, 255), C(190, 160, 255) },
+      RGBA(204, 172, 255, 78), RGBA(142, 100, 222, 42), 0, C(176, 136, 244), DECO_SPOT, C(226, 208, 255), C(190, 160, 255) },
     { "volcanic", "Volcanic Red", C(97, 37, 21), C(106, 42, 22), C(28, 10, 6),
-      RGBA(255, 156, 96, 82), RGBA(232, 92, 42, 44), 0, C(252, 116, 64), C(70, 32, 22), DECO_SPOT, C(255, 214, 180), C(255, 160, 90) },
+      RGBA(255, 156, 96, 82), RGBA(232, 92, 42, 44), 0, C(252, 116, 64), DECO_SPOT, C(255, 214, 180), C(255, 160, 90) },
     { "cobalt", "Cobalt Blue", C(23, 43, 131), C(30, 50, 142), C(7, 13, 46),
-      RGBA(142, 172, 255, 82), RGBA(62, 104, 242, 44), 0, C(86, 136, 255), C(28, 40, 96), DECO_SPOT, C(188, 208, 255), C(130, 170, 255) },
+      RGBA(142, 172, 255, 82), RGBA(62, 104, 242, 44), 0, C(86, 136, 255), DECO_SPOT, C(188, 208, 255), C(130, 170, 255) },
     { "silver", "Sterling Silver", C(90, 94, 104), C(98, 102, 110), C(29, 31, 35),
-      RGBA(236, 242, 252, 82), RGBA(172, 182, 198, 42), 0, C(214, 220, 230), C(64, 68, 76), DECO_SPOT, C(240, 244, 252), C(214, 222, 238) },
+      RGBA(236, 242, 252, 82), RGBA(172, 182, 198, 42), 0, C(214, 220, 230), DECO_SPOT, C(240, 244, 252), C(214, 222, 238) },
     { "teal", "Chroma Teal", C(17, 79, 85), C(22, 86, 92), C(5, 23, 25),
-      RGBA(146, 244, 232, 78), RGBA(42, 182, 172, 42), RGBA(126, 126, 255, 40), C(66, 214, 204), C(20, 60, 62), DECO_SPOT, C(190, 248, 240), C(110, 230, 215) },
+      RGBA(146, 244, 232, 78), RGBA(42, 182, 172, 42), RGBA(126, 126, 255, 40), C(66, 214, 204), DECO_SPOT, C(190, 248, 240), C(110, 230, 215) },
     /* PS1–PS4, som PS5:s Utseende. Färgerna är mätta ur förlagorna (de fyra färgbilderna av PS1–PS4:s riktiga teman): grå konsol med
      * varm lampa, svart med blåvioletta ljus, svart med guld och kräm, och blåviolett med lila nere till höger. */
     { "ps1", "PS1", C(52, 52, 50), C(53, 51, 49), C(41, 45, 48),
-      RGBA(255, 241, 203, 205), RGBA(54, 58, 54, 164), 0, C(222, 220, 214), C(74, 74, 72), DECO_PS1, C(255, 246, 221), 0 },
+      RGBA(255, 241, 203, 205), RGBA(54, 58, 54, 164), 0, C(222, 220, 214), DECO_PS1, C(255, 246, 221), 0 },
     { "ps2", "PS2", C(3, 3, 44), C(3, 3, 62), C(0, 0, 1),
-      RGBA(60, 50, 255, 255), RGBA(40, 40, 112, 170), RGBA(0, 0, 16, 90), C(104, 100, 255), C(14, 14, 44), DECO_PS2, C(216, 234, 255), 0 },
+      RGBA(60, 50, 255, 255), RGBA(40, 40, 112, 170), RGBA(0, 0, 16, 90), C(104, 100, 255), DECO_PS2, C(216, 234, 255), 0 },
     { "ps3", "PS3", C(14, 13, 11), C(12, 11, 9), C(8, 7, 6),
-      RGBA(255, 237, 209, 255), RGBA(237, 209, 169, 44), 0, C(226, 200, 150), C(36, 33, 29), DECO_PS3, C(255, 246, 232), 0 },
+      RGBA(255, 237, 209, 255), RGBA(237, 209, 169, 44), 0, C(226, 200, 150), DECO_PS3, C(255, 246, 232), 0 },
     { "ps4", "PS4", C(14, 38, 100), C(20, 56, 141), C(22, 0, 6),
-      RGBA(132, 230, 255, 255), RGBA(90, 126, 245, 173), RGBA(43, 35, 114, 230), C(116, 150, 255), C(28, 34, 84), DECO_PS4, C(255, 255, 255), 0 },
+      RGBA(132, 230, 255, 255), RGBA(90, 126, 245, 173), RGBA(43, 35, 114, 230), C(116, 150, 255), DECO_PS4, C(255, 255, 255), 0 },
 };
 #define THEME_COUNT (int)(sizeof(THEMES) / sizeof(THEMES[0]))
 _Static_assert(THEME_COUNT == THEME_FIRST_CLASSIC + 4, "PS1-PS4 ska komma sist");
@@ -71,11 +71,6 @@ static u32 alpha(u32 c, float a) { return COLOR_ALPHA(c, (int)(ch(c, 3) * clampf
 static u32 scaled(u32 c, float k, int a)
 {
     return RGBA((int)(ch(c, 0) * k), (int)(ch(c, 1) * k), (int)(ch(c, 2) * k), a);
-}
-
-u32 theme_toggle_on(const Theme *t)
-{
-    return scaled(t->accent, 0.63f, 255);
 }
 
 /* --- mönster --- */
@@ -588,11 +583,11 @@ void theme_backdrop(const Theme *t, float time, float a)
 
 void theme_swatch(const Theme *t, float x, float y, float w, float h, float a)
 {
-    /* en liten "skärm" med temats toning och accentfärgen som en list – inte rund som ett reglage */
+    /* a small "screen" with the theme's tint and a white strip under it (the same in every theme: the theme is the background only) */
     gfx_rect(x, y, w, h, alpha(t->surf_top, a));
     float gy = floorf(h * 0.35f + 0.5f); /* (the gradient starts on a whole pixel) */
     gfx_gradient_v(x, y + gy, w, h - gy, alpha(COLOR_ALPHA(t->surf_bottom, 0), a), alpha(t->surf_bottom, a));
-    gfx_rect(x + 3, y + h - 4, w - 6, 2, alpha(t->accent, a));
+    gfx_rect(x + 3, y + h - 4, w - 6, 2, alpha(RGBA(255, 255, 255, 255), a));
     if (t->deco != DECO_SPOT) { /* klassiska konsoler: en liten våg som kännetecken */
         float l[6] = { x + 3, y + h * 0.55f, x + w * 0.5f, y + h * 0.3f, x + w - 3, y + h * 0.5f };
         u32 c[3] = { alpha(RGBA(255, 255, 255, 60), a), alpha(RGBA(255, 255, 255, 170), a), alpha(RGBA(255, 255, 255, 60), a) };

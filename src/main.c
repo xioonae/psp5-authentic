@@ -26,6 +26,7 @@
 #include "music.h"
 #include "umd.h"
 #include "theme.h"
+#include "look.h"
 #include "osd.h"
 #include "files.h"
 #include "wifi.h"
@@ -386,8 +387,7 @@ static int usb_mode(void)
         { /* knapptips som i filhanteraren: en mörk kapsel nere till höger */
             int btn = controls_glyph(PSP_CTRL_CIRCLE);
             float bw = gfx_button_width(btn), w = bw + 5 + ceilf(text_width(0.56f, 0, L(S_USB_EXIT))), x = SCREEN_W - 22 - w, y = 252; /* (whole pixels) */
-            gfx_round_rect(x - 9, y - 10, w + 18, 20, 10, RGBA(0, 0, 0, 110));
-            gfx_button(x + bw / 2, y, 6.5f, btn, RGBA(236, 236, 240, 255), RGBA(20, 20, 26, 255));
+            gfx_button(x + bw / 2, y, 6.5f, btn, LOOK_HINT_PLATE, LOOK_HINT_MARK);
             text_draw(x + bw + 5, y + 4.5f, 0.56f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, L(S_USB_EXIT));
         }
         power_draw();

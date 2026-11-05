@@ -13,6 +13,7 @@
 #include "lang.h"
 #include "sound.h"
 #include "theme.h"
+#include "look.h"
 
 #define LIGHT RGBA(238, 238, 242, 255)
 #define GREY  RGBA(160, 162, 172, 255)
@@ -156,9 +157,8 @@ static void hints(const HintItem *it, int n)
         w += iw[i] + (i ? 14 : 0);
     }
     x = SCREEN_W - 22 - w;
-    gfx_round_rect(x - 9, y - 10, w + 18, 20, 10, RGBA(0, 0, 0, 110));
     for (int i = 0; i < n; i++) {
-        gfx_button(x + bw[i] / 2, y, 6.5f, it[i].btn, RGBA(236, 236, 240, 255), RGBA(20, 20, 26, 255));
+        gfx_button(x + bw[i] / 2, y, 6.5f, it[i].btn, LOOK_HINT_PLATE, LOOK_HINT_MARK);
         text_draw(x + bw[i] + 5, y + 4.5f, 0.56f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, it[i].label);
         x += iw[i] + 14;
     }
@@ -207,19 +207,16 @@ static void draw_running(float t)
     text_draw(SCREEN_W / 2, 198, 0.7f, 0, LIGHT, ALIGN_CENTER, what);
     text_ellipsis(line, sizeof line, s->name, 0.56f, 340);
     text_draw(SCREEN_W / 2, 215, 0.56f, 0, GREY, ALIGN_CENTER, line);
-    float bw = 260, bx = (SCREEN_W - bw) / 2;
-    u32 accent = theme_cur()->accent; /* the bar is drawn as the storage bars: their background, the theme's colour, a straight end on the progress */
-    gfx_round_rect(bx, 223, bw, 4, 2, RGBA(255, 255, 255, 40));
+    float bw = 260, bx = (SCREEN_W - bw) / 2; /* the bar is drawn as every bar (look.h) */
     gameops_fmt_size(num, sizeof num, s->done);
     if (s->total > 0) { /* a file that goes out: how far it has come */
         float f = (float)((double)s->done / (double)s->total);
         f = f < 0 ? 0 : f > 1 ? 1 : f;
-        if (f > 0)
-            gfx_bar_fill(bx, 223, bw * f < 4 ? 4 : bw * f, 4, 2, accent);
+        look_bar(bx, 223, bw, 4, f > 0 ? (bw * f < 4 ? 4 : bw * f) : 0, 1);
         gameops_fmt_size(num2, sizeof num2, s->total);
         snprintf(line, sizeof line, "%s / %s", num, num2);
     } else { /* a file that comes in: the size is not known */
-        gfx_bar_fill(bx, 223, bw, 4, 2, COLOR_ALPHA(accent, (int)(((accent >> 24) & 0xFF) * 0.45f)));
+        look_bar_color(bx, 223, bw, 4, bw, COLOR_ALPHA(LOOK_BAR_FILL, (int)(((LOOK_BAR_FILL >> 24) & 0xFF) * 0.45f)), 1);
         snprintf(line, sizeof line, "%s", num);
     }
     text_draw(SCREEN_W / 2, 241, 0.5f, 0, GREY, ALIGN_CENTER, line);

@@ -21,6 +21,7 @@
 #include "osd.h"
 #include "power.h"
 #include "popup.h"
+#include "look.h"
 
 #define LIST_X   24.0f
 #define LIST_W   432.0f
@@ -1369,10 +1370,8 @@ int files_update(const UiInput *in, float dt)
             open_menu(M_OPTIONS); /* ✕ på en fil: vad ska göras med den */
         }
     } else if ((in->pressed & PSP_CTRL_SQUARE) && e && e->kind != KIND_DEVICE && !s_pick) {
-        e->marked ^= 1;
+        e->marked ^= 1; /* (the highlight stays on the row) */
         sound_play(SND_SELECT);
-        if (s_sel < s_count - 1)
-            s_sel++;
     } else if ((in->pressed & PSP_CTRL_START) && s_path[0] && !s_pick) { /* the options button, as everywhere */
         open_menu(M_OPTIONS);
     } else if (in->pressed & PSP_CTRL_CIRCLE) {
@@ -1436,14 +1435,6 @@ static void draw_icon(float x, float y, const FileEntry *e, float a)
     }
 }
 
-static void draw_check(float cx, float cy, float a)
-{
-    gfx_circle(cx, cy, 6, fade(theme_toggle_on(theme_cur()), a));
-    float xy[6] = { cx - 3, cy, cx - 1, cy + 2.2f, cx + 3, cy - 2.4f };
-    u32 col[3] = { fade(LIGHT, a), fade(LIGHT, a), fade(LIGHT, a) };
-    gfx_stroke(xy, col, 3, 1.5f);
-}
-
 /* Knapptips nere till höger, som i inställningarna */
 static void draw_hints(float a)
 {
@@ -1459,10 +1450,9 @@ static void draw_hints(float a)
     for (int i = 0; i < n; i++)
         w += gfx_button_width(h[i].btn) + 5 + ceilf(text_width(0.56f, 0, L(h[i].text))) + 14; /* (whole pixels) */
     float x = SCREEN_W - 22 - w, y = 252;
-    gfx_round_rect(x - 9, y - 10, w + 18, 20, 10, RGBA(0, 0, 0, (int)(110 * a)));
     for (int i = 0; i < n; i++) {
         float bw = gfx_button_width(h[i].btn);
-        gfx_button(x + bw / 2, y, 6.5f, h[i].btn, fade(LIGHT, a), fade(DARK, a));
+        gfx_button(x + bw / 2, y, 6.5f, h[i].btn, look_fade(LOOK_HINT_PLATE, a), look_fade(LOOK_HINT_MARK, a));
         x += bw + 5;
         text_draw(x, y + 4.5f, 0.56f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(h[i].text));
         x += ceilf(text_width(0.56f, 0, L(h[i].text))) + 14;
@@ -1479,8 +1469,7 @@ static void draw_header(float a, float slide)
         float right = LIST_X + LIST_W;
         text_draw(right, 28, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_RIGHT, line);
         float bw = 120, used = 1 - (float)s_free / (float)s_total;
-        gfx_round_rect(right - bw, 34, bw, 4, 2, fade(RGBA(255, 255, 255, 40), a));
-        gfx_bar_fill(right - bw, 34, bw * clampf(used, 0.02f, 1), 4, 2, fade(theme_cur()->accent, a)); /* (a straight end) */
+        look_bar(right - bw, 34, bw, 4, bw * clampf(used, 0.02f, 1), a); /* (a straight end) */
     }
     if (s_path[0]) { /* sökvägen, kortad från vänster */
         const char *p = s_path;
@@ -1508,8 +1497,6 @@ static void draw_list(float a, float slide)
         if (y > bottom)
             break;
         int sel = i == s_sel && !s_menu && !s_cf;
-        if (e->marked)
-            gfx_rect(LIST_X, y, LIST_W, ROW_H, fade(COLOR_ALPHA(theme_cur()->accent, 46), a));
         if (sel) {
             gfx_rect(LIST_X, y, LIST_W, ROW_H, RGBA(255, 255, 255, (int)(16 * a)));
             gfx_frame(LIST_X, y, LIST_W, ROW_H, 1, fade(RGBA(232, 232, 236, 230), a));
@@ -1518,11 +1505,8 @@ static void draw_list(float a, float slide)
         }
         float x = LIST_X + 8 + slide;
         if (any) {
-            if (e->marked)
-                draw_check(x + 6, y + ROW_H / 2, a);
-            else
-                gfx_ring(x, y + ROW_H / 2 - 6, 12, 12, 6, fade(RGBA(255, 255, 255, 90), a));
-            x += 18;
+            look_tick(x + LOOK_TICK_SIZE / 2, y + ROW_H / 2, e->marked, a);
+            x += LOOK_TICK_SIZE + 6;
         }
         draw_icon(x, y + 2, e, a);
         if (sel && text_width(0.58f, 0, e->name) > LIST_W - 130) /* the highlighted name is not cut off with dots: it scrolls after a moment */
@@ -1585,7 +1569,7 @@ static void draw_progress(void)
         return;
     StrId title = W.op == OP_COPY ? S_F_COPYING : W.op == OP_MOVE ? S_F_MOVING : S_F_DELETING;
     float f = W.total ? clampf((float)W.done / (float)W.total, 0, 1) : 0;
-    popup_progress(L(title), W.current, f, theme_cur()->accent, controls_glyph(PSP_CTRL_CIRCLE), L(S_F_CANCEL));
+    popup_progress(L(title), W.current, f, controls_glyph(PSP_CTRL_CIRCLE), L(S_F_CANCEL));
 }
 
 /* The question about a name that is taken, in the middle of the screen in the panel of the other questions: the name, what is there, the choices (Replace in red,
@@ -1619,14 +1603,12 @@ static void draw_conflict(void)
         float bx = x + 16;
         if (g >= 0) {
             float bw = ceilf(gfx_button_width(g));
-            gfx_button(bx + bw / 2, cy, 6.5f, g, fade(LIGHT, a), fade(DARK, a));
+            gfx_button(bx + bw / 2, cy, 6.5f, g, look_fade(LOOK_HINT_PLATE, a), look_fade(LOOK_HINT_MARK, a));
             bx += bw + 8;
         }
-        if (s_cf_all)
-            draw_check(bx + 6, cy, a);
-        else
-            gfx_ring(bx, cy - 6, 12, 12, 6, fade(RGBA(255, 255, 255, 90), a));
-        text_draw(bx + 18, cy + 4.5f, text_fit(0.54f, 0.42f, 0, x + w - 12 - (bx + 18), L(S_F_CF_ALL)), 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_F_CF_ALL));
+        look_tick(bx + LOOK_TICK_SIZE / 2, cy, s_cf_all, a);
+        float tx = bx + LOOK_TICK_SIZE + 6;
+        text_draw(tx, cy + 4.5f, text_fit(0.54f, 0.42f, 0, x + w - 12 - tx, L(S_F_CF_ALL)), 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_F_CF_ALL));
     }
 }
 
