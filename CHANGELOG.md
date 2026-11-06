@@ -50,6 +50,11 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ### Library
 
+- **The pictures of the games are drawn faster, which matters most in a Library with many games.** A full Library draws up to 25 cards, each with its own picture of 144 x 80 pixels that the PSP's graphics chip reads from the main memory every frame, and the more games you have the more of the
+  screen is cards. The pictures (and the picture behind the cards on Games) are now stored in the order the chip reads fastest, instead of row after row (this is called swizzling). **They look exactly the same**: checked pixel for pixel in a PSP emulator, in Home with the game's own picture behind the cards,
+  in the Library and in its folders. What costs the same however many games you have: the program's own work for a frame (measured with 6 to 4000 games: the same) and the number of calls to the graphics chip (70 for a full Library). Nothing here was measured on a real PSP, so how much faster it is there is not known. If the
+  pictures of the cards look scrambled, striped or torn on your PSP, please open an issue with your PSP model and ARK version: that is the one thing that could go wrong on a real PSP and not in the emulator, and it is easy to take out. If the Library is still slow, please tell us how many games you have and
+  when it is slow (scrolling fast, standing still, opening it, the first time you see a game).
 - **The Library's background is softer.** The thin lines of its picture (the fine lines of the petal and the fan, and the big rings at the lower right) were one pixel wide and showed the steps of the pixel grid, so they looked sharp and dotted. The picture is now shown a little smoothed
   (every pixel is the mean of 2 x 2 pixels of it, and the picture sits half a pixel further down and to the right), so the lines are continuous and soft. The four rays of the little star are soft lines too. The picture is still made once and kept in video memory, so this costs nothing
   per frame but the star's rays (about 2 KB of the display list); the backgrounds of the themes are as they were. This is new and nobody has seen it on a real PSP yet: if the Library's background looks wrong on yours, please open an issue and tell us your PSP model and your ARK version.

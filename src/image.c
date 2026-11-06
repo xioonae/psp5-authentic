@@ -297,7 +297,7 @@ void img_round_corners(Image *img, float radius)
  * of the last row, as everywhere else. */
 void tex_round_corners(Texture *t, float r)
 {
-    if (!t || t->psm != GU_PSM_8888 || r <= 0.0f)
+    if (!t || t->psm != GU_PSM_8888 || r <= 0.0f || t->swizzled) /* (the pixels of a swizzled texture are not in rows) */
         return;
     int half = (t->w < t->h ? t->w : t->h) / 2;
     if (r > half)
@@ -382,6 +382,8 @@ Texture *ntx_load(const char *path)
 
 int ntx_save(const char *path, const Texture *t)
 {
+    if (t->swizzled) /* (the file holds the rows one after the other) */
+        return 0;
     SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (fd < 0)
         return 0;

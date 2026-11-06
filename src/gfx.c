@@ -45,6 +45,8 @@ static int pow2(int v)
     return p;
 }
 
+static int swizzled_rows(const Texture *t);
+
 Texture *tex_create(int w, int h, int psm)
 {
     Texture *t = calloc(1, sizeof(Texture));
@@ -80,7 +82,45 @@ void tex_free(Texture *t)
 void tex_flush(Texture *t)
 {
     int bpp = t->psm == GU_PSM_8888 ? 4 : 2;
-    sceKernelDcacheWritebackRange(t->data, t->stride * (t->h + 1) * bpp);
+    sceKernelDcacheWritebackRange(t->data, t->stride * (t->swizzled ? swizzled_rows(t) : t->h + 1) * bpp);
+}
+
+/* The pixels in the order of the GE's own blocks (16 bytes by 8 rows, the blocks in rows). The picture is padded below to a whole number of blocks with copies of its last row, at least one row, as
+ * the one extra row is in a linear texture: where the filter reads past the bottom edge (a weight of nothing, at the last half texel) it sees what it saw before, and never memory that is not the
+ * texture's. */
+static int swizzled_rows(const Texture *t)
+{
+    return (t->h + 8) / 8 * 8; /* the height and at least one more, up to a multiple of 8 */
+}
+
+int tex_swizzle(Texture *t)
+{
+    if (!t || !t->data)
+        return 0;
+    if (t->swizzled)
+        return 1;
+    int bpp = t->psm == GU_PSM_8888 ? 4 : 2;
+    int row = t->stride * bpp;
+    if (row <= 0 || row % 16 || t->h <= 0)
+        return 0;
+    int rows = swizzled_rows(t);
+    u8 *out = memalign(16, (size_t)row * rows);
+    if (!out)
+        return 0;
+    const u8 *in = t->data;
+    u8 *dst = out;
+    for (int by = 0; by < rows / 8; by++)
+        for (int bx = 0; bx < row / 16; bx++)
+            for (int j = 0; j < 8; j++) {
+                int y = by * 8 + j;
+                memcpy(dst, in + (size_t)(y < t->h ? y : t->h - 1) * row + bx * 16, 16);
+                dst += 16;
+            }
+    free(t->data);
+    t->data = out;
+    t->swizzled = 1;
+    tex_flush(t);
+    return 1;
 }
 
 enum { SHAPE_DISC, SHAPE_SOFT, SHAPE_RING };
@@ -194,7 +234,7 @@ static void bind_filter(const Texture *t, int filter)
     sceGuEnable(GU_TEXTURE_2D);
     if (t != s_bound) {
         s_bound = t;
-        sceGuTexMode(t->psm, 0, 0, 0);
+        sceGuTexMode(t->psm, 0, 0, t->swizzled);
         sceGuTexImage(0, t->tw, t->th, t->stride, t->data);
         sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
         sceGuTexWrap(GU_CLAMP, GU_CLAMP);
@@ -313,7 +353,7 @@ void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint)
 /* It lies behind the two screen buffers (they take 2 x 557 056 bytes of the 2 MB) and is laid out like one: 512 pixels a
  * row, 8888. 0x04000000 is where the video memory starts for the GE when it reads a texture. */
 #define SNAP_OFFSET (2 * FB_SIZE)
-static Texture s_snap = { SCREEN_W, SCREEN_H, 512, 512, BUF_W, GU_PSM_8888, (void *)(0x04000000 + SNAP_OFFSET) };
+static Texture s_snap = { SCREEN_W, SCREEN_H, 512, 512, BUF_W, GU_PSM_8888, (void *)(0x04000000 + SNAP_OFFSET), 0 };
 
 unsigned gfx_snapshot_serial(void)
 {

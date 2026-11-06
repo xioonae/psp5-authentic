@@ -221,6 +221,7 @@ static Texture *load_icon(const Entry *e, int round)
     }
     if (t && round)
         tex_round_corners(t, t->w / ICON_RADIUS_DIV);
+    tex_swizzle(t); /* last: the GE reads it faster that way, and the Library draws up to 25 of these every frame */
     return t;
 }
 
@@ -234,7 +235,17 @@ Texture *art_load_icon_square(const Entry *e)
     return load_icon(e, 0);
 }
 
+/* The picture behind the cards: 480 x 272 from main memory every frame, the biggest texture there is. Swizzled last, like the icons (tex_swizzle). */
+static Texture *load_bg(const Entry *e);
+
 Texture *art_load_bg(const Entry *e)
+{
+    Texture *t = load_bg(e);
+    tex_swizzle(t);
+    return t;
+}
+
+static Texture *load_bg(const Entry *e)
 {
     char path[256];
     Texture *t;

@@ -19,6 +19,7 @@ typedef struct {
     int stride;   /* pixlar per rad i minnet */
     int psm;      /* GU_PSM_8888 eller GU_PSM_5650 */
     void *data;
+    int swizzled; /* the pixels are in the order the GE reads fastest (tex_swizzle), not row after row: nothing may read or write them as rows any more */
 } Texture;
 
 enum { ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT };
@@ -137,6 +138,12 @@ float gfx_button_width(int kind);
 Texture *tex_create(int w, int h, int psm);
 void tex_free(Texture *t);
 void tex_flush(Texture *t); /* skriv tillbaka dcache efter CPU-ändringar */
+/* Puts the pixels of a finished texture in the order the GE reads fastest: blocks of 16 bytes by 8 rows, one after the other. The GE reads a texture in main memory
+ * through a small cache, and with the rows one after the other it has to fetch a new line for every row it steps down (the cards' pictures are shrunk, so it steps
+ * down a lot); a swizzled one is read much faster. The picture comes out exactly the same. Do it last: after it nothing can read or write the pixels as rows
+ * (Texture.swizzled; tex_round_corners() and ntx_save() refuse). Below the picture the texture gets some rows more (copies of its last row, up to a whole block of 8: at least
+ * one). Returns 1 when the texture is swizzled (also when it was), 0 when not (no texture, no memory: it is left as it was). */
+int tex_swizzle(Texture *t);
 
 /* Text (intraFont, systemtypsnitt läses från flash0). `need_jpn` laddar japanskt alternativtypsnitt. */
 void font_init(int need_jpn);
