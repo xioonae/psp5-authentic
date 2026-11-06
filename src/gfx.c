@@ -3,6 +3,7 @@
  * rundade former via 9-slice och text via intraFont. */
 #include <pspkernel.h>
 #include <pspdisplay.h>
+#include <pspge.h>
 #include <pspgu.h>
 #include <intraFont.h>
 #include <malloc.h>
@@ -75,7 +76,8 @@ void tex_free(Texture *t)
         return;
     if (t == s_bound)
         s_bound = NULL; /* en ny textur kan få samma adress */
-    free(t->data);
+    if (!t->vram) /* (video memory is not freed) */
+        free(t->data);
     free(t);
 }
 
@@ -156,6 +158,28 @@ static Texture *make_shape(int kind)
     return t;
 }
 
+/* The small shapes (the disc, the soft glow, the ring) are drawn all the time, from the cards' shadows to the hundreds of specks of dust, each a little sprite that shrinks the whole 64 x 64 picture
+ * to a few pixels, so the GE reads texels spread over all of it. Main memory is slow for that, video memory is fast: they live in video memory, behind the screen buffers and the snapshot (they
+ * take 2 x 557 056 + 557 056 bytes of the 2 MB), swizzled, one slot each. Video memory is lost when the PSP sleeps: gfx_init() makes them again. A shape that cannot be moved stays in main memory. */
+#define SHAPE_VRAM (3 * FB_SIZE)
+#define SHAPE_SLOT 0x5000 /* 20 480 bytes: a swizzled shape is 72 rows of 256 bytes, 18 432 */
+
+static Texture *shape_to_vram(Texture *t, int slot)
+{
+    if (!t || !tex_swizzle(t))
+        return t;
+    size_t bytes = (size_t)t->stride * 4 * swizzled_rows(t);
+    if (bytes > SHAPE_SLOT)
+        return t;
+    u8 *vram = (u8 *)sceGeEdramGetAddr() + SHAPE_VRAM + slot * SHAPE_SLOT;
+    memcpy(vram, t->data, bytes);
+    free(t->data);
+    t->data = vram;
+    t->vram = 1;
+    tex_flush(t);
+    return t;
+}
+
 /* --- grundläggande GU --- */
 
 void gfx_init(void)
@@ -180,9 +204,12 @@ void gfx_init(void)
     sceDisplayWaitVblankStart();
     sceGuDisplay(GU_TRUE);
 
-    s_disc = make_shape(SHAPE_DISC);
-    s_soft = make_shape(SHAPE_SOFT);
-    s_ring = make_shape(SHAPE_RING);
+    tex_free(s_disc); /* (again after a sleep: the old ones are in video memory that is gone) */
+    tex_free(s_soft);
+    tex_free(s_ring);
+    s_disc = shape_to_vram(make_shape(SHAPE_DISC), 0);
+    s_soft = shape_to_vram(make_shape(SHAPE_SOFT), 1);
+    s_ring = shape_to_vram(make_shape(SHAPE_RING), 2);
 }
 
 static void icons_free(int only_unused);
@@ -353,7 +380,7 @@ void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint)
 /* It lies behind the two screen buffers (they take 2 x 557 056 bytes of the 2 MB) and is laid out like one: 512 pixels a
  * row, 8888. 0x04000000 is where the video memory starts for the GE when it reads a texture. */
 #define SNAP_OFFSET (2 * FB_SIZE)
-static Texture s_snap = { SCREEN_W, SCREEN_H, 512, 512, BUF_W, GU_PSM_8888, (void *)(0x04000000 + SNAP_OFFSET), 0 };
+static Texture s_snap = { SCREEN_W, SCREEN_H, 512, 512, BUF_W, GU_PSM_8888, (void *)(0x04000000 + SNAP_OFFSET), 0, 0 };
 
 unsigned gfx_snapshot_serial(void)
 {

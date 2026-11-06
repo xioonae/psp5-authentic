@@ -20,6 +20,7 @@ typedef struct {
     int psm;      /* GU_PSM_8888 eller GU_PSM_5650 */
     void *data;
     int swizzled; /* the pixels are in the order the GE reads fastest (tex_swizzle), not row after row: nothing may read or write them as rows any more */
+    int vram;     /* the pixels are in video memory, which the GE reads much faster than main memory, and are not this texture's to free (the shapes of gfx_init) */
 } Texture;
 
 enum { ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT };

@@ -224,6 +224,10 @@ below are inspired by what the original project found and did about them. The co
 
 ### Themes
 
+- **The little shapes behind the dust and the cards' shadows are kept in the PSP's video memory.** The dust of the Default theme and the nine cover colours is some 470 tiny pictures a frame, each shrinking a whole 64 x 64 shape to a few pixels, which makes the graphics chip read texels spread over all of it, and it read them from the
+  main memory, which is slow for that; the cards' shadows and the rings use the same shapes. They are now made once into the video memory (swizzled, 55 KB of it; it is made again after the PSP has slept), which the chip reads much faster. **Nothing looks different**: 24 pictures in a PSP emulator (the Default theme, Cobalt Blue, PS1 to PS4, Home with the games' pictures, the
+  Library, three moments each) are the same, pixel for pixel, as before. This is the part of the PS5-style themes that the other themes do not have, and it was the one that was left after the dust was drawn in a few calls; how much faster it is on a real PSP is not known yet. If the Default theme is still not smooth on yours,
+  please open an issue with your PSP model, ARK version and which screen (Games tab, a menu without cards).
 - **The dust and the Library's background take far fewer calls to the graphics chip, so menus run smoother.** The dust of the Default theme and the nine cover colours is some 470 little pictures a frame, and each was a call of its own to the PSP's graphics chip (the PSP does two calls into its
   system for every one of them, which is slow); the dust made the menus run at less than the full speed. Now the dots are given to the chip together: about 5 calls and 4 changes of texture a frame instead of 467 and 74, in the same order, so **the picture is exactly the same**
   (checked pixel for pixel against the old one, also in a PSP emulator, at several moments and in two themes). The Library's own background (about 370 specks of dust, drawn once and kept) is drawn in about 90 calls instead of 480 when you come to it from a game or a theme's background,
