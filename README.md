@@ -92,8 +92,9 @@ wherever it can, but it doesn't copy the console in everything.
   A setting with several values opens a popup when you press Confirm on it.
   The title of a page is its own name (*Appearance*, not *System > Appearance*).
   The *last IP address* in Console Information is the one that the Wi-Fi window or the FTP Server got last, kept after a restart; it may have changed since.
-- **Themes.** A theme is the background: the colours of the console covers, each with the console's scene behind your games (a beam of light, golden
-  dust, haze), plus the classic looks of PS1 to PS4 in the colours of those consoles' own themes. Highlight a theme to preview it, Confirm to use it. You can turn *Show Game art*
+- **Themes.** A theme is the background: the *Default* and the colours of the console covers, each with the same scene behind your games (a beam of light from a lamp
+  at the top left and a haze at the bottom) and golden-ish dust that drifts and twinkles in the theme's colour, plus the classic looks of PS1 to PS4 in the colours of those consoles' own themes,
+  each with its own moving part: the four symbols for PS1, glowing dots on a turning ring for PS2, a silky ribbon for PS3 and a wave for PS4. Highlight a theme to preview it, Confirm to use it. You can turn *Show Game art*
   off (it is for the Games tab: the Library has its own background), so the theme is always visible.
 - **Startup.** A short intro like a console's, with a health notice, soft circles and golden dust in your theme's colours.
   It plays when the PSP starts and wakes up, not when you come back from a game. Any button skips it, and you can turn it off.

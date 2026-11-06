@@ -216,9 +216,24 @@ below are inspired by what the original project found and did about them. The co
 
 ### Themes
 
+- **The theme called PS5 is called *Default*.** It is the console as it comes: grey with a warm lamp. Nothing changes for you: if you had chosen it, it stays chosen (`psp5.cfg` still says `theme=ps5`).
+- **The dust moves.** In the Default theme and in the nine cover colours the dust now drifts a few pixels and twinkles, and a few stars flare, in the colour of the theme. It lies in a wide area across the screen: from the bottom left, flat and wide in
+  the middle, and tall at the right end. (The dust used to be a still picture; it was drawn once.) Everything comes back to where it started every 8 seconds, so there is no jump. It is drawn on every screen that has the theme's background, and it
+  uses about 23 KB of the 128 KB that the PSP's graphics chip has for a frame.
+- **PS1: the four symbols are bigger, closer to the middle, and on whole pixels.** They are about 60% larger and sit at the right, a little nearer the centre of the screen. The centre, the distances, the sizes, the width of the lines and the slow up and down
+  (it goes in whole pixels now) all fall on pixel edges, so the square, the cross and the triangle have sharp lines.
+- **PS2: glowing dots on a ring that tumbles, instead of the towers and orbs.** Eight dots go round a ring that turns in space: seen from the front it is an ellipse, and about every 1.7 seconds it turns edge-on, the dots gather in a line, and then it opens
+  again on the other side, so that they seem to turn round. They go round three times in 8 seconds, each a little faster or slower than the next. Nothing else is drawn (no ring, no towers). The moments when the dots are in a line are the ones measured on the reference animation.
+- **PS3: a silky ribbon, instead of the three wave lines.** It twists across the screen with a bright strand and two fine threads in it. Its edges are soft (a hard edge shows its steps) and it has no particles. It loops in 6 seconds, and there is no jump where it loops.
+- **PS4: one wave from the bottom of the screen to its top right corner, instead of the waves and the rising particles.** A bright rim with a soft band on its left rolls to the right and fades; it fades in and out at the ends of the 8 seconds.
+- **Every theme has the same background.** The cone of light from the lamp, the lamp's glow, the haze at the bottom left and the second light at the lower right are drawn by the same code with the same strengths in all 13 themes, and a theme only gives
+  the colours. Before, PS1 to PS4 were set up stronger than the others (their lamp glow was up to 2.7 times as strong and their haze up to 2.2 times), so they did not look like the same scene. The nine cover colours were given new numbers for the
+  shared strengths and look the same as before (the difference to the old picture is under one step of 255). PS1 to PS4 keep the colours of the pictures of the real themes (the mean colour of each corner is close to the picture's), but their lamp and haze
+  are as strong as the others', so they are a little softer than before, and the dark base of PS2, PS3 and PS4 is a little different.
+  These animations are new and nobody has seen them on a real PSP yet. If a theme is slow or looks wrong on yours, please open an issue and tell us your PSP model and your ARK version.
 - **PS1, PS2, PS3 and PS4 have the colours of the real consoles' themes.** PS1 is grey with a warm lamp, PS2 is black with blue-violet light, PS3 is black with gold and cream (it was blue), and PS4 is blue-violet with purple at the lower right (it was a bright cyan-blue).
-  The colours were measured from pictures of the four themes. The moving shapes took them too (PS2's towers and orbs are blue-violet, PS3's waves warm cream, PS4's waves and particles blue). (The switches, the bars and the cards no longer follow the theme: see *The theme is the background only* below.)
-  The lamp, the beam of light and the haze are still the same for every theme, so the look is close to the pictures but not the same pixel for pixel.
+  The colours were measured from pictures of the four themes. (The switches, the bars and the cards no longer follow the theme: see *The theme is the background only* below.)
+  The lamp, the beam of light and the haze are the same for every theme, so the look is close to the pictures but not the same pixel for pixel.
 
 ### Sound
 
@@ -232,7 +247,7 @@ below are inspired by what the original project found and did about them. The co
 
 - New picture in the README: the File Manager's question about a name that is taken (`file-manager-conflict.png`; the folders in it are the demo's).
 - New picture in the README: *System → Date and Time* (`settings-date-time.png`). The pictures of *System*, *Appearance*, *Console Information*, *Console Storage*, *Manage Plugins* and *Install New Plugin* are made again for the new titles (see *Settings*) and, for *System*, the new row; the time in *Date and Time* is a test value.
-- The picture of the themes in the README (`theme.png`) is made again: PS3 is black and gold now.
+- The picture of the themes in the README (`theme.png`) is made again twice: PS3 is black and gold now, and then with the new ribbon. The picture of *Appearance* (`settings-appearance.png`) shows the Default theme under its new name.
 - The picture of *Install New Plugin* in the README shows the page as it is now: *File*, *Location* (where the file is), *PLUGINS.TXT* (the one that is edited) and the three switches. The folder and the file name in it are the demo's.
 - The picture of *Console Information* in the README is scrolled down to the new rows: *CFW (ARK-5)* with the version of ARK, *Last IP address* and *Free RAM*. The version of ARK, the MAC address and the RAM in it are the demo PSP's (it has no ARK), and the demo has not been on Wi-Fi, so it says *Not recorded yet*.
 - The pictures of *Games*, *Library*, *Library with folders* and *Games and Apps* in the README show the new look (rectangular cards, the title as large as in the Library, *Games and Apps* on *Least used*).
