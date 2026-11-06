@@ -1334,6 +1334,59 @@ void gfx_stroke(const float *xy, const u32 *colors, int n, float width)
         sceGuDrawArray(GU_TRIANGLE_STRIP, CVERT_FMT, m * 2, 0, strip[s]);
 }
 
+/* The same ramps as gfx_stroke(), round a closed path: a cross-section at every point (the mitre of the two sides that meet there) and the first once more to close it, drawn as the same three strips. */
+void gfx_stroke_loop(const float *in, int count, float width, u32 color)
+{
+    /* the points, none twice in a row and not the first again at the end (a loop closed by giving its first point again is the same loop): every side has a length and a direction */
+    float xy[STROKE_MAX * 2];
+    int n = 0;
+    for (int i = 0; i < count && n < STROKE_MAX; i++) {
+        if (n > 0 && fabsf(in[i * 2] - xy[n * 2 - 2]) < 1e-4f && fabsf(in[i * 2 + 1] - xy[n * 2 - 1]) < 1e-4f)
+            continue;
+        xy[n * 2] = in[i * 2];
+        xy[n * 2 + 1] = in[i * 2 + 1];
+        n++;
+    }
+    while (n > 1 && fabsf(xy[n * 2 - 2] - xy[0]) < 1e-4f && fabsf(xy[n * 2 - 1] - xy[1]) < 1e-4f)
+        n--;
+    if (n < 3)
+        return;
+    float dx[STROKE_MAX], dy[STROKE_MAX]; /* the unit direction of the side from point i to the next */
+    for (int i = 0; i < n; i++) {
+        int j = (i + 1) % n;
+        float ex = xy[j * 2] - xy[i * 2], ey = xy[j * 2 + 1] - xy[i * 2 + 1], len = sqrtf(ex * ex + ey * ey);
+        dx[i] = ex / len, dy[i] = ey / len;
+    }
+    const float hw = fmaxf(width, 1.0f) / 2, peak = fminf(width, 1.0f);
+    const float off[4] = { -(hw + 0.5f), -(hw - 0.5f), hw - 0.5f, hw + 0.5f };
+    const u32 edge = stroke_alpha(color, 0), mid = stroke_alpha(color, peak);
+    int m = n + 1;
+    CVert *v = sceGuGetMemory(m * 6 * sizeof(CVert));
+    CVert *strip[3] = { v, v + 2 * m, v + 4 * m };
+    for (int j = 0; j < m; j++) {
+        int i = j % n, before = (i + n - 1) % n;
+        float ax = -dy[before], ay = dx[before], bx = -dy[i], by = dx[i]; /* the normals of the side that comes in and the one that goes out */
+        float mx = ax + bx, my = ay + by, ml = sqrtf(mx * mx + my * my), nx, ny;
+        if (ml < 1e-4f) { /* turns right back on itself */
+            nx = ax, ny = ay;
+        } else {
+            mx /= ml, my /= ml;
+            float k = 1.0f / fmaxf(mx * ax + my * ay, 0.5f);
+            nx = mx * k, ny = my * k;
+        }
+        CVert c[4];
+        for (int k = 0; k < 4; k++)
+            c[k] = (CVert){ k == 0 || k == 3 ? edge : mid, xy[i * 2] + nx * off[k], xy[i * 2 + 1] + ny * off[k], 0 };
+        for (int s = 0; s < 3; s++) {
+            strip[s][j * 2] = c[s];
+            strip[s][j * 2 + 1] = c[s + 1];
+        }
+    }
+    sceGuDisable(GU_TEXTURE_2D);
+    for (int s = 0; s < 3; s++)
+        sceGuDrawArray(GU_TRIANGLE_STRIP, CVERT_FMT, m * 2, 0, strip[s]);
+}
+
 void gfx_dot(float cx, float cy, float r, u32 color, int soft)
 {
     TVert *v = sceGuGetMemory(2 * sizeof(TVert));

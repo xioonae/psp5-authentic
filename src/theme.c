@@ -361,36 +361,44 @@ static void deco_dust(const Theme *t, float time, float a)
     gfx_blend_add(0);
 }
 
-/* ---- PS1: the four symbols of the controller in their classic colours, a cluster at the right below the row of cards of Home. Everything is on whole pixels
- * (the centre, the distances, the sizes, the width of the lines, and the slow bob is in whole pixels too), so that the lines and the corners are sharp. */
+/* ---- PS1: the four symbols of the controller in their classic colours, a cluster at the right below the row of cards of Home. At rest (the start of the loop) the centre, the distances, the sizes
+ * and the width of the lines are whole pixels, so that the lines and the corners are sharp; the cluster floats round a figure of eight, 4 px up and down and 2 px to each side, once in 8 s and
+ * on fractions of a pixel, so that it moves smoothly (a step of a whole pixel is a jerk): every outline is a smooth one (gfx_stroke_loop, gfx_stroke), which is as sharp as a whole pixel line on a whole pixel and
+ * soft, like any moving line, in between. */
+#define PS1_RING_N 48 /* the points of the circle (the sagitta is 0.03 px) */
 #define PS1_X 376
 #define PS1_Y 150
 static void deco_ps1(float time, float a)
 {
-    const int d = 24, r = 10, s = 8; /* distance from the centre, the radius of the circle and the triangle, half the side of the cross and the square */
+    const float d = 24, r = 10, s = 8; /* distance from the centre, the radius of the circle and the triangle, half the side of the cross and the square */
     const float w = 2;
-    int bob = (int)floorf(sinf(time * 0.8f) * 2 + 0.5f);
+    float u = loop_pos(time, LOOP_S);
+    float ox = 2 * tsin(2 * u), oy = 4 * tsin(u); /* (0, 0) at the start: the symbols stand on whole pixels there */
     u32 cols[4] = { RGBA(64, 226, 160, 0), RGBA(255, 102, 102, 0), RGBA(124, 178, 232, 0), RGBA(255, 120, 232, 0) };
-    int pos[4][2] = { { PS1_X, PS1_Y - d }, { PS1_X + d, PS1_Y }, { PS1_X, PS1_Y + d }, { PS1_X - d, PS1_Y } };
+    float pos[4][2] = { { PS1_X, PS1_Y - d }, { PS1_X + d, PS1_Y }, { PS1_X, PS1_Y + d }, { PS1_X - d, PS1_Y } };
     for (int n = 0; n < 4; n++) {
-        int x = pos[n][0], y = pos[n][1] + bob;
+        float x = pos[n][0] + ox, y = pos[n][1] + oy;
         u32 c = COLOR_ALPHA(cols[n], (int)(150 * a));
-        u32 cc[2] = { c, c };
-        gfx_glow((float)(x - r), (float)(y - r), (float)(r * 2), (float)(r * 2), 8, COLOR_ALPHA(cols[n], (int)(28 * a)));
+        gfx_glow(x - r, y - r, r * 2, r * 2, 8, COLOR_ALPHA(cols[n], (int)(28 * a)));
         if (n == 0) { /* △ */
-            float tri[4][2] = { { (float)x, (float)(y - r) }, { (float)(x + r), (float)(y + 7) }, { (float)(x - r), (float)(y + 7) }, { (float)x, (float)(y - r) } };
-            for (int e = 0; e < 3; e++) {
-                float seg[4] = { tri[e][0], tri[e][1], tri[e + 1][0], tri[e + 1][1] };
-                gfx_stroke(seg, cc, 2, w);
+            float tri[6] = { x, y - r, x + r, y + 7, x - r, y + 7 };
+            gfx_stroke_loop(tri, 3, w, c);
+        } else if (n == 1) { /* ○: the outside edge at the radius r, 0.19 r thick as the ring it was */
+            float ring[2 * PS1_RING_N];
+            for (int k = 0; k < PS1_RING_N; k++) {
+                float t = (float)k / PS1_RING_N;
+                ring[k * 2] = x + (r - 0.95f) * tsin(t + 0.25f);
+                ring[k * 2 + 1] = y + (r - 0.95f) * tsin(t);
             }
-        } else if (n == 1) { /* ○ */
-            gfx_ring((float)(x - r), (float)(y - r), (float)(r * 2), (float)(r * 2), (float)r, c);
+            gfx_stroke_loop(ring, PS1_RING_N, 1.9f, c);
         } else if (n == 2) { /* ✕ */
-            float l1[4] = { (float)(x - s), (float)(y - s), (float)(x + s), (float)(y + s) }, l2[4] = { (float)(x + s), (float)(y - s), (float)(x - s), (float)(y + s) };
+            float l1[4] = { x - s, y - s, x + s, y + s }, l2[4] = { x + s, y - s, x - s, y + s };
+            u32 cc[2] = { c, c };
             gfx_stroke(l1, cc, 2, w);
             gfx_stroke(l2, cc, 2, w);
-        } else { /* □ */
-            gfx_frame((float)(x - s), (float)(y - s), (float)(s * 2), (float)(s * 2), w, c);
+        } else { /* □: a line w thick whose outside edge is the square of 2 s */
+            float q = s - w / 2, sq[8] = { x - q, y - q, x + q, y - q, x + q, y + q, x - q, y + q };
+            gfx_stroke_loop(sq, 4, w, c);
         }
     }
 }

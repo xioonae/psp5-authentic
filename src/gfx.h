@@ -128,6 +128,9 @@ void text_draw_marquee(float x, float y, float size, int bold, u32 color, float 
 /* The filled part of a bar: the left end rounded like the bar's (radius r), the right end a straight edge at x + w. Inside the clip that is set now (it is put back). */
 void gfx_bar_fill(float x, float y, float w, float h, float r, u32 color);
 void gfx_stroke(const float *xy, const u32 *colors, int n, float width);
+/* A closed outline through the n points xy[2n] (the last joins the first), one colour, with the same smooth edges as gfx_stroke() at any place (the symbols of PS1 float on fractions of a pixel).
+ * Every corner is a mitre and there are no ends, so nothing is drawn twice where it closes: a colour with some alpha has the same alpha all the way round. */
+void gfx_stroke_loop(const float *xy, int n, float width, u32 color);
 
 enum { BTN_CROSS, BTN_CIRCLE, BTN_TRIANGLE, BTN_SQUARE, BTN_START, BTN_SELECT };
 /* Egenritad knappsymbol i en rund platta. START and SELECT are not round: a small pill with the word in it, 14 high (`r` is ignored for them,
