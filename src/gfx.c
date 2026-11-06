@@ -1276,6 +1276,22 @@ void gfx_dot(float cx, float cy, float r, u32 color, int soft)
     sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2, 0, v);
 }
 
+void gfx_dots(const GfxDot *d, int n, int soft)
+{
+    while (n > 0) {
+        int m = n < GFX_DOTS_MAX ? n : GFX_DOTS_MAX;
+        TVert *v = sceGuGetMemory(2 * m * sizeof(TVert));
+        for (int i = 0; i < m; i++) {
+            v[i * 2] = (TVert){ 0, 0, d[i].color, d[i].x - d[i].r, d[i].y - d[i].r, 0 };
+            v[i * 2 + 1] = (TVert){ SHAPE_SIZE, SHAPE_SIZE, d[i].color, d[i].x + d[i].r, d[i].y + d[i].r, 0 };
+        }
+        bind(soft ? s_soft : s_disc);
+        sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2 * m, 0, v);
+        d += m;
+        n -= m;
+    }
+}
+
 static int s_clip_x, s_clip_y, s_clip_w = SCREEN_W, s_clip_h = SCREEN_H; /* the clip that is set (gfx_bar_fill puts it back) */
 
 void gfx_clip(float x, float y, float w, float h)

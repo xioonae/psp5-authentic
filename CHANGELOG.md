@@ -219,6 +219,11 @@ below are inspired by what the original project found and did about them. The co
 
 ### Themes
 
+- **The dust and the Library's background take far fewer calls to the graphics chip, so menus run smoother.** The dust of the Default theme and the nine cover colours is some 470 little pictures a frame, and each was a call of its own to the PSP's graphics chip (the PSP does two calls into its
+  system for every one of them, which is slow); the dust made the menus run at less than the full speed. Now the dots are given to the chip together: about 5 calls and 4 changes of texture a frame instead of 467 and 74, in the same order, so **the picture is exactly the same**
+  (checked pixel for pixel against the old one, also in a PSP emulator, at several moments and in two themes). The Library's own background (about 370 specks of dust, drawn once and kept) is drawn in about 90 calls instead of 480 when you come to it from a game or a theme's background,
+  which is the one moment of it that was heavy. The sine that moves the dust also costs less, and the colours of the specks are kept instead of made again every frame. This was measured with the PC's test programs and the emulator, not on a real PSP: how much faster it runs there is not known yet;
+  if a menu still runs slowly on yours, please open an issue and tell us your PSP model, your ARK version, the theme and the screen.
 - **The theme called PS5 is called *Default*.** It is the console as it comes: grey with a warm lamp. Nothing changes for you: if you had chosen it, it stays chosen (`psp5.cfg` still says `theme=ps5`).
 - **The dust moves.** In the Default theme and in the nine cover colours the dust now drifts a few pixels and twinkles, and a few stars flare, in the colour of the theme. It lies in a wide area across the screen: from the bottom left, flat and wide in
   the middle, and tall at the right end. (The dust used to be a still picture; it was drawn once.) Everything comes back to where it started every 8 seconds, so there is no jump. It is drawn on every screen that has the theme's background, and it

@@ -171,8 +171,13 @@ static float tsin(float turns)
     if (s_sin[SIN_STEPS / 4] == 0)
         for (int i = 0; i <= SIN_STEPS; i++)
             s_sin[i] = sinf(TAU * i / SIN_STEPS);
-    float p = (turns - floorf(turns)) * SIN_STEPS;
-    if (!(p >= 0 && p < SIN_STEPS)) /* (also NaN) */
+    if (!(turns > -2e9f && turns < 2e9f)) /* (also NaN: and a float that large has no fraction, so its sine is 0) */
+        return 0;
+    float f = turns - (float)(int)turns; /* the fraction of a turn, 0 to 1: floor without the call (the cast cuts towards zero, so a negative one is a turn short) */
+    if (f < 0)
+        f += 1;
+    float p = f * SIN_STEPS;
+    if (!(p >= 0 && p < SIN_STEPS))
         return 0;
     int i = (int)p;
     return s_sin[i] + (s_sin[i + 1] - s_sin[i]) * (p - i);
@@ -183,6 +188,30 @@ static float loop_pos(float time, float period)
 {
     float t = fmodf(time, period);
     return (t < 0 ? t + period : t) / period;
+}
+
+/* Dots are handed to the GE together (gfx_dots): the dust and the Library's specks were some 470 and 370 draw calls, and a draw call costs the PSP two kernel
+ * calls, which is what made them slow. The dots of a batch are drawn in the order they were added, so the picture is the same as with a call each. A dot with
+ * no alpha adds nothing (and changes nothing when it is laid over), so it is left out. */
+typedef struct {
+    GfxDot d[GFX_DOTS_MAX];
+    int n, soft;
+} DotBatch;
+
+static void batch_flush(DotBatch *b)
+{
+    if (b->n > 0)
+        gfx_dots(b->d, b->n, b->soft);
+    b->n = 0;
+}
+
+static void batch_dot(DotBatch *b, float x, float y, float r, u32 color)
+{
+    if ((color >> 24) == 0)
+        return;
+    if (b->n == GFX_DOTS_MAX)
+        batch_flush(b);
+    b->d[b->n++] = (GfxDot){ x, y, r, color };
 }
 
 /* ---- The dust of the Default and the colour themes: specks, soft discs and a few stars that twinkle and drift a few pixels in the loop. They lie in the wide
@@ -203,6 +232,9 @@ typedef struct {
 
 static Dust s_dust[DUST_SPECKS + DUST_DISCS + DUST_STARS];
 static int s_dust_ready;
+static u32 s_speck_col[DUST_SPECKS]; /* the colour of each speck (the theme's dust colour with some white): made when the theme's colour is another */
+static u32 s_speck_col_for;
+static int s_speck_col_ready;
 
 /* the area, top and bottom edge every 30 px (480 x 272 pixels), and how thick the dust is along it (a twelfth of the width at a time) */
 static const float DUST_TOP[17] = { 182, 162, 137, 117, 105, 101, 101, 104, 105, 104, 101, 93, 86, 78, 71, 65, 63 };
@@ -289,32 +321,43 @@ static void deco_dust(const Theme *t, float time, float a)
     if (!s_dust_ready)
         dust_make();
     float u = loop_pos(time, LOOP_S);
+    if (!s_speck_col_ready || s_speck_col_for != t->dust) {
+        for (int i = 0; i < DUST_SPECKS; i++)
+            s_speck_col[i] = mix_rgb(t->dust, RGBA(255, 255, 255, 0), 0.4f * (1 - s_dust[i].warm), 0);
+        s_speck_col_for = t->dust;
+        s_speck_col_ready = 1;
+    }
     gfx_blend_add(1);
+    DotBatch soft = { .soft = 1 }, hard = { .soft = 0 };
     for (int i = 0; i < DUST_SPECKS; i++) { /* specks: bright points, the larger ones with a halo */
         const Dust *d = &s_dust[i];
         float x = d->x + d->ax * tsin(d->h1 * u + d->p1), y = d->y + d->ay * tsin(d->h1 * u + d->p2);
         float tw = 0.5f + 0.5f * tsin(d->h2 * u + d->p3), al = d->bright * (0.35f + 0.65f * tw * (0.7f + 0.3f * tw)) * a;
-        u32 col = mix_rgb(t->dust, RGBA(255, 255, 255, 0), 0.4f * (1 - d->warm), 0);
-        gfx_dot(x, y, d->size * 1.3f, COLOR_ALPHA(col, (int)(255 * al)), 1);
+        u32 col = s_speck_col[i];
+        batch_dot(&soft, x, y, d->size * 1.3f, COLOR_ALPHA(col, (int)(255 * al)));
         if (d->size > 1.0f)
-            gfx_dot(x, y, d->size * 3.5f, COLOR_ALPHA(col, (int)(34 * al)), 1);
+            batch_dot(&soft, x, y, d->size * 3.5f, COLOR_ALPHA(col, (int)(34 * al)));
     }
-    for (int i = DUST_SPECKS; i < DUST_SPECKS + DUST_DISCS; i++) { /* soft discs, out of focus */
+    batch_flush(&soft);
+    /* soft discs, out of focus: the hard disc of each, then the rim (the halos go with the stars, after the discs) */
+    for (int i = DUST_SPECKS; i < DUST_SPECKS + DUST_DISCS; i++) {
         const Dust *d = &s_dust[i];
         float x = d->x + 3 * tsin(u + d->p1), y = d->y + 3 * tsin(u + d->p2);
         float tw = 0.5f + 0.5f * tsin(u + d->p3), al = d->bright * (0.3f + 0.7f * tw * (0.8f + 0.2f * tw)) * a;
-        gfx_dot(x, y, d->size, COLOR_ALPHA(t->dust, (int)(70 * al)), 0);
-        gfx_dot(x, y, d->size * 1.35f, COLOR_ALPHA(t->dust, (int)(26 * al)), 1);
+        batch_dot(&hard, x, y, d->size, COLOR_ALPHA(t->dust, (int)(70 * al)));
+        batch_dot(&soft, x, y, d->size * 1.35f, COLOR_ALPHA(t->dust, (int)(26 * al)));
     }
+    batch_flush(&hard);
     u32 white = mix_rgb(t->dust, RGBA(255, 255, 255, 0), 0.65f, 0);
     for (int i = DUST_SPECKS + DUST_DISCS; i < DUST_SPECKS + DUST_DISCS + DUST_STARS; i++) { /* a few bright stars that flare */
         const Dust *d = &s_dust[i];
         float x = d->x + 2 * tsin(u + d->p1), y = d->y + 2 * tsin(u + d->p2);
         float tw = 0.5f + 0.5f * tsin(2 * u + d->p3);
         tw *= tw;
-        gfx_dot(x, y, 1.1f, COLOR_ALPHA(white, (int)(255 * (0.25f + 0.75f * tw) * a)), 1);
-        gfx_dot(x, y, 4.2f, COLOR_ALPHA(white, (int)(70 * tw * a)), 1);
+        batch_dot(&soft, x, y, 1.1f, COLOR_ALPHA(white, (int)(255 * (0.25f + 0.75f * tw) * a)));
+        batch_dot(&soft, x, y, 4.2f, COLOR_ALPHA(white, (int)(70 * tw * a)));
     }
+    batch_flush(&soft);
     gfx_blend_add(0);
 }
 
@@ -779,11 +822,12 @@ static void lib_sweeps(const LibPalette *p)
 static void lib_dust(const LibPalette *p)
 {
     unsigned seed = 0x51ab7u;
+    DotBatch dots = { .soft = 1 }; /* (some 370 specks: in a few draw calls) */
     for (int i = 0; i < 80; i++) {
         float x = lib_x(0.60f + 0.40f * spot_rnd(&seed)), y = lib_y(0.06f + 0.92f * spot_rnd(&seed));
         float size = 0.45f + 0.7f * spot_rnd(&seed) * spot_rnd(&seed), bright = 0.25f + 0.75f * spot_rnd(&seed);
         u32 col = spot_rnd(&seed) < 0.3f ? p->warm : p->line;
-        gfx_dot(x, y, size, lib_col(col, 0.65f * bright), 1);
+        batch_dot(&dots, x, y, size, lib_col(col, 0.65f * bright));
     }
     /* the dotted surface of the petal: specks that are thickest at its right edge, where the copper light is */
     for (int i = 0; i < 240; i++) {
@@ -791,14 +835,15 @@ static void lib_dust(const LibPalette *p)
         float edge = 0.745f + 0.034f * sinf(PI * t);
         float x = lib_x(edge - 0.115f * side), y = lib_y(0.265f + 0.305f * t - 0.02f * side);
         u32 col = side < 0.25f ? p->warm : p->line;
-        gfx_dot(x, y, 0.5f, lib_col(col, (0.55f - 0.35f * side) * (0.5f + 0.5f * sinf(PI * t))), 1);
+        batch_dot(&dots, x, y, 0.5f, lib_col(col, (0.55f - 0.35f * side) * (0.5f + 0.5f * sinf(PI * t))));
     }
     /* the dotted copper edge on the right of the petal */
     for (int i = 0; i < 46; i++) {
         float t = (float)i / 45;
         float x = lib_x(0.752f + 0.032f * sinf(PI * t) + 0.004f * (spot_rnd(&seed) - 0.5f) * 2), y = lib_y(0.265f + 0.305f * t + 0.006f * (spot_rnd(&seed) - 0.5f) * 2);
-        gfx_dot(x, y, 0.7f, lib_col(p->warm, 0.4f + 0.4f * lib_bell(t, 0.5f)), 1);
+        batch_dot(&dots, x, y, 0.7f, lib_col(p->warm, 0.4f + 0.4f * lib_bell(t, 0.5f)));
     }
+    batch_flush(&dots);
 }
 
 static void lib_scene(const Theme *t)

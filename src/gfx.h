@@ -104,6 +104,12 @@ void gfx_blend_add(int on);
 /* Tjock linje genom n punkter (xy[2*n]) med en färg per punkt */
 /* Prick med radien r i en enda sprite – billig för många partiklar. soft = mjuk kant */
 void gfx_dot(float cx, float cy, float r, u32 color, int soft);
+/* `n` dots in ONE draw call, in the order given: exactly what `n` calls of gfx_dot() with the same `soft` draw, with the same pixels. A call of the display
+ * list costs the PSP two kernel calls (sceGuGetMemory and sceGuDrawArray each tell the GE how far the list goes), so hundreds of dots are cheap in one and
+ * slow one by one. At most GFX_DOTS_MAX in a call (more are drawn in several). */
+typedef struct { float x, y, r; u32 color; } GfxDot;
+#define GFX_DOTS_MAX 256
+void gfx_dots(const GfxDot *d, int n, int soft);
 /* Fyrhörning med en färg per hörn, ordning som triangelremsa (0-1 överst, 2-3 nederst) */
 void gfx_quad(const float *xy, const u32 *colors);
 /* Ritar bara inom rektangeln tills gfx_clip_reset */
