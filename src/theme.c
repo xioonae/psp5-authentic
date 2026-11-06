@@ -159,7 +159,7 @@ static void deco_spot(const Theme *t, float k)
  * The surface and the light never move, so they are drawn once into a picture in video memory (scene_ready). What moves is drawn on top of it every frame, and
  * each of these is a pure function of the time: the dust of the Default and the colour themes, the four symbols of PS1, the ring of dots of PS2, the ribbon of
  * PS3 and the wave of PS4. They are drawn after the reference animations of the maintainer (the curves are in themedata.h) and every one of them loops: the
- * parts go a whole number of turns in the loop (LOOP_S = 8 s; the ribbon of PS3 has 6 s), so the last frame is followed by the first with no jump.
+ * parts go a whole number of turns in the loop (LOOP_S = 8 s; the ribbon of PS3 and the waves of PS4 have 6 s), so the last frame is followed by the first with no jump.
  * Angles are in turns (1 = a whole circle) and come from a table: there are a few thousand sines a frame. */
 #define LOOP_S 8.0f
 #define SIN_STEPS 1024
@@ -567,7 +567,14 @@ static void deco_ps3(float time, float a)
 }
 
 /* ---- PS4: the edge of a big darker circle that rolls to the right. It is a bright rim with a soft band at its left, the whole way from the bottom of the screen
- * to its top right corner, drawn as strips along the curve (themedata.h); it fades in and out at the ends of the loop, as in the reference. */
+ * to its top right corner, drawn as strips along the curve (themedata.h). A wave lives PS4_LIFE seconds (the length of the reference, which the table covers)
+ * and a new one is born every PS4_LOOP seconds: while the old one is in its last PS4_FADE seconds the new one fades in as the old one fades out, the two
+ * weights always add up to 1. So there is a wave on the screen at every moment, and the last picture of the loop is followed by the first with no jump. */
+#define PS4_LIFE 8.0f
+#define PS4_LOOP 6.0f
+#define PS4_FADE (PS4_LIFE - PS4_LOOP)
+#define PS4_N (PS4N_J + 2) /* the points of the table and two more below the picture, which is where the strip ends */
+
 static float cr4(float p0, float p1, float p2, float p3, float f) /* a smooth curve through the keys in time (Catmull-Rom), not a straight line between them */
 {
     return 0.5f * ((2 * p1) + (-p0 + p2) * f + (2 * p0 - 5 * p1 + 4 * p2 - p3) * f * f + (-p0 + 3 * p1 - 3 * p2 + p3) * f * f * f);
@@ -576,20 +583,18 @@ static float cr4(float p0, float p1, float p2, float p3, float f) /* a smooth cu
 #define PS4_KEY(tab, j, i) ((float)(tab)[i][j])
 #define PS4_AT(tab, j, k0, k1, k2, k3, f) cr4(PS4_KEY(tab, j, k0), PS4_KEY(tab, j, k1), PS4_KEY(tab, j, k2), PS4_KEY(tab, j, k3), f)
 
-static void deco_ps4(float time, float a)
+/* Where the wave of a given age is: the PS4_N points of its centre line (x, y), how bright its rim and its soft band are there (AE, BB: alpha) and the normal
+ * of the curve (NX, NY, pointing to the right of the wave). The keys of the table are the reference's every fourth picture (15 pictures a second), so the
+ * age gives the key; a smooth curve (Catmull-Rom) runs through them in time. The strip goes on in a straight line below the picture, by one and a half and
+ * by three of the table's last steps, so that its end, with the band at its left, is below the edge of the screen. */
+static void ps4_points(float age, float *X, float *Y, float *AE, float *BB, float *NX, float *NY)
 {
-    float t = fmodf(time, LOOP_S);
-    if (t < 0)
-        t += LOOP_S;
-    float kf = clampf((t / LOOP_S * 120.0f - 1.5f) / 4.0f, 0, PS4N_K - 1.0f), f;
+    float kf = clampf((age * 15.0f - 1.5f) / 4.0f, 0, PS4N_K - 1.0f), f;
     int k1 = (int)kf;
     if (k1 > PS4N_K - 2)
         k1 = PS4N_K - 2;
     f = kf - k1;
     int k0 = k1 > 0 ? k1 - 1 : 0, k2 = k1 + 1, k3 = k1 + 2 < PS4N_K ? k1 + 2 : PS4N_K - 1;
-    float env = smooth_step(0, 0.5f, t) * smooth_step(0, 0.9f, LOOP_S - t) * a;
-    enum { N = PS4N_J + 2 };
-    float X[N], Y[N], AE[N], BB[N], NX[N], NY[N];
     for (int j = 0; j < PS4N_J; j++) {
         X[j + 2] = PS4_AT(ps4n_x, j, k0, k1, k2, k3, f) / 10;
         Y[j + 2] = PS4_AT(ps4n_y, j, k0, k1, k2, k3, f) / 10;
@@ -597,27 +602,34 @@ static void deco_ps4(float time, float a)
         BB[j + 2] = fmaxf(0, PS4_AT(ps4n_bb, j, k0, k1, k2, k3, f)) / 2;
     }
     for (int j = 1; j >= 0; j--) { /* two more points below the picture, in the direction of the lower end */
-        X[j] = X[j + 1] + (X[2] - X[3]);
-        Y[j] = Y[j + 1] + (Y[2] - Y[3]);
+        float s = j ? 1.5f : 3.0f;
+        X[j] = X[2] + (X[2] - X[3]) * s;
+        Y[j] = Y[2] + (Y[2] - Y[3]) * s;
         AE[j] = AE[2];
         BB[j] = BB[2];
     }
-    for (int j = 0; j < N; j++) {
-        float dx = X[j < N - 1 ? j + 1 : j] - X[j > 0 ? j - 1 : j], dy = Y[j < N - 1 ? j + 1 : j] - Y[j > 0 ? j - 1 : j];
+    for (int j = 0; j < PS4_N; j++) {
+        float dx = X[j < PS4_N - 1 ? j + 1 : j] - X[j > 0 ? j - 1 : j], dy = Y[j < PS4_N - 1 ? j + 1 : j] - Y[j > 0 ? j - 1 : j];
         float l = sqrtf(dx * dx + dy * dy);
         if (l < 0.001f)
             l = 1;
-        NX[j] = -dy / l; /* the normal, towards the right of the wave */
+        NX[j] = -dy / l; /* the normal, on the right-hand side of the wave as it runs from the left to the right: below it where it is flat, to its right where it is steep */
         NY[j] = dx / l;
-        if (NX[j] < 0) {
+        if (NY[j] < 0) { /* (a curve that went back to the left would have it on the other side: turn it, as a piece of strip must not be turned over. It was NX < 0, which turned the normal of a flat piece that dips a hair, up) */
             NX[j] = -NX[j];
             NY[j] = -NY[j];
         }
     }
+}
+
+/* One wave of the age `age` at the strength `env` (0-1): strips along the curve, 4 across it (the band with its soft edge, the rim, its fall-off). */
+static void ps4_draw(float age, float env)
+{
+    float X[PS4_N], Y[PS4_N], AE[PS4_N], BB[PS4_N], NX[PS4_N], NY[PS4_N];
+    ps4_points(age, X, Y, AE, BB, NX, NY);
     static const float OFF[5] = { -56, -30, -4, 3, 24 }; /* across the wave: where the band starts, its middle, the rim, and where it ends */
     const u32 rim = RGBA(10, 132, 255, 0);
-    gfx_blend_add(1);
-    for (int j = 0; j < N - 1; j++) {
+    for (int j = 0; j < PS4_N - 1; j++) {
         float al[2][5];
         for (int e = 0; e < 2; e++) {
             al[e][0] = 0;
@@ -634,6 +646,19 @@ static void deco_ps4(float time, float a)
             gfx_quad(xy, cl);
         }
     }
+}
+
+static void deco_ps4(float time, float a)
+{
+    float t = fmodf(time, PS4_LOOP);
+    if (t < 0)
+        t += PS4_LOOP;
+    float born = smooth_step(0, PS4_FADE, t); /* the new wave (its age is the time in the loop) comes in; the one before it (PS4_LOOP seconds older) goes out */
+    gfx_blend_add(1);
+    if (born < 1)
+        ps4_draw(t + PS4_LOOP, (1 - born) * a);
+    if (born > 0)
+        ps4_draw(t, born * a);
     gfx_blend_add(0);
 }
 
