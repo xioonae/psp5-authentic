@@ -831,7 +831,7 @@ static void lib_star(const Theme *t, float time)
         float a = k * PI / 4 + 0.2f, len = (k % 2 ? 9.0f : 16.0f) * pulse;
         float line[6] = { x - cosf(a) * len, y - sinf(a) * len, x, y, x + cosf(a) * len, y + sinf(a) * len };
         u32 c[3] = { lib_col(p.rim, 0.0f), lib_col(p.rim, 0.7f), lib_col(p.rim, 0.0f) }; /* a ray: dark at both ends, bright where it crosses the star */
-        gfx_polyline(line, c, 3);
+        gfx_stroke(line, c, 3, 1.0f); /* (a soft line, like the rest of the picture: a hardware line has steps) */
     }
     gfx_blend_add(0);
 }
@@ -868,7 +868,10 @@ static void scene_ready(const Theme *t, float a, int library)
         s_scene.serial = gfx_snapshot_serial();
         s_scene.valid = 1;
     }
-    gfx_snapshot_draw();
+    if (library)
+        gfx_snapshot_draw_soft(); /* its lines are one pixel wide: this takes their steps out */
+    else
+        gfx_snapshot_draw();
 }
 
 void theme_backdrop_library(const Theme *t, float time)

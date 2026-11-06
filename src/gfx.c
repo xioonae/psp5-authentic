@@ -336,10 +336,10 @@ void gfx_snapshot_end(void)
     sceGuTexFlush();
 }
 
+/* In strips of 64 pixels, one sprite each, all in one call: the GE reads a wide image slowly (see gfx_tex). One texel on one screen pixel, so the
+ * picture comes out exactly as it was drawn. */
 void gfx_snapshot_draw(void)
 {
-    /* In strips of 64 pixels, one sprite each, all in one call: the GE reads a wide image slowly (see gfx_tex). One
-     * texel on one screen pixel, so the picture comes out exactly as it was drawn. */
     const int n = (SCREEN_W + 63) / 64;
     TVert *v = sceGuGetMemory(2 * n * sizeof(TVert));
     const u32 white = RGBA(255, 255, 255, 255);
@@ -351,6 +351,33 @@ void gfx_snapshot_draw(void)
     bind_filter(&s_snap, GU_NEAREST);
     sceGuDisable(GU_BLEND); /* the picture covers the whole screen and has no see-through parts */
     sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2 * n, 0, v);
+    sceGuEnable(GU_BLEND);
+}
+
+/* The same picture read smoothly, with every sprite half a pixel off its place: each pixel is the mean of 2 x 2 texels, so lines that were drawn one pixel wide (which
+ * have steps) come out smooth, and the picture is half a pixel down and to the right. (The position of the sprite is moved, not its texture coordinates: a sprite that is
+ * drawn one texel to a pixel is read as it is whatever the coordinates say, by PPSSPP at least.) It reads only texels of the picture; the first column and row, which
+ * would read past it, are drawn as they are. */
+void gfx_snapshot_draw_soft(void)
+{
+    const int n = (SCREEN_W - 1 + 63) / 64;
+    TVert *v = sceGuGetMemory((2 * n + 4) * sizeof(TVert));
+    const u32 white = RGBA(255, 255, 255, 255);
+    for (int k = 0; k < n; k++) {
+        float a = 1.0f + 64.0f * k, b = a + 64 > SCREEN_W ? (float)SCREEN_W : a + 64; /* the pixels a to b - 1 of columns 1 to 479, and of rows 1 to 271 */
+        v[k * 2] = (TVert){ a, 1, white, a + 0.5f, 1.5f, 0 }; /* (texture u, v, colour, then x, y) */
+        v[k * 2 + 1] = (TVert){ b, SCREEN_H, white, b + 0.5f, SCREEN_H + 0.5f, 0 };
+    }
+    TVert *edge = v + 2 * n;
+    edge[0] = (TVert){ 0, 0, white, 0, 0, 0 }; /* the first column */
+    edge[1] = (TVert){ 1, SCREEN_H, white, 1, SCREEN_H, 0 };
+    edge[2] = (TVert){ 1, 0, white, 1, 0, 0 }; /* and the first row, from that column on */
+    edge[3] = (TVert){ SCREEN_W, 1, white, SCREEN_W, 1, 0 };
+    sceGuDisable(GU_BLEND);
+    bind_filter(&s_snap, GU_LINEAR);
+    sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2 * n, 0, v);
+    bind_filter(&s_snap, GU_NEAREST);
+    sceGuDrawArray(GU_SPRITES, TVERT_FMT, 4, 0, edge);
     sceGuEnable(GU_BLEND);
 }
 

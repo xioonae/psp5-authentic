@@ -47,6 +47,8 @@ unsigned gfx_snapshot_serial(void);
 void gfx_snapshot_begin(void);
 void gfx_snapshot_end(void);
 void gfx_snapshot_draw(void);
+/* The same picture, but every pixel is the mean of 2 x 2 pixels of it (half a pixel down and to the right; the first column and row are as they were): lines that were drawn one pixel wide, which have steps, come out smooth. */
+void gfx_snapshot_draw_soft(void);
 /* Rundad rektangel med kantutjämning: kanterna på hela pixlar, hörnen exakt kantutjämnade */
 void gfx_round_rect(float x, float y, float w, float h, float r, u32 color);
 /* Mjuk skugga/glöd: rektangeln utökas med `spread` åt alla håll */

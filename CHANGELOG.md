@@ -50,6 +50,9 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ### Library
 
+- **The Library's background is softer.** The thin lines of its picture (the fine lines of the petal and the fan, and the big rings at the lower right) were one pixel wide and showed the steps of the pixel grid, so they looked sharp and dotted. The picture is now shown a little smoothed
+  (every pixel is the mean of 2 x 2 pixels of it, and the picture sits half a pixel further down and to the right), so the lines are continuous and soft. The four rays of the little star are soft lines too. The picture is still made once and kept in video memory, so this costs nothing
+  per frame but the star's rays (about 2 KB of the display list); the backgrounds of the themes are as they were. This is new and nobody has seen it on a real PSP yet: if the Library's background looks wrong on yours, please open an issue and tell us your PSP model and your ARK version.
 - **The Library has a background of its own.** The picture of a game is **not** shown behind the Library any more (the Library is not darkened either): in every theme it has the same drawn picture on black, at the
   right: a twisted ribbon of fine dotted lines, a fan of lines to a point, big rings at the bottom right, a little twinkling star and some specks of dust, with a copper light along its edges. It is drawn by the program
   (no picture file), like the themes and icons. The colours follow your theme: the black has a trace of the theme's own dark, the lines carry some of its light, and the glow is the gold of the PS5 colours (the
@@ -247,6 +250,7 @@ below are inspired by what the original project found and did about them. The co
 
 - New picture in the README: the File Manager's question about a name that is taken (`file-manager-conflict.png`; the folders in it are the demo's).
 - New picture in the README: *System → Date and Time* (`settings-date-time.png`). The pictures of *System*, *Appearance*, *Console Information*, *Console Storage*, *Manage Plugins* and *Install New Plugin* are made again for the new titles (see *Settings*) and, for *System*, the new row; the time in *Date and Time* is a test value.
+- The pictures of the Library in the README (`library.png`, `library-folders.png`) are made again: the background is softer.
 - The picture of the themes in the README (`theme.png`) is made again twice: PS3 is black and gold now, and then with the new ribbon. The picture of *Appearance* (`settings-appearance.png`) shows the Default theme under its new name.
 - The picture of *Install New Plugin* in the README shows the page as it is now: *File*, *Location* (where the file is), *PLUGINS.TXT* (the one that is edited) and the three switches. The folder and the file name in it are the demo's.
 - The picture of *Console Information* in the README is scrolled down to the new rows: *CFW (ARK-5)* with the version of ARK, *Last IP address* and *Free RAM*. The version of ARK, the MAC address and the RAM in it are the demo PSP's (it has no ARK), and the demo has not been on Wi-Fi, so it says *Not recorded yet*.
