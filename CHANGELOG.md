@@ -22,8 +22,8 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   **None of the decoding has been tried on a real PSP yet:** it was tested against stand-ins of the PSP's libraries, so the player's own logic is checked, not the sound of a codec.
 - The old Music screen's code was replaced: the scan of the whole card for tags is gone (only the song that plays has its tags read), and the Music tab's list, position bar and keys went with it.
 - **The background goes dark behind a card that is opened, and bright again when it is closed.** On the cards (Games, Media, and the Library card of Games) the background has its full brightness; when the **Music** card is opened
-  the whole screen behind it is darkened, from the top of the screen to the bottom (it was only from the folder name down, as a shade behind the list), and when the **Library** card is opened its background goes darker too (less: its lines
-  would be gone). It fades in a quarter of a second, and out again when you go back. The top bar stays bright.
+  the whole screen behind it is darkened, from the top of the screen to the bottom (it was only from the folder name down, as a shade behind the list), and when the **Library** card is opened its background goes darker in the same way
+  and by the same amount. It fades in a quarter of a second, and out again when you go back. The top bar stays bright.
 - **README pictures:** new ones of the Media tab and the Music screen (taken in the PPSSPP emulator, with a song of the invented demo stick playing), and six others (Games, Options, Theme, Power menu, Library, Library with folders) taken again because the top bar says *Media* now, or because the opened Library is darker now.
 
 ### Memory
