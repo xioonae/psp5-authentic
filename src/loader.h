@@ -41,9 +41,9 @@ void loader_request_bg(int list_index);
  * (kan vara NULL om posten saknar bild). */
 int loader_take_bg(int *list_index, Texture **tex);
 
-/* Be om omslaget till låt nummer `track` i musiklistan, och hämta det när det är klart
- * (tar över ägarskapet, *tex kan vara NULL om låten saknar omslag). */
-void loader_request_cover(int track);
-int loader_take_cover(int *track, Texture **tex);
+/* Ask for the cover of the song at `path` (its album, "" when it has none, makes songs of an album share one cover) and take it when it is ready (takes over
+ * the texture: *tex may be NULL when the song has no cover). `serial` is what the screen calls this request (music_generation()): it comes back with the picture. */
+void loader_request_cover(int serial, const char *path, const char *album);
+int loader_take_cover(int *serial, Texture **tex);
 
 #endif

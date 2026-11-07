@@ -215,11 +215,13 @@ void gfx_init(void)
 static void icons_free(int only_unused);
 
 static void library_free(void);
+static void music_icon_free(void);
 
 void gfx_term(void)
 {
     icons_free(0);
     library_free();
+    music_icon_free();
     tex_free(s_disc);
     tex_free(s_soft);
     tex_free(s_ring);
@@ -877,6 +879,57 @@ void gfx_library_icon(int l, int t, int w, int h, u32 color)
     for (int i = 0; i < 6; i++)
         gfx_round_rect(x + (i % 3) * 25 * u, y + (i / 3) * 25 * u, 19 * u, 19 * u, 3 * u, color);
     gfx_round_rect(x + 27 * u, y + 41 * u, 56 * u, 27 * u, 12 * u, color);
+}
+
+/* The picture of the Music card of the Media tab: the note of "Music Icon.png" (ICON_MUSIC), 41 pixels high at the full size of the card (two thirds of its height,
+ * as the Library's picture) and drawn smaller while the card slides in or out. It is one image made once; the sizes between are that image scaled, so nothing is
+ * calculated while the card moves (the full size is one image pixel on one screen pixel, so it is as sharp as the other pictures). It stays until gfx_term. */
+#define MUSIC_ICON_S 41
+#define MUSIC_ICON_N (MUSIC_ICON_S + 2) /* with a transparent pixel round it */
+static Texture *s_music_icon;
+
+static void music_icon_free(void)
+{
+    tex_free(s_music_icon);
+    s_music_icon = NULL;
+}
+
+static const Texture *music_icon_image(void)
+{
+    if (!s_music_icon) {
+        static unsigned char cov[MUSIC_ICON_N * MUSIC_ICON_N];
+        Texture *t = tex_create(MUSIC_ICON_N, MUSIC_ICON_N, GU_PSM_8888);
+        if (!t)
+            return NULL;
+        icon_render(ICON_MUSIC, 0, 0, MUSIC_ICON_S / 2.0f, MUSIC_ICON_N / 2.0f, MUSIC_ICON_N / 2.0f, MUSIC_ICON_N, MUSIC_ICON_N, cov);
+        u32 *px = t->data;
+        for (int y = 0; y < MUSIC_ICON_N; y++)
+            for (int x = 0; x < MUSIC_ICON_N; x++)
+                px[y * t->stride + x] = RGBA(255, 255, 255, cov[y * MUSIC_ICON_N + x]);
+        tex_flush(t);
+        s_music_icon = t;
+    }
+    return s_music_icon;
+}
+
+/* The note, centred in the card box l, t, w, h: 41 pixels high when the card is as high as the biggest card (62), smaller (and then scaled) when it is smaller */
+void gfx_music_icon(int l, int t, int w, int h, u32 color)
+{
+    int s = (int)floorf(h * 0.66f + 0.5f);
+    float k = s / (float)MUSIC_ICON_S;
+    int d = (int)floorf(MUSIC_ICON_N * k + 0.5f);
+    int x = l + (w - d + 1) / 2, y = t + (h - d + 1) / 2;
+    const Texture *tex = music_icon_image();
+    if (tex) {
+        if (d == MUSIC_ICON_N) {
+            IconBox b = { d, d, x, y, d / 2.0f, d / 2.0f, 0, 0 };
+            icon_blit(tex, &b, color); /* the full size: one pixel for one pixel */
+        } else {
+            gfx_tex(tex, x, y, d, d, color);
+        }
+        return;
+    }
+    gfx_note(l + w / 2.0f, t + h / 2.0f, s, color); /* the image could not be made: the little note */
 }
 
 /* The folder picture p: from the cache above (a folder is a few hundred pixels and two rounded boxes, cheap to make), and if there is

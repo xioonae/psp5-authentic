@@ -24,6 +24,7 @@
 #include "controls.h"
 #include "boot.h"
 #include "music.h"
+#include "musicui.h"
 #include "umd.h"
 #include "theme.h"
 #include "look.h"
@@ -172,6 +173,14 @@ static void start_confirmed(void)
     sys_resume_launcher();
 }
 
+/* The player popup of the PSP's sound button (musicui.h): drawn by osd_draw() at the end of every frame of every screen */
+static MusicUi *s_mini_mu;
+static void mini_overlay(void)
+{
+    if (s_mini_mu)
+        musicui_mini_draw(s_mini_mu);
+}
+
 /* Bygger upp allt: grafik, typsnitt, spellista, laddartråd. */
 static void app_start(EntryList *list, Ui *ui, int boot)
 {
@@ -192,9 +201,11 @@ static void app_start(EntryList *list, Ui *ui, int boot)
         font_ensure_cjk(); /* t.ex. japanska speltitlar */
     loader_start(list);
     if (!s_safe)
-        music_init(); /* läser in ms0:/MUSIC i bakgrunden */
+        music_init(); /* loads the decoders and starts the player thread (the songs of a folder are listed when the Music screen opens it) */
     controls_psp_assignment(sys_confirm_is_circle()); /* what the PSP's own setting says; Settings > Controls may have other buttons do the jobs */
     ui_init(ui, list, launch_supported());
+    s_mini_mu = &ui->mu;
+    osd_set_overlay(mini_overlay);
 }
 
 /* Viloläge med sidoknappen: när PSP:n somnar ritas skärmen svart, så att det är
@@ -243,7 +254,9 @@ static void sleep_and_wake(Ui *ui)
 static void app_stop(EntryList *list, Ui *ui)
 {
     umd_stop();
-    loader_stop(); /* före music_term: laddaren läser musiklistan (omslagen) */
+    osd_set_overlay(NULL);
+    s_mini_mu = NULL;
+    loader_stop(); /* (before music_term: the loader reads the covers of the songs) */
     music_term();
     sound_term();
     ui_free(ui);
@@ -673,8 +686,23 @@ int main(int argc, char *argv[])
         osd_update(dt);
         if (!s_start_ok) {
             up += dt;
-            if (up >= START_OK_AFTER && !music_scanning())
-                start_confirmed(); /* menyn och musiklistan fungerar */
+            if (up >= START_OK_AFTER)
+                start_confirmed(); /* the menu works */
+        }
+        { /* The sound button: the player as a popup over whatever screen is open (musicui.h). While it is open it gets the buttons and the screen below gets none;
+           * the button that closes it is not passed on either. */
+            int note = ui.launch < 0 && !s_sleeping ? osd_note_pressed() : 0;
+            if (!ui.mu.mini && note)
+                musicui_mini_open(&ui.mu);
+            else if (ui.mu.mini || ui.mu.mini_anim > 0) {
+                int closed = musicui_mini_update(&ui.mu, in.pressed, in.held, in.lx, in.ly, dt, note);
+                if (closed && ui.tab != TAB_MUSIC)
+                    musicui_release_cover(&ui.mu);
+            }
+            if (ui.mu.mini || note) {
+                UiInput none = UI_NO_INPUT;
+                in = none; /* the screen below is not touched while the popup is open */
+            }
         }
 
         if (in_saves) { /* Games and Apps, Manage Saved Data (opened from Settings > Storage): the list stands still while the screen is open */

@@ -1,153 +1,90 @@
 /* psp5 – made by Mille Weber */
-/* MP3-spelaren: skannar ms0:/MUSIC (läser ID3-taggar) i bakgrunden och spelar upp
- * låtarna i en egen tråd med PSP:ns inbyggda avkodare (sceMp3) via SRC-ljudkanalen,
- * som klarar 44,1 kHz, 48 kHz m.fl. Gränssnittet styr tråden med en liten kommandokö,
- * så att inget behöver låsas. Buffertarna är små (~50 KB) så att det räcker även
- * på PSP-1000. */
+/* The music player. The Music screen lists a folder of ms0:/MUSIC (or ef0:/MUSIC) at a time and plays the songs of the folder that is open; the sound is made by the
+ * PSP's own decoders (sceMp3 here; more formats behind the same small interface, see Codec) in a thread of its own, through the SRC audio channel, which does 44.1 kHz,
+ * 48 kHz and the others. The screen steers the thread with a small queue of commands, so that nothing has to be locked. The buffers are small (~50 KB), which is
+ * enough for a PSP-1000. Only the song that is playing has its tags read (when it starts): there is no scan of the whole card. */
 #include <pspkernel.h>
 #include <pspaudio.h>
 #include <psputility.h>
 #include <pspmp3.h>
+#include <pspatrac3.h>
 #include <pspsysmem.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include "music.h"
-#include "reccache.h"
 #include "system.h"
 
-#define MAX_TRACKS   1000
-#define MAX_DEPTH    3
-#define TAG_READ     8192   /* så mycket av ID3v2-taggen som läses vid skanning */
+#define MAX_ENTRIES  1000   /* lines of one folder in the Music screen, and songs in a queue */
+#define QNAME        128    /* a name in the queue (the same size as MusicEntry.name) */
+#define TAG_READ     8192   /* how much of an ID3v2 tag is read for the title, the artist and the album */
 #define MP3_BUF      (32 * 1024)
-#define PCM_BUF      (1152 * 2 * 2 * 2) /* avkodaren dubbelbuffrar själv i den här */
-#define MAX_SAMPLES  1152
-#define MP3_END      0x80671402 /* sceMp3Decode: strömmen är slut */
+#define PCM_BUF      (1152 * 2 * 2 * 2) /* the decoder double buffers in this one itself */
+#define MAX_SAMPLES  4096   /* the most that one frame of any codec has per channel (the SRC channel takes 17 to 4111) */
+#define MP3_END      0x80671402 /* sceMp3Decode: the stream is over */
 #define ALREADY_LOADED  0x80020139
-#define ALREADY_LOADED2 0x80111102 /* samma sak, från sceUtilityLoadModule */
+#define ALREADY_LOADED2 0x80111102 /* the same, from sceUtilityLoadModule */
 
-/* --- låtlistan --- */
-
+/* the tags of a song while they are read (the track number is of no use here, but the reader of ID3 keeps it) */
 typedef struct {
     Track t;
-    int trackno; /* från TRCK, för ordningen inom ett album */
-    u32 file_size, file_time; /* filen som taggarna lästes ur – för cachen nedan */
+    int trackno;
 } Item;
 
-/* Taggarna sparas mellan starterna (cache/music.bin): att öppna och läsa in varje fil tar många
- * sekunder på ett stort bibliotek, och en cachad post gäller så länge filen har samma storlek och
- * tid. Ändras Item eller Track ändras storleken, och en gammal cache ignoreras då. */
-#define TAG_CACHE_MAGIC 0x3153554D /* "MUS1" – öka siffran om taggarnas betydelse ändras */
-static RecCache s_cache;
-static unsigned char *s_cache_file;
-static int s_cache_hits, s_cache_misses;
-
-static void tag_cache_path(char *out, int size)
-{
-    snprintf(out, size, "%s/cache/music.bin", g_data_dir);
-}
-
-static void tag_cache_load(void)
-{
-    s_cache_hits = s_cache_misses = 0;
-    char path[64];
-    tag_cache_path(path, sizeof(path));
-    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
-    if (fd < 0)
-        return;
-    int len = sceIoLseek32(fd, 0, PSP_SEEK_END);
-    sceIoLseek32(fd, 0, PSP_SEEK_SET);
-    if (len > 0 && (u32)len <= reccache_file_size(sizeof(Item), MAX_TRACKS)) {
-        s_cache_file = malloc(len);
-        if (s_cache_file && (sceIoRead(fd, s_cache_file, len) != len ||
-                             !reccache_open(&s_cache, s_cache_file, len, TAG_CACHE_MAGIC, sizeof(Item), MAX_TRACKS,
-                                            sizeof(((Track *)0)->path)))) {
-            free(s_cache_file);
-            s_cache_file = NULL;
-        }
-    }
-    sceIoClose(fd);
-}
-
-static void tag_cache_free(void)
-{
-    reccache_close(&s_cache);
-    free(s_cache_file);
-    s_cache_file = NULL;
-}
-
-/* Sparar listan om något har ändrats sedan förra gången. */
-static void tag_cache_save(const Item *items, int count)
-{
-    if (s_cache_misses == 0 && s_cache_hits == (int)s_cache.count)
-        return; /* samma filer som förra gången */
-    u32 len = reccache_file_size(sizeof(Item), count);
-    unsigned char *file = malloc(len);
-    if (!file)
-        return;
-    reccache_header(file, TAG_CACHE_MAGIC, sizeof(Item), count);
-    for (int i = 0; i < count; i++)
-        reccache_record(file, sizeof(Item), i, items[i].file_size, items[i].file_time, &items[i]);
-    char path[64];
-    tag_cache_path(path, sizeof(path));
-    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
-    if (fd >= 0) {
-        int ok = sceIoWrite(fd, file, len) == (int)len;
-        sceIoClose(fd);
-        if (!ok)
-            sceIoRemove(path); /* en halv fil ska inte ligga kvar */
-    }
-    free(file);
-}
-
-static Item *volatile s_items;  /* publicerad lista – byts bara när tråden inte spelar */
-static volatile int s_count;
-static volatile int s_gen;      /* ökas när listan byts, så att UI:t vet när dess cache är gammal */
-static volatile int s_scanning; /* 1 medan bakgrundsskanningen pågår */
-static volatile int s_cjk;      /* 1 om någon titel/artist behöver det japanska typsnittet */
-/* listan som byggs under skanningen (bara spelartråden rör den) */
-static Item *s_scan_items;
-static int s_scan_count, s_scan_cap;
-
-/* --- kommandon från gränssnittet (en skrivare, en läsare) --- */
-
-enum { CMD_PLAY, CMD_PAUSE, CMD_STOP, CMD_NEXT, CMD_PREV, CMD_SEEK };
-#define QUEUE 16
-static volatile int s_q_cmd[QUEUE], s_q_arg[QUEUE];
-static volatile int s_q_head, s_q_tail; /* head skrivs bara av UI, tail bara av tråden */
-
-/* --- tillstånd som tråden skriver och UI läser --- */
+/* --- what the screen reads (the thread writes it) --- */
 
 static volatile int s_state = MUSIC_STOPPED;
-static volatile int s_current = -1;
 static volatile float s_elapsed, s_duration;
+static volatile int s_gen;          /* another song has started */
+static volatile int s_now_seq;      /* the tags below are written between an odd and an even number, so that a reader can tell a half written copy */
+static Track s_now;
+static volatile int s_now_valid;
+static volatile int s_cjk;
+static volatile int s_shuffle, s_repeat;
+static char s_dir_pub[256];         /* the folder whose songs are playing */
 
-/* --- tråd och avkodare --- */
+/* --- commands from the screen (one writer, one reader) --- */
+
+enum { CMD_LOAD, CMD_PAUSE, CMD_STOP, CMD_NEXT, CMD_PREV, CMD_SEEK, CMD_SHUFFLE };
+#define QUEUE 16
+static volatile int s_q_cmd[QUEUE], s_q_arg[QUEUE];
+static volatile int s_q_head, s_q_tail; /* head is written by the screen only, tail by the thread only */
+static int s_in_cmd;                    /* 1 while the thread does a command (it stays in the queue until it is done) */
+
+/* 1 if the screen has sent a command that the thread has not begun (not the one it is doing now) */
+static int command_waiting(void)
+{
+    return (s_q_head - s_q_tail + QUEUE) % QUEUE > s_in_cmd;
+}
+
+/* --- thread and decoder --- */
 
 static SceUID s_thread = -1;
 static volatile int s_quit;
-static int s_ready;                      /* moduler + resurs laddade */
-static int s_loaded_avcodec, s_loaded_mp3;
+static int s_ready;                      /* modules and resource loaded */
+static int s_loaded_avcodec, s_loaded_mp3, s_loaded_atrac;
 
 static unsigned char __attribute__((aligned(64))) s_mp3buf[MP3_BUF];
 static unsigned char __attribute__((aligned(64))) s_pcmbuf[PCM_BUF];
 static short __attribute__((aligned(64))) s_out[2][MAX_SAMPLES * 2];
 static int s_out_idx;
 
+/* a codec: one kind of song file. The player has the file open (s_fd, from s_start to s_size) and the codec sets the rate, the channels and the length (and s_pos as it decodes) */
+typedef struct {
+    int (*open)(void);                                                  /* 0 = ready to decode, -1 = this file cannot be played */
+    int (*frame)(const short **pcm, int *samples, int *channels);       /* 1 = a frame of `samples` per channel (0 samples = nothing this time), 0 = over, -1 = error */
+    int (*seek)(float sec);                                             /* 0 = done, -1 = past the end */
+    void (*close)(void);
+} Codec;
+
+static const Codec *s_codec;
 static SceUID s_fd = -1;
-static int s_handle = -1;
-static int s_eof;
+static char s_path[256];                 /* the song that is open (the file is opened again when the PSP has slept) */
 static int s_rate, s_channels;
-static int s_spf;                      /* prover per bildruta (1152/576), 0 = okänt */
-static int s_src_rate, s_src_samples;  /* reserverad SRC-kanal, 0 = ingen */
-static int s_open_index = -1;          /* låten som avkodaren har öppen */
-/* för spolning: var strömmen börjar och slutar, första bildrutans huvud och Xing-tabellen */
-static u32 s_start, s_size, s_first_hdr;
-static unsigned char s_toc[100];
-static int s_has_toc;
-static float s_seek_base;              /* sekunder in i låten där avkodaren startade */
-static int s_seek_grace;               /* bildrutor efter ett hopp som får misslyckas */
+static int s_src_rate, s_src_samples;    /* the SRC channel that is reserved, 0 = none */
+static u32 s_start, s_size;              /* where the stream starts (after the ID3 tag) and ends */
+static float s_decoded;                  /* where the codec has decoded to, seconds (what the song has played is s_elapsed, set when the sound is out) */
 
 /* ---------------------------------------------------------------------- */
 /* ID3 */
@@ -413,96 +350,25 @@ void *music_cover_data(const char *path, u32 *size_out)
     return buf;
 }
 
+
 /* ---------------------------------------------------------------------- */
-/* skanning */
+/* the files that can be played, the folders of the Music screen */
 
-static int has_mp3_ext(const char *name)
+static const Codec *codec_for(const char *name);
+
+int music_supported(const char *name)
 {
-    int n = strlen(name);
-    return n > 4 && !strcasecmp(name + n - 4, ".mp3");
+    return name && codec_for(name) != NULL;
 }
 
-/* Tid som ett tal (som scan.c): ändras när filen ändras */
-static u32 pack_time(const ScePspDateTime *t)
+static int name_is_hidden(const char *n)
 {
-    return ((t->year - 1980) << 26) | (t->month << 22) | (t->day << 17) | (t->hour << 12) | (t->minute << 6) |
-           t->second;
+    return n[0] == '.';
 }
 
-static void add_track(const char *path, const char *name, const char *folder, unsigned char *buf, u32 file_size,
-                      u32 file_time)
-{
-    if (s_scan_count >= MAX_TRACKS)
-        return;
-    if (s_scan_count >= s_scan_cap) {
-        int ncap = s_scan_cap ? s_scan_cap * 2 : 64;
-        Item *n = realloc(s_scan_items, ncap * sizeof(Item));
-        if (!n)
-            return;
-        s_scan_items = n;
-        s_scan_cap = ncap;
-    }
-    Item *it = &s_scan_items[s_scan_count];
-    const void *cached = reccache_find(&s_cache, path, file_size, file_time);
-    if (cached) { /* oförändrad sedan förra gången: inget behöver läsas */
-        memcpy(it, cached, sizeof(*it));
-        s_cache_hits++;
-        s_scan_count++;
-        return;
-    }
-    s_cache_misses++;
-    memset(it, 0, sizeof(*it));
-    it->file_size = file_size;
-    it->file_time = file_time;
-    snprintf(it->t.path, sizeof(it->t.path), "%s", path);
-
-    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0777);
-    if (fd >= 0) {
-        u32 size = sceIoLseek32(fd, 0, PSP_SEEK_END);
-        read_tags(fd, size, it, buf);
-        sceIoClose(fd);
-    }
-    if (!it->t.title[0]) { /* filnamnet utan .mp3 */
-        snprintf(it->t.title, sizeof(it->t.title), "%.*s", (int)strlen(name) - 4, name);
-    }
-    if (!it->t.album[0] && folder)
-        snprintf(it->t.album, sizeof(it->t.album), "%s", folder);
-    s_scan_count++;
-}
-
-static void scan_dir(const char *dir, const char *folder, int depth, unsigned char *buf)
-{
-    SceUID d = sceIoDopen(dir);
-    if (d < 0)
-        return;
-    SceIoDirent ent;
-    char path[256];
-    memset(&ent, 0, sizeof(ent));
-    while (!s_quit && sceIoDread(d, &ent) > 0 && s_scan_count < MAX_TRACKS) {
-        if (ent.d_name[0] != '.') {
-            if (snprintf(path, sizeof(path), "%s/%s", dir, ent.d_name) < (int)sizeof(path)) {
-                if (FIO_S_ISDIR(ent.d_stat.st_mode)) {
-                    if (depth < MAX_DEPTH) {
-                        char sub[64];
-                        snprintf(sub, sizeof(sub), "%s", ent.d_name);
-                        scan_dir(path, sub, depth + 1, buf);
-                    }
-                } else if (has_mp3_ext(ent.d_name)) {
-                    add_track(path, ent.d_name, folder, buf, (u32)ent.d_stat.st_size,
-                              pack_time(&ent.d_stat.sce_st_mtime));
-                }
-            }
-        }
-        memset(&ent, 0, sizeof(ent));
-    }
-    sceIoDclose(d);
-}
-
-/* skiftlägesokänslig jämförelse där tomma fält (okänd artist/album) hamnar sist */
+/* a case insensitive order for names */
 static int cmp_text(const char *a, const char *b)
 {
-    if (!a[0] || !b[0])
-        return !a[0] - !b[0];
     for (;; a++, b++) {
         int ca = (unsigned char)*a, cb = (unsigned char)*b;
         if (ca >= 'A' && ca <= 'Z') ca += 32;
@@ -512,18 +378,67 @@ static int cmp_text(const char *a, const char *b)
     }
 }
 
-static int cmp_items(const void *a, const void *b)
+static int cmp_entries(const void *a, const void *b)
 {
-    const Item *x = a, *y = b;
-    int c = cmp_text(x->t.artist, y->t.artist);
-    if (!c) c = cmp_text(x->t.album, y->t.album);
-    if (!c && x->trackno != y->trackno) c = x->trackno - y->trackno;
-    if (!c) c = cmp_text(x->t.title, y->t.title);
-    if (!c) c = strcmp(x->t.path, y->t.path);
-    return c;
+    const MusicEntry *x = a, *y = b;
+    if (x->dir != y->dir)
+        return y->dir - x->dir; /* the folders first */
+    int c = cmp_text(x->name, y->name);
+    return c ? c : strcmp(x->name, y->name);
 }
 
-/* kyrilliska, grekiska, kana, kanji … (UTF-8-ledbyte ≥ 0xCE) finns inte i det latinska typsnittet */
+int music_list_dir(const char *dir, MusicEntry **out)
+{
+    *out = NULL;
+    SceUID d = sceIoDopen(dir);
+    if (d < 0)
+        return -1;
+    int cap = 64, n = 0;
+    MusicEntry *e = malloc(cap * sizeof(MusicEntry));
+    SceIoDirent ent;
+    memset(&ent, 0, sizeof(ent));
+    while (e && n < MAX_ENTRIES && sceIoDread(d, &ent) > 0) {
+        int isdir = FIO_S_ISDIR(ent.d_stat.st_mode) != 0;
+        if (!name_is_hidden(ent.d_name) && strlen(ent.d_name) < sizeof(e[0].name) && (isdir || music_supported(ent.d_name))) {
+            if (n >= cap) {
+                MusicEntry *bigger = realloc(e, cap * 2 * sizeof(MusicEntry));
+                if (!bigger)
+                    break;
+                e = bigger;
+                cap *= 2;
+            }
+            snprintf(e[n].name, sizeof(e[n].name), "%s", ent.d_name);
+            e[n].dir = isdir;
+            n++;
+        }
+        memset(&ent, 0, sizeof(ent));
+    }
+    sceIoDclose(d);
+    if (!e)
+        return -1;
+    if (n > 1)
+        qsort(e, n, sizeof(MusicEntry), cmp_entries);
+    *out = e;
+    return n;
+}
+
+int music_roots(char roots[2][16])
+{
+    static const char *const R[2] = { "ms0:/MUSIC", "ef0:/MUSIC" };
+    int n = 0;
+    for (int i = 0; i < 2; i++) {
+        if (i == 1 && sys_ms_is_ef())
+            continue; /* ARK has put the internal storage at ms0: it is the same folder */
+        SceUID d = sceIoDopen(R[i]);
+        if (d < 0)
+            continue;
+        sceIoDclose(d);
+        snprintf(roots[n++], 16, "%s", R[i]);
+    }
+    return n;
+}
+
+/* letters that the Latin font does not have (Cyrillic, Greek, kana, kanji ... : a UTF-8 lead byte of 0xCE or more) */
 static int needs_cjk(const char *t)
 {
     for (; *t; t++)
@@ -532,58 +447,15 @@ static int needs_cjk(const char *t)
     return 0;
 }
 
-/* Körs i spelartråden innan något spelas: bygger listan och publicerar den färdig. */
-static void scan_library(void)
-{
-    s_scan_items = NULL;
-    s_scan_count = s_scan_cap = 0;
-    tag_cache_load();
-    unsigned char *buf = malloc(TAG_READ);
-    if (buf) {
-        scan_dir("ms0:/MUSIC", NULL, 0, buf);
-        if (!sys_ms_is_ef())
-            scan_dir("ef0:/MUSIC", NULL, 0, buf); /* PSP Go:s internminne */
-        free(buf);
-    }
-    if (s_quit) { /* avbruten av music_term */
-        tag_cache_free();
-        free(s_scan_items);
-        s_scan_items = NULL;
-        s_scan_count = 0;
-        return;
-    }
-    if (s_scan_count > 1)
-        qsort(s_scan_items, s_scan_count, sizeof(Item), cmp_items);
-    int cjk = 0;
-    for (int i = 0; i < s_scan_count && !cjk; i++)
-        cjk = needs_cjk(s_scan_items[i].t.title) || needs_cjk(s_scan_items[i].t.artist);
-    s_cjk = cjk;
-    s_items = s_scan_items; /* pekaren före antalet – UI:t läser antalet först */
-    s_count = s_scan_count;
-    s_gen++;
-    s_scan_items = NULL;
-    tag_cache_save(s_items, s_count); /* listan är redan publicerad – det här fördröjer inget */
-    tag_cache_free();
-}
-
-int music_count(void)
-{
-    return s_count;
-}
-
-const Track *music_track(int index)
-{
-    return index >= 0 && index < s_count ? &s_items[index].t : NULL;
-}
 
 /* ---------------------------------------------------------------------- */
-/* uppspelning (allt här körs i spelartråden) */
+/* the sound out (all of this runs in the player thread) */
 
 static void src_release(void)
 {
     if (!s_src_rate)
         return;
-    /* kanalen går inte att släppa medan sista bufferten spelas – vänta lite */
+    /* the channel cannot be let go while the last buffer is playing: wait a little */
     for (int i = 0; i < 100 && sceAudioSRCChRelease() < 0; i++)
         sceKernelDelayThread(2000);
     s_src_rate = s_src_samples = 0;
@@ -601,20 +473,29 @@ static int src_reserve(int samples, int rate)
     return 1;
 }
 
-static void close_track(void)
+
+/* ---------------------------------------------------------------------- */
+/* MP3 (sceMp3) */
+
+static int s_handle = -1;
+static int s_eof;
+static int s_spf;                      /* samples per frame (1152 / 576), 0 = not known */
+/* for jumping: where the stream starts and ends, the header of the first frame and the Xing table */
+static u32 s_first_hdr;
+static unsigned char s_toc[100];
+static int s_has_toc;
+static float s_seek_base;              /* seconds into the song where the decoder started */
+static int s_seek_grace;               /* frames after a jump that may fail */
+
+static void mp3_close(void)
 {
     if (s_handle >= 0) {
         sceMp3ReleaseMp3Handle(s_handle);
         s_handle = -1;
     }
-    if (s_fd >= 0) {
-        sceIoClose(s_fd);
-        s_fd = -1;
-    }
-    s_open_index = -1;
 }
 
-/* Fyller på avkodarens buffert från filen. <0 = läsfel. */
+/* Fills the decoder's buffer from the file. <0 = a read error. */
 static int feed(void)
 {
     unsigned char *dst;
@@ -628,10 +509,10 @@ static int feed(void)
     int got = -1;
     if (sceIoLseek32(s_fd, srcpos, PSP_SEEK_SET) >= 0)
         got = sceIoRead(s_fd, dst, towrite);
-    if (got < 0 && s_open_index >= 0) {
-        /* filen stängs av viloläge – öppna den igen och försök en gång till */
+    if (got < 0 && s_path[0]) {
+        /* the file is closed by sleep mode: open it again and try once more */
         sceIoClose(s_fd);
-        s_fd = sceIoOpen(s_items[s_open_index].t.path, PSP_O_RDONLY, 0777);
+        s_fd = sceIoOpen(s_path, PSP_O_RDONLY, 0777);
         if (s_fd >= 0 && sceIoLseek32(s_fd, srcpos, PSP_SEEK_SET) >= 0)
             got = sceIoRead(s_fd, dst, towrite);
     }
@@ -727,27 +608,15 @@ static int start_decoder(u32 offset)
     return 0;
 }
 
-static int open_track(int index)
+/* Opens the stream of the song that the player has open (s_fd, s_size, s_start): the decoder, the rate, the channels and the length */
+static int mp3_open(void)
 {
-    close_track();
-    if (index < 0 || index >= s_count)
+    if (start_decoder(s_start) < 0)
         return -1;
-    s_fd = sceIoOpen(s_items[index].t.path, PSP_O_RDONLY, 0777);
-    if (s_fd < 0)
-        return -1;
-    s_size = sceIoLseek32(s_fd, 0, PSP_SEEK_END);
-    s_start = id3v2_size(s_fd); /* strömmen börjar efter taggen */
-    if (s_start >= s_size)
-        s_start = 0;
-    s_open_index = index; /* feed() öppnar filen igen efter viloläge */
-    if (start_decoder(s_start) < 0) {
-        close_track();
-        return -1;
-    }
     s_rate = sceMp3GetSamplingRate(s_handle);
     s_channels = sceMp3GetMp3ChannelNum(s_handle);
     if (s_rate <= 0 || s_channels < 1 || s_channels > 2) {
-        close_track();
+        mp3_close();
         return -1;
     }
     s_spf = 0;
@@ -757,7 +626,7 @@ static int open_track(int index)
         dur = kbps > 0 ? (float)(s_size - s_start) * 8.0f / (kbps * 1000.0f) : 0;
     }
     s_duration = dur;
-    s_elapsed = s_seek_base = 0;
+    s_decoded = s_seek_base = 0;
     s_seek_grace = 0;
     return 0;
 }
@@ -786,7 +655,7 @@ static u32 find_frame(u32 pos)
 }
 
 /* Hoppar till `sec` sekunder in i låten. 0 = klart, -1 = gick inte (låten är slut). */
-static int seek_to(float sec)
+static int mp3_seek(float sec)
 {
     if (s_handle < 0 || s_fd < 0 || s_duration <= 0)
         return 0;
@@ -811,88 +680,547 @@ static int seek_to(float sec)
         frame = s_start;
     }
     s_seek_base = frame == s_start ? 0 : sec;
-    s_elapsed = s_seek_base;
+    s_decoded = s_seek_base;
     /* bildrutorna efter ett hopp kan sakna data från bildrutan före (bitreservoaren) */
     s_seek_grace = 8;
     return 0;
 }
 
-/* Avkodar och spelar en bildruta. 1 = fortsätt, 0 = låten slut, -1 = fel */
-static int play_frame(void)
+/* Decodes one frame. 1 = a frame (or 0 samples: nothing to play this time), 0 = the song is over, -1 = an error */
+static int mp3_frame(const short **pcm_out, int *samples_out, int *ch_out)
 {
     if (sceMp3CheckStreamDataNeeded(s_handle) > 0 && feed() < 0)
         return -1;
     SceShort16 *pcm;
     int bytes = sceMp3Decode(s_handle, &pcm);
-    /* strax efter ett hopp: hoppa över bildrutan. PSP:n svarar MP3_END (inte ett fel) på en
-     * bildruta som saknar data från bildrutorna före, så det får inte räknas som låtens slut. */
+    /* just after a jump: skip the frame. The PSP answers MP3_END (not an error) to a frame that has no data from the frames before it (the bit reservoir),
+     * so that must not count as the end of the song. */
     if (bytes <= 0 && s_seek_grace > 0) {
         s_seek_grace--;
+        *samples_out = 0;
         return 1;
     }
     if (bytes == 0 || (u32)bytes == MP3_END)
         return 0;
     if (bytes < 0)
         return -1;
-    /* avkodaren kan lämna monofiler som stereo – avgör från bildrutans storlek */
+    /* the decoder may leave a mono file as stereo: decide from the size of the frame */
     int out_ch = s_channels;
     if (s_spf && bytes == s_spf * 4)
         out_ch = 2;
     else if (s_spf && bytes == s_spf * 2)
         out_ch = 1;
-    else if (bytes / (2 * out_ch) > MAX_SAMPLES)
+    else if (bytes / (2 * out_ch) > 4096)
         out_ch = 2;
     int samples = bytes / (2 * out_ch);
-    if (samples <= 0 || samples > MAX_SAMPLES)
+    if (samples <= 0 || samples > 4096)
         return -1;
-    /* kanalen reserveras för en hel bildruta: 1152 prover (MPEG-1) eller 576 (MPEG-2/2.5);
-     * en kortare bildruta fylls ut i stället för att kanalen byts */
-    int want = samples > 576 ? 1152 : 576;
-    if (s_src_rate == s_rate && s_src_samples >= samples)
-        want = s_src_samples;
-    if (!src_reserve(want, s_rate))
-        return -1;
-    void *out = pcm;
-    if (out_ch == 1 || samples != s_src_samples) {
-        /* mono → stereo, och fyll ut korta bildrutor med tystnad */
-        short *o = s_out[s_out_idx];
-        s_out_idx ^= 1;
-        for (int i = 0; i < samples; i++) {
-            if (out_ch == 1) {
-                o[i * 2] = o[i * 2 + 1] = pcm[i];
-            } else {
-                o[i * 2] = pcm[i * 2];
-                o[i * 2 + 1] = pcm[i * 2 + 1];
-            }
-        }
-        memset(o + samples * 2, 0, (s_src_samples - samples) * 4);
-        out = o;
-    }
-    sceAudioSRCOutputBlocking(PSP_AUDIO_VOLUME_MAX, out);
     int sum = sceMp3GetSumDecodedSample(s_handle);
     if (sum >= 0 && s_rate > 0)
-        s_elapsed = s_seek_base + (float)sum / s_rate;
+        s_decoded = s_seek_base + (float)sum / s_rate;
     if (s_seek_grace > 0)
         s_seek_grace--;
+    *pcm_out = pcm;
+    *samples_out = samples;
+    *ch_out = out_ch;
     return 1;
 }
 
-/* Startar låten index (och hoppar över trasiga filer framåt). */
-static void start_at(int index)
+static const Codec mp3_codec = { mp3_open, mp3_frame, mp3_seek, mp3_close };
+
+
+
+/* ---------------------------------------------------------------------- */
+/* WAV: plain PCM (8, 16, 24 or 32 bits, one or two channels), decoded here; the file is read a block at a time */
+
+#define WAV_BLOCK 1024 /* samples per channel in a block */
+static u32 s_wav_data, s_wav_len, s_wav_at; /* where the sound starts in the file, how long it is, how far it has been read (bytes of the sound) */
+static int s_wav_bits, s_wav_ch, s_wav_align;
+static unsigned char s_wav_raw[WAV_BLOCK * 2 * 4];
+static short s_wav_out[WAV_BLOCK * 2];
+
+static u32 le32(const unsigned char *p) { return p[0] | ((u32)p[1] << 8) | ((u32)p[2] << 16) | ((u32)p[3] << 24); }
+static u32 le16(const unsigned char *p) { return p[0] | ((u32)p[1] << 8); }
+
+static int wav_open(void)
 {
-    for (int tries = 0; tries < s_count && index >= 0 && index < s_count; tries++) {
-        if (s_quit || (tries > 0 && s_q_head != s_q_tail))
-            break; /* psp5 stänger, eller användaren valde något annat */
-        if (open_track(index) == 0) {
-            s_current = index;
+    unsigned char h[12], c[8], fmt[40];
+    sceIoLseek32(s_fd, 0, PSP_SEEK_SET);
+    if (sceIoRead(s_fd, h, 12) != 12 || memcmp(h, "RIFF", 4) || memcmp(h + 8, "WAVE", 4))
+        return -1;
+    int have_fmt = 0;
+    u32 pos = 12;
+    s_wav_data = s_wav_len = 0;
+    while (pos + 8 <= s_size && sceIoLseek32(s_fd, pos, PSP_SEEK_SET) == (int)pos && sceIoRead(s_fd, c, 8) == 8) {
+        u32 len = le32(c + 4);
+        if (!memcmp(c, "fmt ", 4) && len >= 16) {
+            int n = len < sizeof(fmt) ? (int)len : (int)sizeof(fmt);
+            if (sceIoRead(s_fd, fmt, n) != n)
+                return -1;
+            u32 tag = le16(fmt);
+            if (tag == 0xFFFE && n >= 26)
+                tag = le16(fmt + 24); /* "extensible": the first two bytes of the sub-format are the real tag */
+            if (tag != 1)
+                return -1; /* not plain PCM (ADPCM, A-law, float, ATRAC3 in a wave file ...) */
+            s_wav_ch = (int)le16(fmt + 2);
+            s_rate = (int)le32(fmt + 4);
+            s_wav_align = (int)le16(fmt + 12);
+            s_wav_bits = (int)le16(fmt + 14);
+            if (s_wav_ch < 1 || s_wav_ch > 2 || (s_wav_bits != 8 && s_wav_bits != 16 && s_wav_bits != 24 && s_wav_bits != 32) || s_wav_align != s_wav_ch * (s_wav_bits / 8))
+                return -1;
+            have_fmt = 1;
+        } else if (!memcmp(c, "data", 4)) {
+            if (!have_fmt)
+                return -1; /* the data must come after the format */
+            s_wav_data = pos + 8;
+            s_wav_len = len;
+            if (s_wav_data + s_wav_len > s_size || s_wav_len == 0xFFFFFFFFu)
+                s_wav_len = s_size - s_wav_data; /* a stream or a cut file: what there is */
+            s_wav_len -= s_wav_len % s_wav_align;
+            break;
+        }
+        pos += 8 + len + (len & 1); /* chunks are padded to an even length */
+    }
+    if (!s_wav_data || s_wav_len < (u32)s_wav_align || s_rate <= 0)
+        return -1;
+    s_channels = s_wav_ch;
+    s_wav_at = 0;
+    s_duration = (float)s_wav_len / ((float)s_rate * s_wav_align);
+    s_decoded = 0;
+    return 0;
+}
+
+static int wav_frame(const short **pcm_out, int *samples_out, int *ch_out)
+{
+    if (s_wav_at >= s_wav_len)
+        return 0;
+    u32 want = (u32)WAV_BLOCK * s_wav_align;
+    if (want > s_wav_len - s_wav_at)
+        want = s_wav_len - s_wav_at;
+    if (sceIoLseek32(s_fd, s_wav_data + s_wav_at, PSP_SEEK_SET) < 0)
+        return -1;
+    int got = sceIoRead(s_fd, s_wav_raw, want);
+    if (got < 0 && s_path[0]) { /* the file is closed by sleep mode: open it again and try once more */
+        sceIoClose(s_fd);
+        s_fd = sceIoOpen(s_path, PSP_O_RDONLY, 0777);
+        if (s_fd >= 0 && sceIoLseek32(s_fd, s_wav_data + s_wav_at, PSP_SEEK_SET) >= 0)
+            got = sceIoRead(s_fd, s_wav_raw, want);
+    }
+    if (got <= 0)
+        return got < 0 ? -1 : 0;
+    got -= got % s_wav_align;
+    int n = got / s_wav_align, values = n * s_wav_ch, step = s_wav_bits / 8;
+    for (int i = 0; i < values; i++) {
+        const unsigned char *p = s_wav_raw + i * step;
+        s_wav_out[i] = s_wav_bits == 8 ? (short)(((int)p[0] - 128) * 256) : (short)((p[step - 1] << 8) | p[step - 2]); /* the top two bytes of 16, 24 and 32 bit samples */
+    }
+    s_wav_at += (u32)got;
+    s_decoded = (float)s_wav_at / ((float)s_rate * s_wav_align);
+    *pcm_out = s_wav_out;
+    *samples_out = n;
+    *ch_out = s_wav_ch;
+    return 1;
+}
+
+static int wav_seek(float sec)
+{
+    if (sec >= s_duration - 0.5f)
+        return -1;
+    if (sec < 0)
+        sec = 0;
+    u32 at = (u32)((double)sec * s_rate) * (u32)s_wav_align;
+    s_wav_at = at > s_wav_len ? s_wav_len : at;
+    s_decoded = (float)s_wav_at / ((float)s_rate * s_wav_align);
+    return 0;
+}
+
+static void wav_close(void) {}
+
+static const Codec wav_codec = { wav_open, wav_frame, wav_seek, wav_close };
+
+/* ---------------------------------------------------------------------- */
+/* ATRAC3 and ATRAC3plus (the PSP's own music: .at3, .oma, .aa3), by the PSP's sceAtrac library. The file is read through a buffer of 64 KB: the library says where in
+ * the file it wants more and where in the buffer it goes (sceAtracGetStreamDataInfo), and a jump asks it which part of the file it needs for the new place. */
+
+#define ATRAC_BUF (64 * 1024)
+static unsigned char __attribute__((aligned(64))) s_atrac_buf[ATRAC_BUF];
+static short __attribute__((aligned(64))) s_atrac_out[2048 * 2];
+static int s_atrac_id = -1, s_atrac_total, s_atrac_last, s_atrac_whole; /* whole = the file is all in the buffer: there is nothing to give it */
+static int s_atrac_ready; /* the module is loaded */
+
+static int atrac_read_at(unsigned char *dst, u32 offset, u32 bytes)
+{
+    int got = -1;
+    if (sceIoLseek32(s_fd, offset, PSP_SEEK_SET) >= 0)
+        got = sceIoRead(s_fd, dst, bytes);
+    if (got < 0 && s_path[0]) { /* the file is closed by sleep mode: open it again and try once more */
+        sceIoClose(s_fd);
+        s_fd = sceIoOpen(s_path, PSP_O_RDONLY, 0777);
+        if (s_fd >= 0 && sceIoLseek32(s_fd, offset, PSP_SEEK_SET) >= 0)
+            got = sceIoRead(s_fd, dst, bytes);
+    }
+    return got;
+}
+
+/* gives the decoder the part of the file that it asks for. <0 = an error. */
+static int atrac_feed(void)
+{
+    u8 *to;
+    u32 room, from;
+    if (s_atrac_whole)
+        return 0;
+    if (sceAtracGetStreamDataInfo(s_atrac_id, &to, &room, &from) < 0)
+        return -1;
+    if (room == 0)
+        return 0;
+    int got = atrac_read_at(to, from, room);
+    if (got < 0)
+        return -1;
+    if (got > 0 && sceAtracAddStreamData(s_atrac_id, (unsigned)got) < 0)
+        return -1;
+    return 0;
+}
+
+static void atrac_close(void)
+{
+    if (s_atrac_id >= 0) {
+        sceAtracReleaseAtracID(s_atrac_id);
+        s_atrac_id = -1;
+    }
+}
+
+static int atrac_open(void)
+{
+    int got = atrac_read_at(s_atrac_buf, 0, ATRAC_BUF); /* (from the start of the file, with the header: not after the tag) */
+    if (got < 16)
+        return -1;
+    s_atrac_whole = s_size <= (u32)got;
+    s_atrac_id = s_atrac_whole ? sceAtracSetDataAndGetID(s_atrac_buf, got) : sceAtracSetHalfwayBufferAndGetID(s_atrac_buf, got, ATRAC_BUF);
+    if (s_atrac_id < 0)
+        return -1;
+    u32 ch = 2;
+    int end = 0, loop_a = 0, loop_b = 0;
+    if (sceAtracGetChannel(s_atrac_id, &ch) < 0 || sceAtracGetSoundSample(s_atrac_id, &end, &loop_a, &loop_b) < 0 || ch < 1 || ch > 2 || end <= 0) {
+        atrac_close();
+        return -1;
+    }
+    sceAtracSetLoopNum(s_atrac_id, 0); /* plays once: the player decides what comes next */
+    s_rate = 44100;
+    s_channels = (int)ch;
+    s_atrac_total = end;
+    s_atrac_last = 0;
+    s_duration = (float)end / s_rate;
+    s_decoded = 0;
+    return 0;
+}
+
+static int atrac_frame(const short **pcm_out, int *samples_out, int *ch_out)
+{
+    if (s_atrac_last)
+        return 0;
+    if (atrac_feed() < 0)
+        return -1;
+    int n = 0, end = 0, remain = 0;
+    int r = sceAtracDecodeData(s_atrac_id, (u16 *)s_atrac_out, &n, &end, &remain);
+    if (r < 0) {
+        if ((u32)r == PSP_ATRAC_ERROR_ALLDATA_WAS_DECODED)
+            return 0;
+        if ((u32)r == PSP_ATRAC_ERROR_NODATA_IN_BUFFER) { /* it wants more of the file before it can go on */
+            *samples_out = 0;
+            return atrac_feed() < 0 ? -1 : 1;
+        }
+        return -1;
+    }
+    u32 at = 0;
+    if (sceAtracGetNextDecodePosition(s_atrac_id, &at) >= 0)
+        s_decoded = (float)at / s_rate;
+    else
+        s_decoded += (float)n / s_rate;
+    if (end)
+        s_atrac_last = 1; /* the last frame is played, the next call says the song is over */
+    if (n <= 0)
+        return end ? 0 : 1;
+    *pcm_out = s_atrac_out;
+    *samples_out = n;
+    *ch_out = 2; /* the library gives two channels (a mono file twice) unless it is told otherwise */
+    return 1;
+}
+
+static int atrac_seek(float sec)
+{
+    int sample = (int)((double)sec * s_rate);
+    if (sample >= s_atrac_total - s_rate / 2)
+        return -1;
+    if (sample < 0)
+        sample = 0;
+    PspBufferInfo bi;
+    memset(&bi, 0, sizeof(bi));
+    if (sceAtracGetBufferInfoForReseting(s_atrac_id, (u32)sample, &bi) < 0)
+        return 0; /* it will not jump: the song goes on where it was */
+    int got = atrac_read_at(bi.pucWritePositionFirstBuf, bi.uiReadPositionFirstBuf, bi.uiWritableByteFirstBuf);
+    if (got < 0 || sceAtracResetPlayPosition(s_atrac_id, (u32)sample, (u32)got, 0) < 0)
+        return 0;
+    s_atrac_last = 0;
+    s_decoded = (float)sample / s_rate;
+    return 0;
+}
+
+static const Codec atrac_codec = { atrac_open, atrac_frame, atrac_seek, atrac_close };
+
+/* ---------------------------------------------------------------------- */
+/* the kinds of song file: by their ending */
+
+static const struct { const char *ext; const Codec *codec; } FORMATS[] = {
+    { "mp3", &mp3_codec },
+    { "wav", &wav_codec },
+    { "at3", &atrac_codec },
+    { "oma", &atrac_codec },
+    { "aa3", &atrac_codec },
+};
+
+static const Codec *codec_for(const char *name)
+{
+    const char *dot = strrchr(name, '.');
+    if (!dot || !dot[1])
+        return NULL;
+    for (unsigned i = 0; i < sizeof(FORMATS) / sizeof(FORMATS[0]); i++)
+        if (!strcasecmp(dot + 1, FORMATS[i].ext))
+            return FORMATS[i].codec == &atrac_codec && !s_atrac_ready ? NULL : FORMATS[i].codec; /* (ATRAC only when its module is loaded) */
+    return NULL;
+}
+
+/* the start of the stream: after an ID3v2 tag, if the file has one */
+static u32 stream_start(void)
+{
+    u32 s = id3v2_size(s_fd);
+    return s >= s_size ? 0 : s;
+}
+
+/* the title of a file with no tag: its name without the ending */
+static void title_from_name(const char *path, char *out, int size)
+{
+    const char *name = strrchr(path, '/');
+    name = name ? name + 1 : path;
+    const char *dot = strrchr(name, '.');
+    int n = dot && dot != name ? (int)(dot - name) : (int)strlen(name);
+    snprintf(out, size, "%.*s", n, name);
+}
+
+/* the tags of the song at `path`, into *t (the title is the file's name when there is none) */
+static void read_song_tags(const char *path, Track *t)
+{
+    Item it;
+    memset(&it, 0, sizeof(it));
+    snprintf(it.t.path, sizeof(it.t.path), "%s", path);
+    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0777);
+    unsigned char *buf = fd >= 0 ? malloc(TAG_READ) : NULL;
+    if (buf) {
+        u32 size = sceIoLseek32(fd, 0, PSP_SEEK_END);
+        read_tags(fd, size, &it, buf);
+    }
+    free(buf);
+    if (fd >= 0)
+        sceIoClose(fd);
+    if (!it.t.title[0])
+        title_from_name(path, it.t.title, sizeof(it.t.title));
+    *t = it.t;
+}
+
+static void publish_track(const Track *t)
+{
+    s_now_seq++; /* odd: being written */
+    s_now = *t;
+    s_now_valid = 1;
+    s_cjk = needs_cjk(t->title) || needs_cjk(t->artist) || needs_cjk(t->album);
+    s_gen++;
+    s_now_seq++;
+}
+
+static void close_track(void)
+{
+    if (s_codec)
+        s_codec->close();
+    s_codec = NULL;
+    if (s_fd >= 0) {
+        sceIoClose(s_fd);
+        s_fd = -1;
+    }
+    s_path[0] = 0;
+}
+
+/* the rates that the SRC channel takes (pspaudio.h) */
+static int rate_ok(int rate)
+{
+    static const int R[] = { 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 11050, 8000 };
+    for (unsigned i = 0; i < sizeof(R) / sizeof(R[0]); i++)
+        if (rate == R[i])
+            return 1;
+    return 0;
+}
+
+/* Opens the song at `path` (the file, the codec, its tags): 0 = ready to play */
+static int open_track(const char *path)
+{
+    close_track();
+    const Codec *c = codec_for(path);
+    if (!c)
+        return -1;
+    s_fd = sceIoOpen(path, PSP_O_RDONLY, 0777);
+    if (s_fd < 0)
+        return -1;
+    snprintf(s_path, sizeof(s_path), "%s", path);
+    s_size = sceIoLseek32(s_fd, 0, PSP_SEEK_END);
+    s_start = stream_start();
+    s_codec = c;
+    s_decoded = 0;
+    if (c->open() < 0 || !rate_ok(s_rate)) {
+        close_track();
+        return -1;
+    }
+    s_elapsed = 0;
+    Track t;
+    read_song_tags(path, &t);
+    publish_track(&t);
+    return 0;
+}
+
+/* Decodes a frame and plays it. 1 = go on, 0 = the song is over, -1 = an error */
+static int play_frame(void)
+{
+    const short *pcm = NULL;
+    int samples = 0, ch = 2;
+    int r = s_codec->frame(&pcm, &samples, &ch);
+    if (r <= 0)
+        return r;
+    if (samples == 0)
+        return 1; /* nothing this time (a frame skipped after a jump) */
+    if (samples < 17)
+        return 0; /* the channel does not take fewer: a last scrap of a song is the end of it */
+    if (samples > MAX_SAMPLES || !src_reserve(samples, s_rate))
+        return -1; /* the channel takes 17 to 4111 samples a call; it is reserved for the size of the frames, which is the same for every frame of a song */
+    const void *out = pcm;
+    if (ch == 1) { /* mono becomes stereo (the output wants two channels) */
+        short *o = s_out[s_out_idx];
+        s_out_idx ^= 1;
+        for (int i = 0; i < samples; i++)
+            o[i * 2] = o[i * 2 + 1] = pcm[i];
+        out = o;
+    }
+    sceAudioSRCOutputBlocking(PSP_AUDIO_VOLUME_MAX, (void *)out);
+    s_elapsed = s_decoded;
+    return 1;
+}
+
+/* ---------------------------------------------------------------------- */
+/* the queue: the songs of the folder, in order or shuffled */
+
+typedef struct {
+    char dir[256];
+    int n;
+    char (*name)[QNAME];
+} Queue;
+
+static Queue s_queue;                    /* the songs that play (the player thread's) */
+static Queue s_stage;                    /* a new folder that the screen has made ready, not taken by the thread yet */
+static volatile int s_stage_ready;
+static SceUID s_lock = -1;
+static unsigned short s_order[MAX_ENTRIES]; /* the order the songs play in: s_order[s_pos] is the one that plays now */
+static int s_pos;
+static unsigned s_rng = 0x1d872b41u;
+
+static void lock(void)
+{
+    if (s_lock >= 0)
+        sceKernelWaitSema(s_lock, 1, NULL);
+}
+
+static void unlock(void)
+{
+    if (s_lock >= 0)
+        sceKernelSignalSema(s_lock, 1);
+}
+
+static unsigned rnd(void)
+{
+    s_rng = s_rng * 1664525u + 1013904223u;
+    return s_rng >> 8;
+}
+
+static void queue_free(Queue *q)
+{
+    free(q->name);
+    q->name = NULL;
+    q->n = 0;
+}
+
+/* The order of the songs: in order, or shuffled with `first` at the front. s_pos is where `first` is (a song that is not given: the first of the order). */
+static void build_order(int first)
+{
+    int n = s_queue.n;
+    for (int i = 0; i < n; i++)
+        s_order[i] = i;
+    s_pos = 0;
+    if (s_shuffle && n > 1) {
+        for (int i = n - 1; i > 0; i--) {
+            int j = rnd() % (i + 1);
+            unsigned short t = s_order[i];
+            s_order[i] = s_order[j];
+            s_order[j] = t;
+        }
+        if (first >= 0 && first < n) {
+            for (int i = 0; i < n; i++)
+                if (s_order[i] == first) {
+                    s_order[i] = s_order[0];
+                    s_order[0] = first;
+                    break;
+                }
+        }
+    } else if (first >= 0 && first < n) {
+        s_pos = first;
+    }
+}
+
+static void song_path(int queue_index, char *out, int size)
+{
+    snprintf(out, size, "%s/%s", s_queue.dir, s_queue.name[queue_index]);
+}
+
+/* the place after `pos` going `step` (1 or -1), -1 = there is none: at the end of the folder it goes round when it repeats all (a shuffled folder is shuffled again for the next round) */
+static int step_pos(int pos, int step)
+{
+    int n = s_queue.n, p = pos + step;
+    if (n <= 0)
+        return -1;
+    if (p >= n) {
+        if (s_repeat != MUSIC_REPEAT_ALL)
+            return -1;
+        build_order(-1);
+        return 0;
+    }
+    if (p < 0)
+        return s_repeat == MUSIC_REPEAT_ALL ? n - 1 : -1;
+    return p;
+}
+
+/* Starts the song at place `pos` of the order; a file that cannot be played is skipped, going on in the direction `step` (1 = on, -1 = back, for the button that goes to the song before). */
+static void start_at(int pos, int step)
+{
+    int n = s_queue.n;
+    for (int tries = 0; tries < n && pos >= 0 && pos < n; tries++) {
+        if (s_quit || (tries > 0 && command_waiting()))
+            break; /* psp5 is closing, or the user chose something else */
+        char path[256];
+        song_path(s_order[pos], path, sizeof(path));
+        if (open_track(path) == 0) {
+            s_pos = pos;
             s_state = MUSIC_PLAYING;
             return;
         }
-        index++;
+        pos = step_pos(pos, step);
     }
     close_track();
     src_release();
-    s_current = -1;
+    s_now_valid = 0;
     s_state = MUSIC_STOPPED;
     s_elapsed = s_duration = 0;
 }
@@ -901,17 +1229,53 @@ static void stop_playback(void)
 {
     close_track();
     src_release();
-    s_current = -1;
+    s_now_valid = 0;
     s_state = MUSIC_STOPPED;
     s_elapsed = s_duration = 0;
+}
+
+/* the song after (dir = 1) or before (dir = -1) this one, -1 = there is none (the end of the folder when it does not repeat) */
+static int neighbour(int dir)
+{
+    return step_pos(s_pos, dir);
+}
+
+static void go_next(void)
+{
+    int p = neighbour(1);
+    if (p >= 0)
+        start_at(p, 1);
+    else
+        stop_playback();
+}
+
+/* the song is over by itself: the same again when it repeats, else the next */
+static void song_over(void)
+{
+    if (s_repeat == MUSIC_REPEAT_ONE)
+        start_at(s_pos, 1);
+    else
+        go_next();
 }
 
 static void handle_command(int cmd, int arg)
 {
     switch (cmd) {
-    case CMD_PLAY:
-        start_at(arg);
+    case CMD_LOAD: { /* the folder the screen has made ready; arg = the song to start with */
+        lock();
+        if (s_stage_ready) {
+            queue_free(&s_queue);
+            s_queue = s_stage;
+            s_stage.name = NULL;
+            s_stage.n = 0;
+            s_stage_ready = 0;
+        }
+        unlock();
+        snprintf(s_dir_pub, sizeof(s_dir_pub), "%s", s_queue.dir);
+        build_order(arg);
+        start_at(s_pos, 1);
         break;
+    }
     case CMD_PAUSE:
         if (s_state == MUSIC_PLAYING)
             s_state = MUSIC_PAUSED;
@@ -922,44 +1286,49 @@ static void handle_command(int cmd, int arg)
         stop_playback();
         break;
     case CMD_NEXT:
-        if (s_current >= 0 && s_current + 1 < s_count)
-            start_at(s_current + 1);
-        else if (s_current >= 0)
-            stop_playback();
+        if (s_state != MUSIC_STOPPED)
+            go_next();
         break;
     case CMD_PREV:
-        if (s_current < 0)
+        if (s_state == MUSIC_STOPPED)
             break;
-        start_at(s_elapsed > 3.0f || s_current == 0 ? s_current : s_current - 1);
+    {
+        int p = s_elapsed > 3.0f ? -1 : neighbour(-1);
+        if (p < 0)
+            start_at(s_pos, 1);
+        else
+            start_at(p, -1);
         break;
-    case CMD_SEEK: /* arg = millisekunder; förbi slutet = nästa låt */
-        if (s_current >= 0 && seek_to(arg / 1000.0f) < 0) {
-            if (s_current + 1 < s_count)
-                start_at(s_current + 1);
-            else
-                stop_playback();
-        }
+    }
+    case CMD_SEEK: /* arg = milliseconds; past the end = the next song */
+        if (s_state != MUSIC_STOPPED && s_codec && s_codec->seek(arg / 1000.0f) < 0)
+            song_over();
+        else if (s_state != MUSIC_STOPPED && s_codec)
+            s_elapsed = s_decoded;
         break;
+    case CMD_SHUFFLE: { /* the song that plays goes on, the order changes round it */
+        int cur = s_queue.n > 0 && s_pos < s_queue.n ? s_order[s_pos] : -1;
+        s_shuffle = arg != 0;
+        build_order(cur);
+        break;
+    }
     }
 }
 
 static int player_thread(SceSize args, void *argp)
 {
-    /* skanningen först, med lägre prioritet än gränssnittet, så att inget hackar */
-    sceKernelChangeThreadPriority(0, 0x30);
-    scan_library();
-    s_scanning = 0;
     sceKernelChangeThreadPriority(0, 0x14);
-    s_q_tail = s_q_head; /* kommandon från innan listan fanns gäller inte */
     int failures = 0;
     while (!s_quit) {
         while (s_q_tail != s_q_head) {
             int t = s_q_tail;
+            s_in_cmd = 1;
             handle_command(s_q_cmd[t], s_q_arg[t]);
+            s_in_cmd = 0;
             s_q_tail = (t + 1) % QUEUE;
             failures = 0;
         }
-        if (s_state != MUSIC_PLAYING || s_handle < 0) {
+        if (s_state != MUSIC_PLAYING || !s_codec) {
             sceKernelDelayThread(10000);
             continue;
         }
@@ -968,15 +1337,12 @@ static int player_thread(SceSize args, void *argp)
             failures = 0;
             continue;
         }
-        /* slut eller fel: nästa låt (efter sista: stopp) */
-        if (r < 0 && ++failures >= (s_count < 8 ? s_count : 8)) {
+        /* over, or an error: the next song (after the last: stop) */
+        if (r < 0 && ++failures >= (s_queue.n < 8 ? s_queue.n : 8)) {
             stop_playback();
             continue;
         }
-        if (s_current + 1 < s_count)
-            start_at(s_current + 1);
-        else
-            stop_playback();
+        song_over();
     }
     close_track();
     src_release();
@@ -989,20 +1355,20 @@ static void push(int cmd, int arg)
         return;
     int h = s_q_head, n = (h + 1) % QUEUE;
     if (n == s_q_tail)
-        return; /* kön full – kommandot släpps */
+        return; /* the queue is full: the command is dropped */
     s_q_cmd[h] = cmd;
     s_q_arg[h] = arg;
     s_q_head = n;
 }
 
 /* ---------------------------------------------------------------------- */
-/* livscykel och styrning */
+/* life cycle and control */
 
 void music_init(void)
 {
     if (s_thread >= 0)
         return;
-    /* utan angiven SDK-version godtar sceMp3 bara 44,1 kHz (48 kHz m.fl. avvisas) */
+    /* without a given SDK version sceMp3 only accepts 44.1 kHz (48 kHz and the others are refused) */
     if (sceKernelGetCompiledSdkVersion() == 0)
         sceKernelSetCompiledSdkVersion(0x06060010);
     int r = sceUtilityLoadModule(PSP_MODULE_AV_AVCODEC);
@@ -1026,19 +1392,20 @@ void music_init(void)
         return;
     }
     s_ready = 1;
+    r = sceUtilityLoadModule(PSP_MODULE_AV_ATRAC3PLUS); /* ATRAC3 and ATRAC3plus: if it cannot be loaded those files are not offered, the rest is */
+    s_loaded_atrac = r >= 0;
+    s_atrac_ready = r >= 0 || (u32)r == ALREADY_LOADED || (u32)r == ALREADY_LOADED2;
     s_quit = 0;
     s_q_head = s_q_tail = 0;
     s_state = MUSIC_STOPPED;
-    s_current = -1;
+    s_now_valid = 0;
     s_elapsed = s_duration = 0;
-    s_scanning = 1;
+    s_lock = sceKernelCreateSema("psp5_music", 0, 1, 1, NULL);
     s_thread = sceKernelCreateThread("psp5_music", player_thread, 0x14, 0x4000, PSP_THREAD_ATTR_USER, NULL);
     if (s_thread >= 0 && sceKernelStartThread(s_thread, 0, NULL) < 0) {
         sceKernelDeleteThread(s_thread);
         s_thread = -1;
     }
-    if (s_thread < 0)
-        s_scanning = 0;
 }
 
 void music_term(void)
@@ -1055,28 +1422,57 @@ void music_term(void)
         sceMp3TermResource();
         s_ready = 0;
     }
+    if (s_loaded_atrac)
+        sceUtilityUnloadModule(PSP_MODULE_AV_ATRAC3PLUS);
     if (s_loaded_mp3)
         sceUtilityUnloadModule(PSP_MODULE_AV_MP3);
     if (s_loaded_avcodec)
         sceUtilityUnloadModule(PSP_MODULE_AV_AVCODEC);
-    s_loaded_mp3 = s_loaded_avcodec = 0;
-    s_count = 0; /* antalet före pekaren – UI:t läser antalet först */
-    free(s_items);
-    s_items = NULL;
-    free(s_scan_items);
-    s_scan_items = NULL;
-    s_scanning = 0;
+    s_loaded_atrac = s_loaded_mp3 = s_loaded_avcodec = 0;
+    s_atrac_ready = 0;
+    queue_free(&s_queue);
+    queue_free(&s_stage);
+    s_stage_ready = 0;
+    if (s_lock >= 0) {
+        sceKernelDeleteSema(s_lock);
+        s_lock = -1;
+    }
+    s_dir_pub[0] = 0;
+    s_now_valid = 0;
     s_cjk = 0;
     s_gen++;
     s_state = MUSIC_STOPPED;
-    s_current = -1;
     s_elapsed = s_duration = 0;
 }
 
-void music_play(int index)
+void music_play_folder(const char *dir, const MusicEntry *entries, int n, int index)
 {
-    if (index >= 0 && index < s_count)
-        push(CMD_PLAY, index);
+    if (s_thread < 0 || !dir || !entries || index < 0 || index >= n || entries[index].dir)
+        return;
+    int songs = 0, start = 0;
+    for (int i = 0; i < n; i++)
+        if (!entries[i].dir) {
+            if (i == index)
+                start = songs;
+            songs++;
+        }
+    if (songs <= 0 || songs > MAX_ENTRIES)
+        return;
+    char (*names)[QNAME] = malloc((size_t)songs * QNAME);
+    if (!names)
+        return;
+    int k = 0;
+    for (int i = 0; i < n; i++)
+        if (!entries[i].dir)
+            snprintf(names[k++], QNAME, "%s", entries[i].name);
+    lock();
+    queue_free(&s_stage); /* one that the thread has not taken yet is replaced */
+    snprintf(s_stage.dir, sizeof(s_stage.dir), "%s", dir);
+    s_stage.name = names;
+    s_stage.n = songs;
+    s_stage_ready = 1;
+    unlock();
+    push(CMD_LOAD, start);
 }
 
 void music_toggle_pause(void) { push(CMD_PAUSE, 0); }
@@ -1085,10 +1481,51 @@ void music_next(void)         { push(CMD_NEXT, 0); }
 void music_prev(void)         { push(CMD_PREV, 0); }
 void music_seek(float sec)    { push(CMD_SEEK, (int)(sec * 1000)); }
 
-int music_scanning(void)   { return s_scanning; }
+void music_set_shuffle(int on)
+{
+    s_shuffle = on != 0; /* (the thread builds the order again at once: a song that starts before that comes in the old order) */
+    push(CMD_SHUFFLE, on != 0);
+}
+
+int music_shuffle(void) { return s_shuffle; }
+
+void music_set_repeat(int mode)
+{
+    s_repeat = mode >= MUSIC_REPEAT_OFF && mode <= MUSIC_REPEAT_ALL ? mode : MUSIC_REPEAT_OFF;
+}
+
+int music_repeat(void) { return s_repeat; }
+
 int music_generation(void) { return s_gen; }
 int music_needs_cjk(void)  { return s_cjk; }
 int music_state(void)      { return s_state; }
-int music_current(void)    { return s_current; }
 float music_elapsed(void)  { return s_elapsed; }
 float music_duration(void) { return s_duration; }
+const char *music_folder(void) { return s_dir_pub; }
+
+int music_track(Track *out)
+{
+    for (int tries = 0; tries < 4; tries++) {
+        int seq = s_now_seq;
+        if (seq & 1)
+            continue;
+        if (!s_now_valid)
+            return 0;
+        *out = s_now;
+        if (seq == s_now_seq)
+            return 1; /* nothing was written while it was copied */
+    }
+    return 0;
+}
+
+int music_is_playing_file(const char *dir, const char *name)
+{
+    if (s_state == MUSIC_STOPPED || !s_now_valid)
+        return 0;
+    Track t;
+    if (!music_track(&t))
+        return 0;
+    char path[256];
+    snprintf(path, sizeof(path), "%s/%s", dir, name);
+    return !strcmp(path, t.path);
+}

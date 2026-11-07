@@ -235,6 +235,20 @@ static void note_shape(float s, Shape *p)
     memcpy(p->beam, b, sizeof(b));
 }
 
+/* The note of the Music card: the picture "Music Icon.png" (82 x 83 pixels of white on black) measured and put in the same parts as the note above. In units of the side s:
+ * the heads (r 0.139) at (-0.349, 0.343) and (0.343, 0.283), the stems 0.072 wide against the outer edge of the heads, the tops of the stems at -0.452 and -0.5 (the beam
+ * is tilted: it rises 0.048 s over its length) and the beam 0.18 thick. The heads are smaller and more to the left than those of the little note. */
+static void music_shape(float s, Shape *p)
+{
+    float rad = 0.139f * s, sw = 0.072f * s;
+    float lx = -0.349f * s, rx = 0.343f * s, ly = 0.343f * s, ry = 0.283f * s;
+    float top_l = -0.452f * s, top_r = -0.5f * s, beam = 0.18f * s;
+    const float n[8] = { lx, ly, rx, ry, top_l, top_r, rad, sw };
+    const float b[8] = { lx + rad - sw, top_l, rx + rad, top_r, rx + rad, top_r + beam, lx + rad - sw, top_l + beam };
+    memcpy(p->note, n, sizeof(n));
+    memcpy(p->beam, b, sizeof(b));
+}
+
 static float sd_note(const Shape *p, float px, float py)
 {
     const float *n = p->note;
@@ -358,6 +372,7 @@ static float shape_distance(const Shape *p, float px, float py)
     case ICON_TRI_L:
         return sd_poly(p->tri, 3, px, py);
     case ICON_NOTE:
+    case ICON_MUSIC:
         return sd_note(p, px, py);
     case ICON_SPEAKER:
         return sd_speaker(p, px, py);
@@ -570,6 +585,8 @@ void icon_render(int kind, float w, float h, float r, float cx, float cy, int tw
         bolt_polygon(r, sh.bolt);
     if (kind == ICON_NOTE)
         note_shape(2 * r, &sh);
+    if (kind == ICON_MUSIC)
+        music_shape(2 * r, &sh);
     if (kind == ICON_SPEAKER)
         speaker_shape(r / 4.5f, &sh);
     if (kind == ICON_LIBRARY)
@@ -596,7 +613,7 @@ void icon_render(int kind, float w, float h, float r, float cx, float cy, int tw
     float feature = kind == ICON_DISC ? r
                   : kind == ICON_RRECT || kind == ICON_RRING || kind == ICON_RFRAME || kind == ICON_RFRAME_S
                       ? fminf(r, fminf(w, h) / 2) : 99;
-    int fine = kind == ICON_BOLT || kind == ICON_TRI_R || kind == ICON_TRI_L || kind == ICON_NOTE || kind == ICON_SPEAKER || kind == ICON_WIFI;
+    int fine = kind == ICON_BOLT || kind == ICON_TRI_R || kind == ICON_TRI_L || kind == ICON_NOTE || kind == ICON_MUSIC || kind == ICON_SPEAKER || kind == ICON_WIFI;
     if (kind == ICON_LIBRARY && h < 32)
         fine = 1; /* its corners are a pixel or two across at the small size */
     if (kind == ICON_FOLDER && h < 24)

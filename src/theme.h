@@ -44,6 +44,9 @@ void theme_backdrop(const Theme *t, float time, float a);
  * at the right, drawn in code. It takes its colours from the theme. It shares the picture in video memory with theme_backdrop(): it is drawn again when the
  * other one was drawn in between. */
 void theme_backdrop_library(const Theme *t, float time);
+/* The background of the Media tab and of the Music screen (instead of the surface and any picture of a game): a ribbon of fine silky lines, drawn in code from the picture
+ * "Media.png" in the colours of the theme (its lamp and its haze). It shares the picture in video memory with the other two and does not move. */
+void theme_backdrop_media(const Theme *t, float time);
 /* Draw the picture again the next time (after something that may have wiped video memory, like sleep) */
 void theme_backdrop_forget(void);
 /* Liten förhandsvisning (för inställningarna) */

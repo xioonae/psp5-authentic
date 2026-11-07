@@ -3,11 +3,11 @@
  * synliga ikoner → begärd bakgrund → ikoner lite längre bort.
  * Bara huvudtråden frigör, och bara platser i läget READY/MISSING. */
 #include <pspkernel.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "loader.h"
 #include "art.h"
-#include "music.h"
 
 #define NEAR_RANGE 5  /* laddas före bakgrunden (raden visar ~6 kort) */
 #define LOAD_RANGE 14 /* laddas i förväg (biblioteket visar ~17 kort) */
@@ -32,6 +32,7 @@ static volatile int s_cov_want = -1;
 static volatile int s_cov_done;
 static Texture *volatile s_cov_tex;
 static volatile int s_cov_index = -1;
+static char s_cov_path[256], s_cov_album[64]; /* the song whose cover is wanted (written by the screen before s_cov_want) */
 
 static int load_icon_near(int range)
 {
@@ -78,10 +79,14 @@ static int load_cover(void)
     if (s_cov_done)
         return 0;
     int want = s_cov_want;
-    const Track *t = want >= 0 ? music_track(want) : NULL;
-    if (!t)
+    if (want < 0 || !s_cov_path[0])
         return 0;
-    s_cov_tex = art_load_cover(t->path, t->album);
+    char path[sizeof(s_cov_path)], album[sizeof(s_cov_album)]; /* (copied: the screen may ask for another song while this one is read) */
+    snprintf(path, sizeof(path), "%s", s_cov_path);
+    snprintf(album, sizeof(album), "%s", s_cov_album);
+    if (s_cov_want != want) /* the screen asked for another song while this was copied: the copy may be half of one and half of the other, it is not used (the next turn takes the new one) */
+        return 0;
+    s_cov_tex = art_load_cover(path, album);
     s_cov_index = want;
     s_cov_done = 1;
     return 1;
@@ -214,9 +219,14 @@ int loader_take_bg(int *list_index, Texture **tex)
     return 1;
 }
 
-void loader_request_cover(int track)
+void loader_request_cover(int serial, const char *path, const char *album)
 {
-    s_cov_want = track;
+    s_cov_want = -1; /* nothing is wanted while the name is written */
+    __sync_synchronize();
+    snprintf(s_cov_path, sizeof(s_cov_path), "%s", path ? path : "");
+    snprintf(s_cov_album, sizeof(s_cov_album), "%s", album ? album : "");
+    __sync_synchronize();
+    s_cov_want = path && path[0] ? serial : -1;
 }
 
 int loader_take_cover(int *track, Texture **tex)

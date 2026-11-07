@@ -93,7 +93,7 @@ The plugin keeps the seconds of each game in `PSP5/played`, and psp5 authentic a
 |---|---|
 | PSP games (`.iso`, `.cso`, `.zso`, `.dax`, `.jso`) | `ISO` |
 | Homebrew, PSN and PS1 games | `PSP/GAME` |
-| Music (`.mp3`) | `MUSIC` (sub-folders are fine) |
+| Music (`.mp3`, `.wav`, `.at3`, `.oma`, `.aa3`) | `MUSIC` on the Memory Stick or on the internal storage (sub-folders are fine: they are shown as folders) |
 
 A game is shown with the title that is in it. If it has none, you see the name of its folder (or of its `.iso` / `.cso` file), so you can name the folder what you want the game to be called.
 A folder with a `PBOOT.PBP` beside its `EBOOT.PBP` (TempGBA's single-game folders) shows the title and the pictures of the `PBOOT.PBP`.
@@ -108,12 +108,12 @@ Every screen uses the same few buttons for the same things:
 | Button | What it does |
 |---|---|
 | D-pad or analog stick | **Navigate**: move between cards, rows, tabs and buttons · hold to go faster (also in popups) |
-| ✕ | **Confirm**: start the game, open, choose, switch on or off (in Music: play / pause) |
+| ✕ | **Confirm**: start the game, open, choose, switch on or off (in Music: open a folder, play a song, press a button of the player) |
 | ○ | **Back**: one step back, close a popup or a screen (it closes the Library) |
 | START | **Options**: of the selected game, app or file (not on the Library card) · START again closes the options |
 | SELECT | **Power menu** on every screen: Exit to XMB, Sleep, Shut down, Restart, Recovery Menu (Confirm does it at once, Back or SELECT closes). It does not open while a popup is open or a copy, move or delete is running. |
-| L / R | **Switch tabs**: Games and Music (not in the Library: ○ closes it) · in a long list a page up / down |
-| □ △ | Extras on a few screens only: mark (the highlight stays on the row) / select all in a list (*Manage Saved Data*, the File Manager), □ pauses the music |
+| L / R | **Switch tabs**: Games and Media (not in the Library or in Music: ○ goes back) · in a long list a page up / down |
+| □ △ | Extras on a few screens only: mark (the highlight stays on the row) / select all in a list (*Manage Saved Data*, the File Manager); in Music △ moves between the song list and the player |
 | HOME | Back to the XMB (not as custom launcher)|
 
 By default ✕ confirms and ○ goes back (the other way round when the PSP itself is set to confirm with ○). **Settings → Controls** changes that:
@@ -126,8 +126,13 @@ Where to go from there:
 - **↓ in Games** selects the Play and ⋯ (options) buttons under the game · ← → move between them · ↑ or Back goes back.
 - **Confirm on the Library card** (the last card of Games) opens the Library: everything in a grid; the top bar shows only *Library* there.
 - **↑ from any first-row card in the Library** selects the Sort button (always the first stop) · Confirm opens the sorting (the same in *Manage Saved Data* and *Games and Apps*) · ↑ again goes to the cog wheel, ↓ from the cog wheel comes back to the Sort button.
-- **↑ from the first thing on a tab** selects the top bar: ← → between Games, Music and the cog wheel (in the Library only the cog wheel: the word *Library* is a title) · Confirm opens a tab, or the settings on the cog wheel · ↓ goes back down · Back goes back to the selected game.
-- **← → in Music**: previous / next track · hold to seek.
+- **↑ from the first thing on a tab** selects the top bar: ← → between Games, Media and the cog wheel (in the Library and in Music only the cog wheel: the word is a title) · Confirm opens a tab, or the settings on the cog wheel · ↓ goes back down · Back goes back to the selected game.
+- **Media** is a row of cards like Games; ✕ (or *Open*) on the **Music** card opens the Music screen, ○ comes back.
+- **Music** reads only the `MUSIC` folder (`ms0:/MUSIC`, and `ef0:/MUSIC` on a PSP with internal storage). With both, you first choose *Memory Stick* or *System Storage*; with one, you are in it at once. In the list ✕ opens a folder or plays a song (the songs of that
+  folder play one after the other), ○ goes up a folder (and out of Music from the top), △ moves to the player and back. In the player ← → choose a button (volume, previous, play / pause, next, **⋯**) and ✕ presses it; ↑ chooses the progress bar, then ← → (or the stick)
+  jump 10 seconds; **⋯** opens *Shuffle* (Off / On) and *Repeat* (Off / Current Song / All = the whole folder); the speaker opens the volume.
+- **The music goes on** when you leave Music or the Media tab. The PSP's **♪** button shows the player alone in the middle of the screen, over the screens of the launcher (not in the File Manager, USB Mode and the FTP server: they stop the music); ♪ or ○ closes it.
+- **What plays**: MP3, WAV (PCM, 8 to 32 bits, mono or stereo) and ATRAC3 / ATRAC3plus (`.at3`, `.oma`, `.aa3`). AAC / M4A, WMA, Ogg and FLAC are not played; a file that can't be played is skipped.
 - **A name that is too long** scrolls after a moment: the name next to the big card, the selected card in the Library, and the highlighted row in the File Manager, *Manage Saved Data* and *Games and Apps*.
 
 ## Date and time

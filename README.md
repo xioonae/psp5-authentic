@@ -25,7 +25,7 @@ wherever it can, but it doesn't copy the console in everything.
     <td width="50%"><img src="docs/screenshots/games-and-apps.png" alt="Games and Apps"><br><sub><b>Games and Apps</b> – all your games and apps: sort them, mark several and delete them, with the space you get back</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/music.png" alt="Music"><br><sub><b>Music</b> – your MP3s with album art; the music keeps playing while you browse your games</sub></td>
+    <td width="50%"><img src="docs/screenshots/music.png" alt="Music"><br><sub><b>Music</b> (the Media tab) – your songs with album art; the music keeps playing while you browse your games</sub></td>
     <td width="50%"><img src="docs/screenshots/file-manager.png" alt="File Manager"><br><sub><b>File Manager</b> – browse the Memory Stick, mark files and folders, then copy, move or delete them</sub></td>
   </tr>
   <tr>
@@ -78,8 +78,9 @@ wherever it can, but it doesn't copy the console in everything.
 - **Console Storage** (*Settings → Storage*). The size of the storage, a coloured bar and the free space, and four rows with their sizes: **Games and Apps** (the list of all your games and apps: sort, mark and delete them),
   Media (music, video and pictures), **Saved Data** (*Manage Saved Data*: the saves of all your games, mark some, delete them and see how much room you get back; ARK's own save folder is locked and can't be deleted) and Other.
   On a PSP Go with a Memory Stick there are two blocks, one for each storage.
-- **Music.** Plays the MP3 files in `MUSIC` with title, artist and album art (from the file, or a `cover.jpg` / `folder.jpg`
-  in the folder). It keeps playing while you browse your games.
+- **Media and Music.** The Media tab is a row of cards like the Games tab; for now it has one card, **Music** (video and pictures come later), on a drawn background in your theme's colours.
+  Music reads only the `MUSIC` folder of the Memory Stick and of the internal storage and shows its folders as folders; it plays MP3, WAV (PCM) and ATRAC3 / ATRAC3plus (`.at3`, `.oma`, `.aa3`) files with title, artist and album art (from the file, or a
+  `cover.jpg` / `folder.jpg` in the folder). The player has a progress bar you can jump in (10 seconds a step), volume, shuffle and repeat (off, one song, the whole folder). The music keeps playing while you browse your games, and the PSP's ♪ button shows the player as a popup.
 - **Settings** (the cog wheel). One list at a time, like the console's: Confirm opens a page, Back goes back one. The first list has six pages:
   - *psp5 authentic* – boot into psp5 authentic, sounds, startup animation, battery percentage, clear the image cache.
   - *Network* – the PSP's own Wi-Fi screen and the FTP Server.
@@ -98,7 +99,7 @@ wherever it can, but it doesn't copy the console in everything.
   off (it is for the Games tab: the Library has its own background), so the theme is always visible.
 - **Startup.** A short intro like a console's, with a health notice, soft circles and golden dust in your theme's colours.
   It plays when the PSP starts and wakes up, not when you come back from a game. Any button skips it, and you can turn it off.
-- **Power menu** (SELECT, on every screen: Games, Library, Music, Settings, Information, Manage Saved Data, the File Manager and the USB screen). Exit to XMB, Sleep, Shut down, Restart, Recovery Menu – Confirm does it at once.
+- **Power menu** (SELECT, on every screen: Games, Media, Library, Music, Settings, Information, Manage Saved Data, the File Manager and the USB screen). Exit to XMB, Sleep, Shut down, Restart, Recovery Menu – Confirm does it at once.
 - **Volume, battery and Wi-Fi.** Pressing the volume buttons slides a volume bar in at the top. The battery has four bars that are lit
   from the right (one for each quarter); while the PSP charges, a bolt is shown left of the battery and the bars above the level come on
   one after the other. You can also show the battery percentage (*Settings → psp5 authentic*). A Wi-Fi sign is shown while the PSP's Wi-Fi switch is
@@ -125,7 +126,7 @@ Games and apps use their own icon and background automatically. If you want your
 | START | **Options** of the selected card or file (START again closes them) |
 | SELECT | **Power menu** |
 | L / R | **Switch tabs** (in a long list: a page up / down) |
-| □ △ | Only where a screen has something extra: mark and select all in a list, pause the music |
+| □ △ | Only where a screen has something extra: mark and select all in a list; in Music △ moves between the song list and the player |
 | HOME | Quit to the XMB |
 
 That is what the buttons do by default (✕ and ○ swap when the PSP itself is set to confirm with ○). *Settings → Controls* gives

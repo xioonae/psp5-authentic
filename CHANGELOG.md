@@ -5,6 +5,23 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ## Unreleased
 
+### Media and Music
+
+- **The Music tab is now the Media tab.** It is a row of cards like the Games tab (a big card, the *Open* button under it, the name next to it). For now it has one card, **Music**; video and pictures come later. The card has the music note of the reference picture, drawn
+  in code. The background of the Media tab is drawn in code as well, from the reference picture, and in your theme's colours (the lamp's light, the haze and the line come from the theme, as in the Library). Opening the Music card keeps that background.
+- **The Music screen is new.** The songs are listed like the files of the File Manager: a thin frame round the line you are on, no rounded highlight, the folders first (a folder picture), the songs with their ending, a long name scrolls, and the song that plays
+  has three moving bars. ✕ opens a folder or plays a song, ○ goes up one folder (and out of the screen from the top). **Only the `MUSIC` folder is read** (`ms0:/MUSIC` and `ef0:/MUSIC`, nothing else on the card): if the PSP has one, you are in it at once; if it has both
+  (a PSP Go with a Memory Stick) the first thing you see is the choice of *Memory Stick* or *System Storage*. Folders are shown as folders; the songs of the folder you opened are what plays, one after the other.
+- **The player was made new, after the reference picture, and works with the buttons.** △ moves between the list and the player. In the player ← → move over the buttons (volume, previous, play / pause, next, **⋯**), ✕ presses one, and ↑ selects the **bar**: ← → (or the
+  analog stick) then jump **10 seconds** back or forward. **⋯** opens a popup with **Shuffle** (Off, On) and **Repeat** (Off, Current Song, All: *All* goes round the whole folder). The volume button opens a popup with the volume, which works the way
+  *Settings → Screen and Sound* does (the PSP's own volume). The little key signs on the icons are gone, and so are all the buttons that only belonged to the music (L / R for the track, □ for pause, ← → for seeking and ✕ for pause in the list).
+- **The music keeps playing when you leave the Media tab, and the ♪ (sound) button of the PSP shows the player alone as a popup in the middle of the screen** (over every screen of the launcher: Games, Media, Library, Music, Settings, Information and Manage Saved Data; the File Manager, USB Mode and the FTP server stop the music, as they always did): the same buttons, bar and popups; ○ or ♪ closes it. While it is open the screen below gets no buttons.
+  **Not tried on a real PSP yet:** the ♪ button can only be read in kernel mode (as the volume bar does), and the firmware may show its own picture at the same time.
+- **More kinds of song, the ones the PSP can play itself:** MP3 as before; **WAV** (plain PCM: 8, 16, 24 or 32 bits, mono or stereo, any of the rates the PSP's sound output has: 8, 11.025, 12, 16, 22.05, 24, 32, 44.1 and 48 kHz) and **ATRAC3 / ATRAC3plus** (`.at3`, `.oma`, `.aa3`,
+  the PSP's own music format, through the library of the firmware). A file that cannot be played is skipped. **Not in yet: AAC (`.m4a`, `.aac`) and WMA** (the firmware has an AAC decoder, but it can't be used safely without a PSP to try it on), and Ogg and FLAC, which the PSP has no decoder for.
+  **None of the decoding has been tried on a real PSP yet:** it was tested against stand-ins of the PSP's libraries, so the player's own logic is checked, not the sound of a codec.
+- The old Music screen's code was replaced: the scan of the whole card for tags is gone (only the song that plays has its tags read), and the Music tab's list, position bar and keys went with it.
+
 ### Memory
 
 - **The launcher leaves memory free again.** psp5 authentic is meant to keep 7 MB of the PSP's memory free for what is not its own: ARK's Recovery menu (it needs 4 MB), the MP3 decoder, Wi-Fi and the threads. But the toolchain it is built with read the

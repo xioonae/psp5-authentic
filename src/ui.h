@@ -6,14 +6,16 @@
 #include "scan.h"
 #include "loader.h"
 #include "folders.h"
+#include "musicui.h"
 
 enum { UI_NONE, UI_LAUNCH, UI_SETTINGS, UI_INFO, UI_DELETE,
        UI_XMB, UI_SLEEP, UI_SHUTDOWN, UI_RESTART, UI_RECOVERY /* the power popup of the SELECT button */ };
-/* Games is Home (home.h): the games played last and the kept ones and, at the far right, the Library card. Music has the music.
- * Library is not a tab of the top bar: it is a screen of its own that the Library card opens (✕) and ○ closes. It shows everything,
- * and while it is open the top bar has only the word "Library" in it, in the place of Games (it cannot be selected). */
-enum { TAB_GAMES, TAB_MUSIC, TAB_LIBRARY, TAB_COUNT };
-/* what the top bar can have selected (Ui.top_focus): Games or Music, or the cog wheel (inside the Library only the cog wheel) */
+/* Games is Home (home.h): the games played last and the kept ones and, at the far right, the Library card. Media is a row of cards in the same style
+ * as Games (for now one card: Music).
+ * Library and Music are not tabs of the top bar: each is a screen of its own that a card opens (✕) and ○ closes (the Library card of Games, the Music card of
+ * Media). While one is open the top bar has only its name in it, in the place of the tabs (it cannot be selected). */
+enum { TAB_GAMES, TAB_MEDIA, TAB_LIBRARY, TAB_MUSIC, TAB_COUNT };
+/* what the top bar can have selected (Ui.top_focus): Games or Media, or the cog wheel (inside the Library and Music only the cog wheel) */
 enum { TOP_COG = TAB_COUNT };
 
 /* the choices of the options popup (menu_item) */
@@ -55,7 +57,7 @@ typedef struct {
 
 typedef struct {
     const EntryList *list;
-    LoaderView views[TAB_COUNT]; /* Spel (Home; with the Library card as HOME_LIBRARY) / Bibliotek (Musik har egen lista, se music.h) */
+    LoaderView views[TAB_COUNT]; /* Games (Home; with the Library card as HOME_LIBRARY) / Media (one card, HOME_MEDIA_MUSIC) / the Library (Music has no cards: its own list, see music.h) */
     int tab;
     int sel[TAB_COUNT];  /* position i respektive flik */
     float pos;           /* animerad scrollposition i aktiv flik */
@@ -102,7 +104,7 @@ typedef struct {
     float card_ring;     /* 0..1: how visible the ring around the selected card is: gone while the Sort button, Start / Options or the top bar is selected (the card itself keeps its size) */
     int btn_focus;       /* Games: 0 = the card, 1 = the Start button under it, 2 = the Options button next to it */
     float btn_anim[2];   /* 0..1: how selected Start / Options look */
-    int top_focus;       /* -1 = the top bar is not selected, else TAB_GAMES, TAB_MUSIC or TOP_COG: ↑ from the first thing of a tab gets here */
+    int top_focus;       /* -1 = the top bar is not selected, else TAB_GAMES, TAB_MEDIA or TOP_COG: ↑ from the first thing of a tab gets here */
     float top_anim[TOP_COG + 1]; /* 0..1: how selected each tab / the cog wheel looks */
     float grid_scroll;   /* animerad översta rad */
     int grid_target;     /* raden som ska stå överst */
@@ -114,19 +116,8 @@ typedef struct {
     unsigned pt_secs;     /* ... its seconds */
     char pt_text[16];     /* ... as "54h" or "45min" (made at every draw, in the language of that moment), empty when there is nothing to show */
 
-    /* musik */
-    int music_sel;
-    float music_scroll;
-    int music_target;
-    int seek_dir;        /* ← / → som hålls i musikfliken: -1/1, 0 = ingen */
-    int seeking;         /* hållen länge nog: spolar i stället för att byta låt */
-    float seek_held, seek_pos;
-    float seek_show;     /* visa målet en stund efter att knappen släppts */
-
-    /* omslag till låten som spelas */
-    Texture *cover;
-    int cover_for;       /* låtens index, -1 = inget */
-    float cover_fade;
+    /* the Music screen (musicui.c) */
+    MusicUi mu;
 
     /* START i Spel/Bibliotek (eller ✕ på Alternativ-knappen): en liten alternativmeny för valt kort (Radera, Information, Behåll i Home). Samma meny visar sorteringen i Biblioteket (menu_kind), och, mitt på skärmen och från alla flikar med SELECT,
      * Viloläge / Stäng av / Starta om / Återställningsmeny. */

@@ -21,6 +21,8 @@
 /* what home_build() puts in `out` for the Library card (every other value is an index in the game list; -1 and -2 are what the UI
  * uses for "none" and "not known yet", so the Library card is -3) */
 #define HOME_LIBRARY (-3)
+/* the one card of the Media tab (its Music card): like the Library card it is not a game, and the loader leaves it alone. Media is not made by home_build(); ui.c puts it in its own view. */
+#define HOME_MEDIA_MUSIC (-4)
 
 /* bits of home_state() */
 enum { HOME_SHOWN = 1, HOME_KEPT = 2 };

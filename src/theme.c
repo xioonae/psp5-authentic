@@ -914,13 +914,146 @@ static void lib_star(const Theme *t, float time)
     gfx_blend_add(0);
 }
 
+/* ---- The background of the Media tab and of the Music screen ---------------------------------------------------------------------------------------
+ * Drawn in code from the picture "Media.png", as the Library's is: a ribbon of fine silky lines that runs from the top left, dips in the middle and rises to the
+ * right, between a wavy top edge and a bright lower edge (a soft white-violet glow where the ribbon begins at the top left, a bright edge along the bottom, thin lines
+ * that fan out below it to the lower left, and a blurred, out-of-focus haze at the right). The picture's two lights are the theme's own two lights: the lamp at the
+ * top left (`glow`) and the cool haze along the bottom (`haze`), so the colours follow the theme as the Library's do. The curves were measured from the picture
+ * (fractions of the screen: u across, v down) and every line is a function of them, so it is the same picture every frame: it is drawn once into the picture in video
+ * memory, like the surface and the Library's. */
+static const float MED_TOP[14] = { 0.184f, 0.133f, 0.140f, 0.196f, 0.284f, 0.376f, 0.516f, 0.499f, 0.453f, 0.431f, 0.311f, 0.230f, 0.205f, 0.190f }; /* u = 0.03 + 0.07 k */
+static const float MED_BOT[13] = { 0.617f, 0.611f, 0.649f, 0.707f, 0.756f, 0.780f, 0.782f, 0.777f, 0.805f, 0.867f, 0.898f, 0.851f, 0.796f };           /* u = 0.06 + 0.07 k */
+
+/* a smooth curve (Catmull-Rom) through the n values at u0, u0 + du, ...; held at the first and the last value outside them */
+static float med_curve(const float *v, int n, float u0, float du, float u)
+{
+    float x = (u - u0) / du;
+    if (x <= 0)
+        return v[0];
+    if (x >= n - 1)
+        return v[n - 1];
+    int i = (int)x;
+    float f = x - i, p0 = v[i > 0 ? i - 1 : 0], p1 = v[i], p2 = v[i + 1], p3 = v[i + 2 < n ? i + 2 : n - 1];
+    return 0.5f * (2 * p1 + (p2 - p0) * f + (2 * p0 - 5 * p1 + 4 * p2 - p3) * f * f + (3 * p1 - p0 - 3 * p2 + p3) * f * f * f);
+}
+
+static float med_top(float u) { return med_curve(MED_TOP, 14, 0.03f, 0.07f, u); }
+static float med_bot(float u) { return med_curve(MED_BOT, 13, 0.06f, 0.07f, u); }
+
+typedef struct {
+    u32 lamp;  /* the soft light at the top left (alpha 0) */
+    u32 high;  /* the lamp's light at its brightest: nearly white */
+    u32 haze;  /* the light along the bottom edge */
+    u32 line;  /* the fine lines: white with some of the theme's beam */
+} MedPalette;
+
+static MedPalette med_palette(const Theme *t)
+{
+    MedPalette p;
+    p.lamp = mix_rgb(RGBA(255, 255, 255, 0), t->glow, 0.80f, 0);
+    p.high = mix_rgb(RGBA(255, 255, 255, 0), t->glow, 0.30f, 0);
+    p.haze = mix_rgb(RGBA(255, 255, 255, 0), t->haze, 0.82f, 0);
+    p.line = mix_rgb(RGBA(255, 255, 255, 0), t->beam, 0.30f, 0);
+    return p;
+}
+
+#define MED_PTS 40
+/* one line of the ribbon: s = 0 is its top edge, 1 its lower edge; it fades out at both ends */
+static void med_line(const MedPalette *p, float s, float u0, float u1, float peak, float width, unsigned *seed)
+{
+    float xy[2 * MED_PTS];
+    u32 c[MED_PTS];
+    float ph = spot_rnd(seed) * 6.2832f, amp = 0.0035f + 0.004f * spot_rnd(seed);
+    float k = powf(s, 1.35f); /* the lines crowd towards the top edge, as they do in the picture */
+    u32 rgb = mix_rgb(mix_rgb(p->high, p->line, 0.45f, 0), p->haze, powf(s, 0.9f), 0);
+    for (int i = 0; i < MED_PTS; i++) {
+        float f = (float)i / (MED_PTS - 1), u = lerp_f(u0, u1, f);
+        float top = med_top(u), bot = med_bot(u);
+        float v = top + (bot - top) * k + amp * sinf(ph + u * 9.0f) * (1 - 0.5f * k);
+        xy[i * 2] = lib_x(u);
+        xy[i * 2 + 1] = lib_y(v);
+        float right = 1 - 0.90f * smooth_step(0.50f, 0.88f, u); /* the lines are fainter, out of focus, at the right */
+        c[i] = lib_col(rgb, peak * lib_bell(f, 0.55f) * right);
+    }
+    if (width > 1.0f)
+        gfx_stroke(xy, c, MED_PTS, width);
+    else
+        gfx_polyline(xy, c, MED_PTS);
+}
+
+/* a soft light along a curve of the ribbon: a few strokes on top of each other, each wider and fainter than the one before, the brightest part (`at`, u) in the middle */
+static void med_glow_along(float (*curve)(float), float u0, float u1, float at, u32 rgb, float width, float peak, float dv)
+{
+    float xy[2 * MED_PTS];
+    u32 c[MED_PTS];
+    for (int i = 0; i < MED_PTS; i++) {
+        float f = (float)i / (MED_PTS - 1), u = lerp_f(u0, u1, f);
+        float d = (u - at) / (u < at ? (at - u0) : (u1 - at)); /* 0 at the brightest place, 1 at the ends */
+        xy[i * 2] = lib_x(u);
+        xy[i * 2 + 1] = lib_y(curve(u) + dv);
+        c[i] = lib_col(rgb, peak * powf(fmaxf(0.0f, 1 - d * d), 1.3f));
+    }
+    gfx_stroke(xy, c, MED_PTS, width);
+}
+
+static void med_scene(const Theme *t)
+{
+    MedPalette p = med_palette(t);
+    gfx_gradient_v_opaque(0, 0, SCREEN_W, SCREEN_H, scaled(t->surf_top, 0.24f, 255), scaled(t->surf_bottom, 0.16f, 255)); /* black with a trace of the theme */
+    gfx_blend_add(1);
+    /* the soft lights: a haze over the ribbon, the glow where it begins at the top left, the haze under the bright edge, the blur at the right */
+    gfx_glow(lib_x(0.0f), lib_y(0.04f), lib_x(0.50f), lib_y(0.50f), 70, lib_col(p.line, 0.040f));
+    gfx_glow(lib_x(0.08f), lib_y(0.62f), lib_x(0.50f), lib_y(0.12f), 46, lib_col(p.haze, 0.22f));
+    gfx_glow(lib_x(0.52f), lib_y(0.74f), lib_x(0.30f), lib_y(0.10f), 46, lib_col(p.haze, 0.12f));
+    gfx_glow(lib_x(0.72f), lib_y(0.22f), lib_x(0.22f), lib_y(0.40f), 80, lib_col(p.line, 0.060f));
+    gfx_glow(lib_x(0.832f), lib_y(0.67f), lib_x(0.038f), lib_y(0.20f), 20, lib_col(p.haze, 0.46f));
+    gfx_glow(lib_x(0.86f), lib_y(0.30f), lib_x(0.09f), lib_y(0.30f), 40, lib_col(p.line, 0.050f));
+    gfx_glow(lib_x(0.76f), lib_y(0.58f), lib_x(0.20f), lib_y(0.28f), 70, lib_col(p.haze, 0.07f));
+    /* the lamp's glow follows the top edge of the ribbon where it begins: soft, and brightest a little way in */
+    med_glow_along(med_top, 0.02f, 0.50f, 0.15f, p.lamp, 26.0f, 0.12f, 0.006f);
+    med_glow_along(med_top, 0.02f, 0.46f, 0.15f, p.lamp, 16.0f, 0.24f, 0.012f);
+    med_glow_along(med_top, 0.02f, 0.40f, 0.14f, p.lamp, 8.0f, 0.42f, 0.014f);
+    med_glow_along(med_top, 0.03f, 0.34f, 0.13f, p.high, 4.0f, 0.50f, 0.016f);
+    /* the ribbon: fine lines between its top edge and its lower edge */
+    unsigned seed = 0x3c71u;
+    const int K = 34;
+    for (int k = 0; k < K - 1; k++) {
+        float s = (float)k / (K - 1);
+        float peak = 0.12f + 0.24f * (1 - s) * (1 - s) + 0.07f * spot_rnd(&seed);
+        med_line(&p, s, 0.02f + 0.04f * spot_rnd(&seed), 0.94f - 0.05f * spot_rnd(&seed), peak, 0, &seed);
+    }
+    /* a few wide, soft, out of focus lines at the right, as in the picture */
+    for (int k = 0; k < 5; k++)
+        med_line(&p, 0.12f + 0.2f * k, 0.55f, 0.99f, 0.050f, 12.0f, &seed);
+    /* the top edge: a little brighter than the lines, and only where the lamp reaches it */
+    med_line(&p, 0.0f, 0.02f, 0.58f, 0.09f, 2.0f, &seed);
+    /* the bright lower edge: a core with a soft glow round it, brightest at the left and bluer (here: dimmer) towards the right */
+    med_line(&p, 1.0f, 0.06f, 0.96f, 0.20f, 12.0f, &seed);
+    med_line(&p, 1.0f, 0.07f, 0.95f, 0.40f, 6.0f, &seed);
+    med_line(&p, 1.0f, 0.08f, 0.94f, 0.80f, 2.6f, &seed);
+    /* thin lines that fan out under the bright edge to the lower left */
+    for (int k = 0; k < 12; k++) {
+        float s = (float)k / 11, ue = lerp_f(0.30f, 0.66f, s);
+        float xy[2 * 6];
+        u32 c[6];
+        for (int i = 0; i < 6; i++) {
+            float f = (float)i / 5;
+            xy[i * 2] = lib_x(lerp_f(ue, lerp_f(0.04f, 0.32f, s), powf(f, 0.9f)));
+            xy[i * 2 + 1] = lib_y(lerp_f(med_bot(ue) + 0.012f, 0.99f - 0.05f * s, f) - 0.025f * sinf(PI * f) * (1 - s));
+            c[i] = lib_col(p.haze, 0.26f * (1 - f) * (0.55f + 0.45f * s));
+        }
+        gfx_polyline(xy, c, 6);
+    }
+    gfx_blend_add(0);
+}
+
 /* The scene above never changes (the same theme gives the same picture every frame), so it is drawn once into a picture in
  * video memory and put on the screen from there: one opaque image instead of some 500 draw calls that touch every pixel
  * three or four times. It is drawn again when the theme (or `a`) is another, or when the picture has been lost. */
 static struct {
     Theme theme;
     float a;
-    int library; /* 1 = the Library's own background, 0 = the theme's surface */
+    int library; /* 1 = the Library's own background, 2 = the Media tab's, 0 = the theme's surface */
     unsigned serial; /* gfx_snapshot_serial() when it was drawn */
     int valid;
 } s_scene;
@@ -935,7 +1068,9 @@ static void scene_ready(const Theme *t, float a, int library)
 {
     if (!s_scene.valid || s_scene.serial != gfx_snapshot_serial() || s_scene.a != a || s_scene.library != library || memcmp(&s_scene.theme, t, sizeof *t)) {
         gfx_snapshot_begin();
-        if (library)
+        if (library == 2)
+            med_scene(t);
+        else if (library)
             lib_scene(t);
         else
             draw_scene(t, a);
@@ -956,6 +1091,11 @@ void theme_backdrop_library(const Theme *t, float time)
 {
     scene_ready(t, 1, 1);
     lib_star(t, time);
+}
+
+void theme_backdrop_media(const Theme *t, float time)
+{
+    scene_ready(t, 1, 2);
 }
 
 void theme_backdrop(const Theme *t, float time, float a)
