@@ -66,8 +66,8 @@
 #define BG_FADE    3.5f  /* övertoningshastighet (1/s) */
 #define BG_DIP     8.0f  /* the dip to black while the background under the pictures is swapped (1/s: 0.125 s down, 0.125 s up) */
 #define DIM_SPEED 4.0f /* how fast the background goes dark behind an opened card (Library, Music) and bright again: 1 / 4 s */
-#define DIM_ALPHA_MUSIC 100   /* how dark the open Music screen is: the colour (8, 8, 12) at this strength of 255 (the same as the Library) */
-#define DIM_ALPHA_LIBRARY 100 /* ... and the open Library (its background is made of fine lines on black, which a stronger darkening would take away altogether) */
+#define DIM_ALPHA_MUSIC 150   /* how dark the open Media screens (Music, Videos, Images) are: the colour (8, 8, 12) at this strength of 255 (the same as the Library) */
+#define DIM_ALPHA_LIBRARY 150 /* ... and the open Library (its background is made of fine lines on black, which a strong darkening nearly takes away: 150 is what the maintainer chose) */
 #define LAUNCH_LEN 0.45f
 
 #define CLEAR_COLOR RGBA(10, 10, 14, 255)
