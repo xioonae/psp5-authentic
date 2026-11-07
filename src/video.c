@@ -52,6 +52,18 @@ static void crumb(const char *what, int a, int b)
     sceIoClose(fd);
 }
 
+static void crumb4(const char *what, int a, int b, int c, int d)
+{
+    char path[96], line[140];
+    crumb_path(path, sizeof(path), "video-crash.txt");
+    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_APPEND, 0777);
+    if (fd < 0)
+        return;
+    int n = snprintf(line, sizeof(line), "%s %d %d %d %d\n", what, a, b, c, d);
+    sceIoWrite(fd, line, n > 0 && n < (int)sizeof(line) ? n : 0);
+    sceIoClose(fd);
+}
+
 static void crumb_start(void)
 {
     char path[96], last[96], buf[512];
@@ -121,6 +133,7 @@ struct Video {
     unsigned char params[512];
     int params_len;
     int vnext, anext;
+    int group_left; /* units of the group whose table was written that are not written yet */
     int src_eof;
     /* sceMpeg */
     int mpeg_up, lib_up;
@@ -158,7 +171,12 @@ struct Video {
     float idle;
     int ended, failed, no_data, dec_errors, audio_dry;
     int stream_error;
-    int stage; /* what this session has done already, for the crash file (bits): 1 = fed, 2 = first picture asked for, 4 = first sound asked for */
+    int decoded;                      /* the picture decoder has been asked for a picture in this session (it is only stopped then) */
+    int n_put, n_au, n_dec;           /* packets fed, units given, pictures asked for (for the crash file) */
+    unsigned seen[6];                 /* the first different answers of sceMpegGetAvcAu (for the crash file) */
+    int n_seen, hb_lines;
+    float hb, since;                  /* the time to the next sign of life in the crash file, and the time this session has gone without a picture */
+    int stage; /* what this session has done already, for the crash file (bits): 1 = fed, 2 = first picture asked for, 4 = first sound asked for, 8 = first put answered, 16 = first unit seen */
 };
 
 /* the PSP's decoders are loaded once, the first time a video is opened */
@@ -200,22 +218,34 @@ static int pow2(int n) { int p = 1; while (p < n) p <<= 1; return p; }
 /* ---------------------------------------------------------------------- */
 /* what the ring buffer is fed with */
 
-/* the next video sample of the MP4, as sectors in the program stream writer */
+/* video sample i of the MP4 made into what the program stream carries (in v->au): its length, or -1 when the sample is left out (it cannot be read or understood) */
+static int mp4_unit(void *arg, int i, int *key)
+{
+    Video *v = arg;
+    int size = mp4_video_size(v->mp4, i);
+    float dts, pts;
+    *key = 0;
+    if (size <= 0 || size > v->au_cap)
+        return -1;
+    mp4_video_times(v->mp4, i, &dts, &pts, key);
+    if (mp4_video_read(v->mp4, i, v->sample, v->au_cap) != size)
+        return -1;
+    return mpegps_annexb(v->sample, size, mp4_nal_size(v->mp4), v->params, v->params_len, *key, v->au, v->au_cap + 4096);
+}
+
+/* the next video sample of the MP4, as sectors in the program stream writer; a group of samples starts with the table of their sizes (see ps_group) */
 static int mp4_next_au(Video *v)
 {
     while (v->vnext < mp4_video_count(v->mp4)) {
-        int i = v->vnext++;
-        int size = mp4_video_size(v->mp4, i);
-        if (size <= 0 || size > v->au_cap)
-            continue;
-        float dts, pts;
-        int key;
-        mp4_video_times(v->mp4, i, &dts, &pts, &key);
-        if (mp4_video_read(v->mp4, i, v->sample, v->au_cap) != size)
-            continue;
-        int len = mpegps_annexb(v->sample, size, mp4_nal_size(v->mp4), v->params, v->params_len, key, v->au, v->au_cap + 4096);
+        if (v->group_left <= 0)
+            v->group_left = ps_group_plan(&v->ps, v->vnext, mp4_video_count(v->mp4), mp4_unit, v);
+        int i = v->vnext++, key;
+        int len = mp4_unit(v, i, &key);
         if (len < 0)
             continue;
+        v->group_left--;
+        float dts, pts;
+        mp4_video_times(v->mp4, i, &dts, &pts, &key);
         ps_au(&v->ps, v->au, len, (long long)(pts * 90000.0) + PTS0, (long long)(dts * 90000.0) + PTS0);
         return 1;
     }
@@ -506,18 +536,30 @@ static void session_destroy(Video *v)
     if (!v->mpeg_up)
         return;
     SceInt32 stop_status = 0;
-    sceMpegAvcDecodeStop(&v->mpeg, FRAME_W, &v->frame, &stop_status);
-    sceMpegFlushAllStream(&v->mpeg);
+    /* the end of the decoding and the flush belong to a decoder that has been used: a PSP died in them when it was closed before it had got a single picture */
+    if (v->decoded) {
+        crumb("td-stop", 0, 0);
+        sceMpegAvcDecodeStop(&v->mpeg, FRAME_W, &v->frame, &stop_status);
+        crumb("td-flush", 0, 0);
+        sceMpegFlushAllStream(&v->mpeg);
+    }
+    v->decoded = 0;
     if (v->es_atrac)
         free(v->es_atrac);
-    if (v->es_avc)
+    if (v->es_avc) {
+        crumb("td-free-es", 0, 0);
         sceMpegFreeAvcEsBuf(&v->mpeg, v->es_avc);
+    }
+    crumb("td-unregist", 0, 0);
     if (v->s_avc)
         sceMpegUnRegistStream(v->mpeg, v->s_avc);
     if (v->s_atrac)
         sceMpegUnRegistStream(v->mpeg, v->s_atrac);
+    crumb("td-delete", 0, 0);
     sceMpegDelete(&v->mpeg);
+    crumb("td-ring", 0, 0);
     sceMpegRingbufferDestruct(RING(v));
+    crumb("td-done", 0, 0);
     free(v->pcm_tmp);
     v->es_atrac = v->es_avc = NULL;
     v->pcm_tmp = NULL;
@@ -592,11 +634,20 @@ static void feed(Video *v)
         crumb("first-feed", want, free_packets);
     }
     int r = sceMpegRingbufferPut(RING(v), want, free_packets);
+    if (!(v->stage & 8)) {
+        v->stage |= 8;
+        crumb4("first-put", r, want, free_packets, v->src_eof);
+    }
     if (r < 0) {
         VLOG("ring put %08x\n", r);
+        if (v->stream_error < 3)
+            crumb("put-error", r, v->stream_error);
         v->stream_error++;
     } else if (r == 0) {
         v->src_eof |= 1;
+        crumb("source-end", v->n_put, 0);
+    } else {
+        v->n_put += r;
     }
 }
 
@@ -765,8 +816,10 @@ void video_close(Video *v)
     session_destroy(v);
     free(v->ring_data);
     free(v->mpeg_mem);
-    if (v->lib_up)
+    if (v->lib_up) {
+        crumb("td-finish", 0, 0);
         sceMpegFinish();
+    }
     aac_close(v);
     crumb_end(); /* it was closed the right way: nothing to leave behind */
     free(v->frame);
@@ -813,6 +866,10 @@ int video_play(Video *v, float at)
     v->dec_errors = 0;
     v->stream_error = 0;
     v->stage = 0;
+    v->decoded = 0;
+    v->n_put = v->n_au = v->n_dec = 0;
+    v->n_seen = v->hb_lines = 0;
+    v->hb = v->since = 0;
     v->a_has_base = 0;
     v->atrac_first = 1;
     v->idle = 0;
@@ -822,6 +879,7 @@ int video_play(Video *v, float at)
         v->vnext = mp4_video_at(v->mp4, at);
         v->anext = v->audio_ok ? mp4_audio_at(v->mp4, at) : 0;
         ps_init(&v->ps);
+        v->group_left = 0;
         if (v->vnext > 0 || at > 0) {
             float dts, pts;
             int key;
@@ -874,11 +932,32 @@ int video_update(Video *v, float dt)
         v->clock += dt; /* (no sound, or none came in a second: the picture does not wait for it) */
     else
         v->idle += dt;
+    /* signs of life in the crash file, a few seconds apart, and the end of a session that gives no picture at all (the screen would stay black for ever) */
+    v->hb += dt;
+    if (v->hb >= 2.0f && v->hb_lines < 40) {
+        v->hb = 0;
+        v->hb_lines++;
+        crumb4("alive", v->n_put, v->n_au, v->n_dec, (int)(v->clock * 1000));
+    }
+    if (!v->have_pic && (v->since += dt) > 8.0f) {
+        crumb4("no-picture", v->n_put, v->n_au, v->n_dec, v->src_eof);
+        v->failed = 1;
+        return 0;
+    }
     int shown = 0;
     for (int n = 0; n < 4; n++) {
         if (!v->have_au) {
             SceInt32 unk = 0;
             unsigned r = (unsigned)sceMpegGetAvcAu(&v->mpeg, v->s_avc, &v->au_avc, &unk);
+            if (r != 0) { /* the first different answers other than "a unit": what a PSP says when it gives none */
+                int known = 0;
+                for (int i = 0; i < v->n_seen; i++)
+                    known |= v->seen[i] == r;
+                if (!known && v->n_seen < 6) {
+                    v->seen[v->n_seen++] = r;
+                    crumb4("get-au", (int)r, v->n_put, v->n_au, v->src_eof);
+                }
+            }
             if (r == NO_DATA) {
                 feed(v);
                 if ((v->src_eof & 1) && ++v->no_data > 20)
@@ -893,8 +972,15 @@ int video_update(Video *v, float dt)
             }
             v->no_data = 0;
             v->have_au = 1;
+            v->n_au++;
         }
         double pts = v->au_avc.iPts == 0xFFFFFFFFu && v->au_avc.iPtsMSB == 0 ? v->clock : au_sec(&v->au_avc);
+        if (!(v->stage & 16)) {
+            v->stage |= 16;
+            crumb4("first-unit", (int)(pts * 1000), (int)(v->clock * 1000), (int)v->au_avc.iAuSize, (int)v->au_avc.iPtsMSB);
+        }
+        if (!v->audio_ok && !v->have_pic && pts > v->clock + 1.0)
+            v->clock = pts; /* no sound to keep time by: the clock goes to the first unit, whatever time stamps the stream has */
         if (pts > v->clock + 0.004)
             break; /* not yet */
         SceInt32 got = 0;
@@ -903,10 +989,16 @@ int video_update(Video *v, float dt)
             v->stage |= 2;
             crumb("first-picture", v->au_avc.iAuSize, 0);
         }
+        v->decoded = 1;
         int r = sceMpegAvcDecode(&v->mpeg, &v->au_avc, FRAME_W, &buf, &got);
         v->have_au = 0;
+        v->n_dec++;
+        if (v->n_dec == 1)
+            crumb4("first-decode", r, got, v->au_avc.iAuSize, 0);
         if (r != 0) {
             VLOG("avc decode %08x\n", r);
+            if (v->dec_errors < 3)
+                crumb("decode-error", r, v->dec_errors);
             if (++v->dec_errors > 30)
                 v->failed = 1;
             continue;
