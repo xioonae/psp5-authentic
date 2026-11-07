@@ -21,7 +21,10 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   the PSP's own music format, through the library of the firmware). A file that cannot be played is skipped. **Not in yet: AAC (`.m4a`, `.aac`) and WMA** (the firmware has an AAC decoder, but it can't be used safely without a PSP to try it on), and Ogg and FLAC, which the PSP has no decoder for.
   **None of the decoding has been tried on a real PSP yet:** it was tested against stand-ins of the PSP's libraries, so the player's own logic is checked, not the sound of a codec.
 - The old Music screen's code was replaced: the scan of the whole card for tags is gone (only the song that plays has its tags read), and the Music tab's list, position bar and keys went with it.
-- **README pictures:** new ones of the Media tab and the Music screen (taken in the PPSSPP emulator, with a song of the invented demo stick playing), and four others (Games, Options, Theme, Power menu) taken again because the top bar says *Media* now.
+- **The background goes dark behind a card that is opened, and bright again when it is closed.** On the cards (Games, Media, and the Library card of Games) the background has its full brightness; when the **Music** card is opened
+  the whole screen behind it is darkened, from the top of the screen to the bottom (it was only from the folder name down, as a shade behind the list), and when the **Library** card is opened its background goes darker too (less: its lines
+  would be gone). It fades in a quarter of a second, and out again when you go back. The top bar stays bright.
+- **README pictures:** new ones of the Media tab and the Music screen (taken in the PPSSPP emulator, with a song of the invented demo stick playing), and six others (Games, Options, Theme, Power menu, Library, Library with folders) taken again because the top bar says *Media* now, or because the opened Library is darker now.
 
 ### Memory
 
@@ -76,7 +79,7 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 - **The Library's background is softer.** The thin lines of its picture (the fine lines of the petal and the fan, and the big rings at the lower right) were one pixel wide and showed the steps of the pixel grid, so they looked sharp and dotted. The picture is now shown a little smoothed
   (every pixel is the mean of 2 x 2 pixels of it, and the picture sits half a pixel further down and to the right), so the lines are continuous and soft. The four rays of the little star are soft lines too. The picture is still made once and kept in video memory, so this costs nothing
   per frame but the star's rays (about 2 KB of the display list); the backgrounds of the themes are as they were. This is new and nobody has seen it on a real PSP yet: if the Library's background looks wrong on yours, please open an issue and tell us your PSP model and your ARK version.
-- **The Library has a background of its own.** The picture of a game is **not** shown behind the Library any more (the Library is not darkened either): in every theme it has the same drawn picture on black, at the
+- **The Library has a background of its own.** The picture of a game is **not** shown behind the Library any more (the Library card has it at full brightness, and the opened Library darkens it, see *Media and Music*): in every theme it has the same drawn picture on black, at the
   right: a twisted ribbon of fine dotted lines, a fan of lines to a point, big rings at the bottom right, a little twinkling star and some specks of dust, with a copper light along its edges. It is drawn by the program
   (no picture file), like the themes and icons. The colours follow your theme: the black has a trace of the theme's own dark, the lines carry some of its light, and the glow is the gold of the PS5 colours (the
   accent colour of PS1 to PS4). It fades up from black with the cards when you open the Library. *Show Game art* now only matters for the Games tab. The picture is made once and kept in video memory, as the themes are, so

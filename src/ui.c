@@ -63,6 +63,9 @@
 #define BG_DELAY   0.18f /* stå still så här länge innan bakgrunden laddas */
 #define BG_FADE    3.5f  /* övertoningshastighet (1/s) */
 #define BG_DIP     8.0f  /* the dip to black while the background under the pictures is swapped (1/s: 0.125 s down, 0.125 s up) */
+#define DIM_SPEED 4.0f /* how fast the background goes dark behind an opened card (Library, Music) and bright again: 1 / 4 s */
+#define DIM_ALPHA_MUSIC 150   /* how dark the open Music screen is: the colour (8, 8, 12) at this strength of 255, as the old Music tab had it */
+#define DIM_ALPHA_LIBRARY 100 /* ... and the open Library: its background is made of fine lines on black, which a stronger darkening would take away altogether */
 #define LAUNCH_LEN 0.45f
 
 #define CLEAR_COLOR RGBA(10, 10, 14, 255)
@@ -1160,6 +1163,9 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     ui->tab_anim = clampf(ui->tab_anim + dt * 4.0f, 0, 1);
     if (ui->tab_anim >= 1)
         ui->lib_calm = 0; /* (a later change of the Library's cards, a new sort, comes up out of the dark as before) */
+    if (ui->tab == TAB_LIBRARY || ui->tab == TAB_MUSIC)
+        ui->dim_alpha = ui->tab == TAB_MUSIC ? DIM_ALPHA_MUSIC : DIM_ALPHA_LIBRARY;
+    ui->dim = clampf(ui->dim + (ui->tab == TAB_LIBRARY || ui->tab == TAB_MUSIC ? 1 : -1) * dt * DIM_SPEED, 0, 1); /* the background goes dark when a card is opened, and bright again when it is closed */
     if (ui->toast_time > 0)
         ui->toast_time -= dt;
     sort_by_size_again(ui, dt);
@@ -1420,6 +1426,15 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
 }
 
 /* --- ritning --- */
+
+/* A card that is opened (the Library card, the Music card) darkens the whole background behind it, all the way from the top of the screen: the cards of Games and Media have the
+ * background at full brightness, the screen that opens from them has it dark (so that the lines of the background do not run across the names), and it goes dark and bright again
+ * in a quarter of a second. The top bar is drawn over it (the tabs, the clock, the battery and the cog wheel stay bright). */
+static void draw_dim(const Ui *ui)
+{
+    if (ui->dim > 0)
+        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(8, 8, 12, (int)(ui->dim_alpha * smooth(ui->dim))));
+}
 
 static void draw_background(Ui *ui)
 {
@@ -2126,6 +2141,7 @@ void ui_draw(Ui *ui)
 {
     gfx_begin(CLEAR_COLOR);
     draw_background(ui);
+    draw_dim(ui);
     draw_top_bar(ui);
     if (ui->tab == TAB_MUSIC) {
         draw_music(ui);

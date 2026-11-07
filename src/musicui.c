@@ -748,7 +748,6 @@ void musicui_mini_draw(MusicUi *m)
 
 void musicui_draw(MusicUi *m, float a, float slide)
 {
-    gfx_gradient_h(0, 42, 312, 206, RGBA(0, 0, 0, (int)(110 * a)), RGBA(0, 0, 0, 0)); /* a shade behind the list: the lines of the background do not cross the names */
     draw_list(m, a, slide);
     draw_player(m, PANEL_X, PANEL_Y + slide, a, m->focus && !m->popup);
     draw_popup(m);
