@@ -77,6 +77,15 @@ static void crumb_end(void)
     sceIoRemove(path);
 }
 
+/* The PSP's own AAC decoder (sceAudiocodec, codec 0x1003) crashed a real PSP on its first frame: the crash file of the first test on one ended with "first-sound", written just before that call, and the
+ * picture decoder had not been asked for anything yet. PPSSPP accepts the call, and what a PSP wants in the parameter block cannot be found out without crashing one, so an MP4 is played without
+ * sound until the sound is made another way. A build with -DVIDEO_HW_AAC (PPSSPP tests only) still uses the decoder. */
+#ifdef VIDEO_HW_AAC
+#define HW_AAC 1
+#else
+#define HW_AAC 0
+#endif
+
 #define PKT 2048
 #define RING_PACKETS 0x100            /* 512 KB of program stream in the ring buffer */
 #define FRAME_W 512                   /* the width of the buffer the pictures are decoded into (a video is at most 512 wide) */
@@ -731,8 +740,8 @@ Video *video_open(const char *path)
     if (v->audio_ok) {
         int rate = v->kind == VK_MP4 ? mp4_audio_rate(v->mp4) : 44100;
         crumb("sound-open", rate, v->kind == VK_MP4);
-        if (v->kind == VK_MP4 && !aac_open(v))
-            v->audio_ok = 0;
+        if (v->kind == VK_MP4 && (!HW_AAC || !aac_open(v)))
+            v->audio_ok = 0; /* (an MP4 is silent: see HW_AAC) */
         crumb("sound-out", rate, v->audio_ok);
         if (v->audio_ok && !audio_start(v, rate))
             v->audio_ok = 0;

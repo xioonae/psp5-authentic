@@ -30,7 +30,7 @@ wherever it can, but it doesn't copy the console in everything.
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/videos.png" alt="Videos"><br><sub><b>Videos</b> (Media → Videos) – the <code>VIDEO</code> folder of the Memory Stick and of the internal storage, folders and all, in a list that has the whole width</sub></td>
-    <td width="50%"><img src="docs/screenshots/video-player.png" alt="Video player"><br><sub><b>Video player</b> – MP4 (H.264 and AAC) and PMF on the whole screen; the bar, the numbers and L / R show when you press a button and go away after a moment</sub></td>
+    <td width="50%"><img src="docs/screenshots/video-player.png" alt="Video player"><br><sub><b>Video player</b> – MP4 (H.264; no sound yet) and PMF on the whole screen; the bar, the numbers and L / R show when you press a button and go away after a moment</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/images.png" alt="Images"><br><sub><b>Images</b> (Media → Images) – the <code>PICTURE</code> folder and <code>PSP/PHOTO</code>, folders and all</sub></td>
@@ -89,7 +89,7 @@ wherever it can, but it doesn't copy the console in everything.
 - **Media, Music, Videos and Images.** The Media tab is a row of cards like the Games tab: **Music**, **Videos** and **Images**, on a drawn background in your theme's colours.
   Music reads only the `MUSIC` folder of the Memory Stick and of the internal storage and shows its folders as folders; it plays MP3, WAV (PCM) and ATRAC3 / ATRAC3plus (`.at3`, `.oma`, `.aa3`) files with title, artist and album art (from the file, or a
   `cover.jpg` / `folder.jpg` in the folder). The player has a progress bar you can jump in (10 seconds a step), volume, shuffle, repeat (off, one song, the whole folder) and the equalizer. The music keeps playing while you browse your games or use the File Manager, and the PSP's ♪ button shows the player as a popup.
-  **Videos** lists the `VIDEO` folder the same way, over the whole width, and plays **MP4** (H.264 video with AAC sound) and **PMF / PSMF** on the whole screen: ✕ pauses, ← → jump 10 seconds, L / R play the video before or after, ○ leaves. A video that was left in the middle asks whether to *Continue* from there or start *from the beginning*. (If a video ever crashes the PSP, the next one you open leaves `PSP5/video-crash-last.txt` that says how far it got.)
+  **Videos** lists the `VIDEO` folder the same way, over the whole width, and plays **MP4** (H.264 video; **without sound for now**, see below) and **PMF / PSMF** (with sound) on the whole screen: ✕ pauses, ← → jump 10 seconds, L / R play the video before or after, ○ leaves. A video that was left in the middle asks whether to *Continue* from there or start *from the beginning*. (An MP4's sound is left out for now: the PSP's own AAC decoder crashed a real PSP, so the sound has to be made another way. If a video ever crashes the PSP, the next one you open leaves `PSP5/video-crash-last.txt` that says how far it got.)
   **Images** lists the `PICTURE` folder and `PSP/PHOTO` and shows **JPEG** (turned the way the camera says), **PNG** and **BMP** on the whole screen, with L / R for the picture before and after. In both, the little bar with L, the number and R shows when you press a button and goes away after a moment.
 - **Settings** (the cog wheel). One list at a time, like the console's: Confirm opens a page, Back goes back one. The first list has six pages:
   - *psp5 authentic* – boot into psp5 authentic, sounds, startup animation, battery percentage, clear the image cache.
