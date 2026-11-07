@@ -64,6 +64,31 @@ static void crumb4(const char *what, int a, int b, int c, int d)
     sceIoClose(fd);
 }
 
+static void crumbh(const char *what, unsigned a, unsigned b, unsigned c, unsigned d)
+{
+    char path[96], line[140];
+    crumb_path(path, sizeof(path), "video-crash.txt");
+    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_APPEND, 0777);
+    if (fd < 0)
+        return;
+    int n = snprintf(line, sizeof(line), "%s %08x %08x %08x %08x\n", what, a, b, c, d);
+    sceIoWrite(fd, line, n > 0 && n < (int)sizeof(line) ? n : 0);
+    sceIoClose(fd);
+}
+
+/* the first 16 bytes at an address, as four words (only an address in the user's memory is read: it comes from the PSP's library and nothing says it is one) */
+static void crumb_mem(const char *what, unsigned addr)
+{
+    unsigned q = addr & 0x1FFFFFFF;
+    if (q < 0x08800000u || q + 16 > 0x0C000000u || (addr & 3)) {
+        crumbh(what, addr, 0, 0, 0);
+        return;
+    }
+    const unsigned char *b = (const unsigned char *)(uintptr_t)addr;
+    crumbh(what, (unsigned)b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3], (unsigned)b[4] << 24 | b[5] << 16 | b[6] << 8 | b[7], (unsigned)b[8] << 24 | b[9] << 16 | b[10] << 8 | b[11],
+           (unsigned)b[12] << 24 | b[13] << 16 | b[14] << 8 | b[15]);
+}
+
 static void crumb_start(void)
 {
     char path[96], last[96], buf[512];
@@ -550,11 +575,16 @@ static void session_destroy(Video *v)
         crumb("td-free-es", 0, 0);
         sceMpegFreeAvcEsBuf(&v->mpeg, v->es_avc);
     }
-    crumb("td-unregist", 0, 0);
-    if (v->s_avc)
-        sceMpegUnRegistStream(v->mpeg, v->s_avc);
-    if (v->s_atrac)
-        sceMpegUnRegistStream(v->mpeg, v->s_atrac);
+    /* A PSP died in sceMpegUnRegistStream after its picture decoder had given nothing but errors: after errors the stream is left registered (sceMpegDelete ends it) */
+    if (v->dec_errors > 0 || v->failed) {
+        crumb("td-unregist-skipped", v->dec_errors, v->failed);
+    } else {
+        crumb("td-unregist", 0, 0);
+        if (v->s_avc)
+            sceMpegUnRegistStream(v->mpeg, v->s_avc);
+        if (v->s_atrac)
+            sceMpegUnRegistStream(v->mpeg, v->s_atrac);
+    }
     crumb("td-delete", 0, 0);
     sceMpegDelete(&v->mpeg);
     crumb("td-ring", 0, 0);
@@ -585,8 +615,8 @@ static int session_create(Video *v)
     }
     v->mpeg_up = 1;
     SceMpegAvcMode mode = { -1, SCE_MPEG_AVC_FORMAT_5650 };
-    sceMpegAvcDecodeMode(&v->mpeg, &mode);
     SceInt32 off = 0, size = 0;
+    crumbh("decode-mode", (unsigned)sceMpegAvcDecodeMode(&v->mpeg, &mode), 0, 0, 0);
     if (v->kind == VK_MP4)
         make_header(v, v->header);
     int qo = sceMpegQueryStreamOffset(&v->mpeg, v->header, &off), qs = sceMpegQueryStreamSize(v->header, &size);
@@ -602,6 +632,7 @@ static int session_create(Video *v)
     v->es_avc = sceMpegMallocAvcEsBuf(&v->mpeg);
     int ia = v->es_avc ? sceMpegInitAu(&v->mpeg, v->es_avc, &v->au_avc) : -1;
     VLOG("es %p init au %08x\n", v->es_avc, ia);
+    crumbh("setup", (unsigned)(uintptr_t)v->s_avc, (unsigned)(uintptr_t)v->es_avc, (unsigned)ia, (unsigned)v->au_avc.iEsBuffer);
     if (ia < 0)
         goto fail_up;
     if (v->s_atrac) {
@@ -760,8 +791,12 @@ Video *video_open(const char *path)
     }
     VLOG("open %s: %dx%d, %.2f s, kind %d\n", path, v->w, v->h, v->duration, v->kind);
     crumb(v->kind == VK_MP4 ? "mp4" : "pmf", v->w, v->h);
-    if (v->kind == VK_MP4 && v->params_len > 8 && (v->params[4] & 0x1F) == 7)
+    if (v->kind == VK_MP4 && v->params_len > 8 && (v->params[4] & 0x1F) == 7) {
         crumb("avc-profile-level", v->params[5], v->params[7]);
+        int n = v->params_len < 24 ? v->params_len : 24; /* the head of the parameter sets, as they were given to the decoder (profile, sizes, flags) */
+        crumbh("params", (unsigned)v->params[0] << 24 | v->params[1] << 16 | v->params[2] << 8 | v->params[3], (unsigned)v->params[4] << 24 | v->params[5] << 16 | v->params[6] << 8 | v->params[7],
+               n >= 12 ? (unsigned)v->params[8] << 24 | v->params[9] << 16 | v->params[10] << 8 | v->params[11] : 0, n >= 16 ? (unsigned)v->params[12] << 24 | v->params[13] << 16 | v->params[14] << 8 | v->params[15] : 0);
+    }
     if (v->w <= 0 || v->h <= 0 || v->w > FRAME_W || v->h > 512)
         goto fail;
     /* the decoder writes whole blocks of 16 and the PSP's own library decides how far it goes: the buffer is always the biggest a video can need (512 by 512 of 16 bits), so nothing can be written past it */
@@ -988,17 +1023,20 @@ int video_update(Video *v, float dt)
         if (!(v->stage & 2)) {
             v->stage |= 2;
             crumb("first-picture", v->au_avc.iAuSize, 0);
+            crumbh("au", v->au_avc.iEsBuffer, v->au_avc.iAuSize, v->au_avc.iPts, v->au_avc.iDts);
+            crumb_mem("es-head", v->au_avc.iEsBuffer);
+            crumbh("frame", (unsigned)(uintptr_t)v->frame, FRAME_W, 0, 0);
         }
         v->decoded = 1;
         int r = sceMpegAvcDecode(&v->mpeg, &v->au_avc, FRAME_W, &buf, &got);
         v->have_au = 0;
         v->n_dec++;
         if (v->n_dec == 1)
-            crumb4("first-decode", r, got, v->au_avc.iAuSize, 0);
+            crumbh("first-decode", (unsigned)r, (unsigned)got, v->au_avc.iAuSize, (unsigned)(uintptr_t)buf);
         if (r != 0) {
             VLOG("avc decode %08x\n", r);
             if (v->dec_errors < 3)
-                crumb("decode-error", r, v->dec_errors);
+                crumbh("decode-error", (unsigned)r, (unsigned)v->dec_errors, v->au_avc.iAuSize, 0);
             if (++v->dec_errors > 30)
                 v->failed = 1;
             continue;

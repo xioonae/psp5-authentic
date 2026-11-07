@@ -8,27 +8,45 @@ int mpegps_annexb(const uint8_t *s, int len, int nal_size, const uint8_t *params
     int n = 0;
     if (nal_size < 1 || nal_size > 4 || len < nal_size)
         return -1;
-    int first_type = -1;
-    {
+    /* what the sample has in it: does it start with an access unit delimiter, and does it carry the parameter sets itself */
+    int first_type = -1, has_params = 0;
+    for (int pos = 0, k = 0; pos + nal_size <= len; k++) {
         int l = 0;
         for (int i = 0; i < nal_size; i++)
-            l = (l << 8) | s[i];
-        if (l > 0 && nal_size + l <= len)
-            first_type = s[nal_size] & 0x1F;
+            l = (l << 8) | s[pos + i];
+        pos += nal_size;
+        if (l <= 0 || pos + l > len)
+            return -1;
+        int t = s[pos] & 0x1F;
+        if (k == 0)
+            first_type = t;
+        if (t == 7 || t == 8)
+            has_params = 1;
+        pos += l;
     }
-    if (first_type != 9) {
+    /* The delimiter is the first NAL unit of the unit, the parameter sets come after it: a delimiter that the sample brought comes first and the sets are put behind it. */
+    int pos = 0, first_len = 0;
+    if (first_type == 9) {
+        for (int i = 0; i < nal_size; i++)
+            first_len = (first_len << 8) | s[i];
+        if (n + 4 + first_len > cap)
+            return -1;
+        out[n++] = 0; out[n++] = 0; out[n++] = 0; out[n++] = 1;
+        memcpy(out + n, s + nal_size, (size_t)first_len);
+        n += first_len;
+        pos = nal_size + first_len;
+    } else {
         if (cap < 6)
             return -1;
         memcpy(out, aud, 6);
         n = 6;
     }
-    if (key && params_len > 0) {
+    if (key && params_len > 0 && !has_params) {
         if (n + params_len > cap)
             return -1;
         memcpy(out + n, params, (size_t)params_len);
         n += params_len;
     }
-    int pos = 0;
     while (pos + nal_size <= len) {
         int l = 0;
         for (int i = 0; i < nal_size; i++)
