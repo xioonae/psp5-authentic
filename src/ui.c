@@ -1630,26 +1630,6 @@ static void draw_top_bar(Ui *ui)
                   ALIGN_LEFT, L(TAB_NAMES[t]));
         x += tw + gap;
     }
-
-    /* the music that plays shows as a little note with the title in the other tabs */
-    Track now;
-    if (ui->tab != TAB_MUSIC && music_state() != MUSIC_STOPPED && music_track(&now)) {
-        float right = bar_left - 40, left = x + 4;
-        if (right - left > 40) {
-            static char line[100];
-            static int line_gen = -1;
-            static float line_w;
-            if (line_gen != music_generation() || line_w != right - left) {
-                text_ellipsis(line, sizeof(line), now.title, 0.5f, right - left - 16);
-                line_gen = music_generation();
-                line_w = right - left;
-            }
-            float pulse = music_state() == MUSIC_PLAYING ? 0.75f + 0.25f * sinf(ui->time * 3) : 0.5f;
-            float tw = text_width(0.5f, 0, line);
-            gfx_note(right - tw - 8, 21, 10, with_alpha(LIGHT, pulse * a));
-            text_draw(right, 24.5f, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_RIGHT, line);
-        }
-    }
 }
 
 /* Placering för kortet på avståndet d från markeringen (0 = valt). */

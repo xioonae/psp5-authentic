@@ -11,6 +11,7 @@
 #include "loader.h"
 #include "look.h"
 #include "popup.h"
+#include "osd.h"
 #include "sound.h"
 #include "system.h"
 
@@ -45,7 +46,6 @@ void musicui_init(MusicUi *m)
 {
     memset(m, 0, sizeof(*m));
     m->cover_gen = -1;
-    m->volume = -1;
 }
 
 static void free_list(MusicUi *m)
@@ -222,18 +222,39 @@ static int step(MusicUi *m, u32 held, int lx, int ly, float dt)
     return 0;
 }
 
-static void cycle_repeat(int dir)
+/* The rows of the "..." popup: Shuffle, Repeat and the Equalizer (when the system can say it: the same values, the same words and the same calls as Settings > Screen and Sound). ✕ on a row opens a
+ * popup with its values, like Settings does for a choice. */
+enum { ROW_SHUFFLE, ROW_REPEAT, ROW_EQ };
+static int more_rows(void) { return sys_equalizer() >= 0 ? 3 : 2; }
+static int row_values(int row) { return row == ROW_SHUFFLE ? 2 : row == ROW_REPEAT ? 3 : 5; }
+static int row_value(int row)
 {
-    int r = music_repeat() + dir;
-    music_set_repeat(r < 0 ? MUSIC_REPEAT_ALL : r > MUSIC_REPEAT_ALL ? MUSIC_REPEAT_OFF : r);
+    int v = row == ROW_SHUFFLE ? (music_shuffle() ? 1 : 0) : row == ROW_REPEAT ? music_repeat() : sys_equalizer();
+    return (int)clampf((float)v, 0, (float)(row_values(row) - 1));
+}
+static void row_set(int row, int v)
+{
+    if (row == ROW_SHUFFLE)
+        music_set_shuffle(v);
+    else if (row == ROW_REPEAT)
+        music_set_repeat(v);
+    else
+        sys_set_equalizer(v);
+}
+static const char *row_name(int row) { return L(row == ROW_SHUFFLE ? S_MU_SHUFFLE : row == ROW_REPEAT ? S_MU_REPEAT : S_EQUALIZER); }
+static const char *row_text(int row, int v)
+{
+    static const StrId on_off[2] = { S_OFF, S_ON }, rep[3] = { S_OFF, S_MU_REPEAT_ONE, S_ALL }, eq[5] = { S_OFF, S_EQ_HEAVY, S_EQ_POPS, S_EQ_JAZZ, S_EQ_UNIQUE };
+    return L(row == ROW_SHUFFLE ? on_off[v & 1] : row == ROW_REPEAT ? rep[v % 3] : eq[v % 5]);
 }
 
 static void popup_open(MusicUi *m, int which)
 {
     m->popup = which;
     m->popup_sel = 0;
+    m->choice_sel = 0;
     if (which == MU_POPUP_VOLUME)
-        m->volume = sys_volume();
+        osd_show_volume(); /* the launcher's own volume bar, the one the volume buttons show */
     sound_play(SND_SELECT);
 }
 
@@ -284,43 +305,65 @@ static void press_button(MusicUi *m)
     }
 }
 
-/* the popups: ↑ ↓ choose a row, ← → change it (✕ too), ○ or START closes */
+/* The popups. Volume: the launcher's volume bar is shown and ← → change the volume (the system's, as the volume buttons do); ✕ ○ or START ends it. "...": ↑ ↓ choose a row, ✕ opens
+ * the values of the row (↑ ↓ choose, ✕ takes the value and goes back to the rows, ○ goes back and keeps the old one), ○ or START closes. */
 static void update_popup(MusicUi *m, u32 pressed, int mv)
 {
-    if (pressed & (PSP_CTRL_CIRCLE | PSP_CTRL_START)) {
-        m->popup = 0;
-        sound_play(SND_BACK);
+    if (m->popup == MU_POPUP_VOLUME) {
+        osd_show_volume(); /* (the bar stays while the volume is being changed) */
+        if (pressed & (PSP_CTRL_CROSS | PSP_CTRL_CIRCLE | PSP_CTRL_START)) {
+            m->popup = 0;
+            sound_play(SND_BACK);
+            return;
+        }
+        int v = sys_volume();
+        if (v >= 0 && (mv == -1 || mv == 1)) {
+            int to = (int)clampf((float)(v + mv), 0, VOLUME_MAX);
+            if (to != v) {
+                sys_set_volume(to);
+                sound_play(SND_MOVE);
+            }
+        }
         return;
     }
-    if (m->popup == MU_POPUP_VOLUME) {
-        if (m->volume >= 0 && (mv == -1 || mv == 1)) {
-            int v = (int)clampf((float)(m->volume + mv), 0, VOLUME_MAX);
-            if (v != m->volume) {
-                int now = sys_set_volume(v);
-                m->volume = now >= 0 && now <= VOLUME_MAX ? now : v;
+    if (m->popup == MU_POPUP_CHOICE) {
+        int n = row_values(m->popup_sel);
+        if (mv == -2 || mv == 2) {
+            int next = (int)clampf((float)(m->choice_sel + (mv > 0 ? 1 : -1)), 0, (float)(n - 1));
+            if (next != m->choice_sel) {
+                m->choice_sel = next;
                 sound_play(SND_MOVE);
             }
         }
         if (pressed & PSP_CTRL_CROSS) {
+            row_set(m->popup_sel, m->choice_sel);
+            m->popup = MU_POPUP_MORE;
+            sound_play(SND_SELECT);
+        } else if (pressed & PSP_CTRL_CIRCLE) {
+            m->popup = MU_POPUP_MORE;
+            sound_play(SND_BACK);
+        } else if (pressed & PSP_CTRL_START) {
             m->popup = 0;
             sound_play(SND_BACK);
         }
         return;
     }
-    /* "...": Shuffle (Off, On), Repeat (Off, Current song, All) */
+    /* "...": the rows */
+    if (pressed & (PSP_CTRL_CIRCLE | PSP_CTRL_START)) {
+        m->popup = 0;
+        sound_play(SND_BACK);
+        return;
+    }
     if (mv == -2 || mv == 2) {
-        int next = (int)clampf((float)(m->popup_sel + (mv > 0 ? 1 : -1)), 0, 1);
+        int next = (int)clampf((float)(m->popup_sel + (mv > 0 ? 1 : -1)), 0, (float)(more_rows() - 1));
         if (next != m->popup_sel) {
             m->popup_sel = next;
             sound_play(SND_MOVE);
         }
-    } else if (mv == -1 || mv == 1 || (pressed & PSP_CTRL_CROSS)) {
-        int dir = mv == -1 ? -1 : 1;
-        if (m->popup_sel == 0)
-            music_set_shuffle(!music_shuffle());
-        else
-            cycle_repeat(dir);
-        sound_play(SND_MOVE);
+    } else if (pressed & PSP_CTRL_CROSS) {
+        m->choice_sel = row_value(m->popup_sel);
+        m->popup = MU_POPUP_CHOICE;
+        sound_play(SND_SELECT);
     }
 }
 
@@ -473,17 +516,24 @@ static void play_glyph(float cx, float cy, float r, int paused, u32 color)
 /* the centres of the five buttons in a row `y`, relative to the panel's left edge */
 static const float BTN_X[5] = { 19, 47, 76, 105, 133 };
 #define BTN_Y     178.0f
+#define BTN_R     14.0f  /* the white disc of the chosen button */
 #define BAR_Y     152.0f
 #define BAR_X     12.0f
 
-/* the player in the box (px, py): `focus` = the player has the focus (its chosen button gets a frame) */
-static void draw_player(MusicUi *m, float px, float py, float a, int focus)
+/* the player in the box (px, py): `focus` = the player has the focus (its chosen button is a white disc with a dark symbol, as the cog wheel and the buttons of Games are when they are
+ * chosen); `hint` = show the △ button at the top right (the Music screen: it moves between the list and the player: dark with a light △ while the list has the focus, the other way
+ * round, like the hints of every screen, in the player) */
+static void draw_player(MusicUi *m, float px, float py, float a, int focus, int hint)
 {
     Track t;
     int have = music_track(&t) && music_state() != MUSIC_STOPPED;
     int state = music_state();
     gfx_round_rect(px, py, PANEL_W, PANEL_H, 10, RGBA(10, 12, 18, (int)(150 * a)));
     text_draw(px + 12, py + 18, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_LEFT, L(S_TAB_MUSIC));
+    if (hint) {
+        u32 plate = focus ? LOOK_HINT_PLATE : LOOK_HINT_MARK, mark = focus ? LOOK_HINT_MARK : LOOK_HINT_PLATE;
+        gfx_button(px + PANEL_W - 20, py + 14, 6.5f, BTN_TRIANGLE, look_fade(plate, a), look_fade(mark, a));
+    }
 
     /* the cover, or a square with a note on it */
     float cx = px + (PANEL_W - COVER_S) / 2, cy = py + 28;
@@ -526,21 +576,28 @@ static void draw_player(MusicUi *m, float px, float py, float a, int focus)
             gfx_circle(bx + bw * clampf(el / du, 0, 1), by + 1.5f, 4.5f, fade(LIGHT, a));
     }
 
-    /* the buttons: volume, previous, play / pause, next, more */
+    /* the buttons: volume, previous, play / pause, next, more. Round, with no frame: the chosen one is a white disc with a dark symbol, the others are only their symbols */
     float by2 = py + BTN_Y;
-    u32 ic = fade(TEXT_MAIN, a);
-    gfx_speaker(px + BTN_X[0] - 4.5f, by2, ic);
-    gfx_rect(px + BTN_X[1] - 6, by2 - 5, 2, 10, ic);
-    gfx_triangle(px + BTN_X[1] - 4, by2 - 5, 9, 10, -1, ic);
-    gfx_triangle(px + BTN_X[3] - 5, by2 - 5, 9, 10, 1, ic);
-    gfx_rect(px + BTN_X[3] + 4, by2 - 5, 2, 10, ic);
-    for (int k = -1; k <= 1; k++)
-        gfx_circle(px + BTN_X[4] + k * 6, by2, 1.8f, ic);
-    gfx_circle(px + BTN_X[2], by2, 15, fade(LIGHT, 0.95f * a));
-    play_glyph(px + BTN_X[2], by2, 6, state == MUSIC_PLAYING, fade(DARK, a));
-    if (focus && m->pbtn <= MU_MORE) {
-        float half = m->pbtn == MU_PLAY ? 19.0f : 15.0f;
-        popup_choice(px + BTN_X[m->pbtn] - half, by2 - half, 2 * half, 2 * half, a);
+    for (int k = 0; k <= MU_MORE; k++) {
+        float bx2 = px + BTN_X[k];
+        int chosen = focus && m->pbtn == k;
+        if (chosen)
+            gfx_circle(bx2, by2, BTN_R, fade(LIGHT, a));
+        u32 ic = fade(chosen ? DARK : TEXT_MAIN, a);
+        if (k == MU_VOLUME) {
+            gfx_speaker_scaled(bx2 - 3.8f, by2, 0.85f, ic);
+        } else if (k == MU_PREV) {
+            gfx_rect(bx2 - 5, by2 - 4, 2, 8, ic);
+            gfx_triangle(bx2 - 3, by2 - 4, 8, 8, -1, ic);
+        } else if (k == MU_PLAY) {
+            play_glyph(bx2, by2, 5.4f, state == MUSIC_PLAYING, ic);
+        } else if (k == MU_NEXT) {
+            gfx_triangle(bx2 - 5, by2 - 4, 8, 8, 1, ic);
+            gfx_rect(bx2 + 3, by2 - 4, 2, 8, ic);
+        } else {
+            for (int d = -1; d <= 1; d++)
+                gfx_circle(bx2 + d * 5.5f, by2, 1.6f, ic);
+        }
     }
 }
 
@@ -661,58 +718,79 @@ static void draw_list(MusicUi *m, float a, float slide)
     }
 }
 
-/* the popups: the same dark panel, shadow and frame as every popup of the launcher (popup.h) */
+/* the popups: the same dark panel, shadow and frame as every popup of the launcher (popup.h). The volume has none: it is the launcher's own volume bar (osd.c). */
 static void draw_popup(MusicUi *m)
 {
     float a = clampf(m->popup_anim, 0, 1);
-    if (a <= 0.01f)
+    if (a <= 0.01f || m->popup == MU_POPUP_VOLUME)
         return;
     popup_dim(a);
-    if (m->popup == MU_POPUP_VOLUME) {
-        float w = 200, h = 78, x = (SCREEN_W - w) / 2, y = (SCREEN_H - h) / 2;
+    if (m->popup == MU_POPUP_CHOICE) { /* the values of one row, the chosen one framed, as Settings shows the values of a choice */
+        int row = m->popup_sel, n = row_values(row);
+        float w = 200;
+        for (int k = 0; k < n; k++)
+            w = fmaxf(w, ceilf(text_width(0.62f, 0, row_text(row, k))) + 32);
+        w = 2 * ceilf(fminf(w, SCREEN_W - 40) / 2);
+        float h = 2 * POPUP_EDGE + n * POPUP_ITEM, x = (SCREEN_W - w) / 2, y = (SCREEN_H - h) / 2 + (1 - a) * 10;
         popup_panel(x, y, w, h, POPUP_DARK, a);
-        text_draw(x + 16, y + 26, 0.62f, 0, fade(POPUP_TEXT, a), ALIGN_LEFT, L(S_VOLUME));
-        gfx_speaker(x + 16, y + 52, fade(POPUP_TEXT, a));
-        float bx = x + 40, bw = w - 40 - 44;
-        if (m->volume >= 0) {
-            look_bar(bx, y + 50.5f, bw, 4, m->volume > 0 ? fmaxf(4, bw * m->volume / VOLUME_MAX) : 0, a);
-            char num[8];
-            snprintf(num, sizeof(num), "%d", m->volume);
-            text_draw(x + w - 16, y + 57, 0.62f, 0, fade(POPUP_TEXT, a), ALIGN_RIGHT, num);
-        } else {
-            text_draw(bx, y + 57, 0.56f, 0, fade(POPUP_TEXT_DIM, a), ALIGN_LEFT, L(S_UNAVAILABLE));
+        for (int k = 0; k < n; k++) {
+            float ry = y + POPUP_EDGE + k * POPUP_ITEM;
+            u32 col = POPUP_TEXT;
+            if (k == m->choice_sel)
+                popup_choice(x + POPUP_EDGE, ry, w - 2 * POPUP_EDGE, POPUP_ITEM, a);
+            else
+                col = fade(col, 0.8f);
+            text_draw(x + 16, ry + 18, 0.62f, 0, fade(col, a), ALIGN_LEFT, row_text(row, k));
         }
         return;
     }
-    float w = 230, h = 2 * POPUP_ITEM + 2 * POPUP_EDGE, x = (SCREEN_W - w) / 2, y = (SCREEN_H - h) / 2;
+    int rows = more_rows();
+    float w = 230, h = rows * POPUP_ITEM + 2 * POPUP_EDGE, x = (SCREEN_W - w) / 2, y = (SCREEN_H - h) / 2;
     popup_panel(x, y, w, h, POPUP_DARK, a);
-    static const StrId rep_names[3] = { S_OFF, S_MU_REPEAT_ONE, S_ALL };
-    for (int r = 0; r < 2; r++) {
+    for (int r = 0; r < rows; r++) {
         float ry = y + POPUP_EDGE + r * POPUP_ITEM;
         if (r == m->popup_sel)
             popup_choice(x + POPUP_EDGE, ry, w - 2 * POPUP_EDGE, POPUP_ITEM, a);
-        text_draw(x + 16, ry + 18, 0.62f, 0, fade(POPUP_TEXT, a), ALIGN_LEFT, L(r == 0 ? S_MU_SHUFFLE : S_MU_REPEAT));
-        const char *value = r == 0 ? L(music_shuffle() ? S_ON : S_OFF) : L(rep_names[music_repeat()]);
-        text_draw(x + w - 16, ry + 18, 0.62f, 0, fade(r == m->popup_sel ? POPUP_TEXT : POPUP_TEXT_DIM, a), ALIGN_RIGHT, value);
+        text_draw(x + 16, ry + 18, 0.62f, 0, fade(POPUP_TEXT, a), ALIGN_LEFT, row_name(r));
+        text_draw(x + w - 16, ry + 18, 0.62f, 0, fade(r == m->popup_sel ? POPUP_TEXT : POPUP_TEXT_DIM, a), ALIGN_RIGHT, row_text(r, row_value(r)));
     }
 }
 
 /* ---------------------------------------------------------------------- */
 /* the player as a popup in the middle of the screen (the PSP's sound button, from any screen) */
 
+/* The popup has a player state of its own (m->mp). While one of its functions runs, the fields of the player are the popup's: they are swapped in and out, so that the screen's player (which
+ * is drawn behind the popup and gets neutral input) and the popup never share a held button, a chosen button or an open popup. */
+static void swap_player(MusicUi *m)
+{
+    PlayerState t = { m->pbtn, m->popup, m->popup_sel, m->choice_sel, m->popup_anim, m->rep_dir, m->rep_timer, m->rep_held, m->seek_to, m->seek_show };
+    m->pbtn = m->mp.pbtn;
+    m->popup = m->mp.popup;
+    m->popup_sel = m->mp.popup_sel;
+    m->choice_sel = m->mp.choice_sel;
+    m->popup_anim = m->mp.popup_anim;
+    m->rep_dir = m->mp.rep_dir;
+    m->rep_timer = m->mp.rep_timer;
+    m->rep_held = m->mp.rep_held;
+    m->seek_to = m->mp.seek_to;
+    m->seek_show = m->mp.seek_show;
+    m->mp = t;
+}
+
 void musicui_mini_open(MusicUi *m)
 {
-    m->mini = 1;
+    swap_player(m);
     m->pbtn = MU_PLAY;
     m->popup = 0;
     m->popup_anim = 0;
     m->rep_dir = 0;
+    swap_player(m);
+    m->mini = 1;
     sound_play(SND_SELECT);
 }
 
-int musicui_mini_update(MusicUi *m, u32 pressed, u32 held, int lx, int ly, float dt, int note)
+static int mini_update(MusicUi *m, u32 pressed, u32 held, int lx, int ly, float dt, int note)
 {
-    m->time += dt;
     if (m->seek_show > 0)
         m->seek_show -= dt;
     m->mini_anim = clampf(m->mini_anim + (m->mini ? 8 : -8) * dt, 0, 1);
@@ -734,21 +812,31 @@ int musicui_mini_update(MusicUi *m, u32 pressed, u32 held, int lx, int ly, float
     return 0;
 }
 
+int musicui_mini_update(MusicUi *m, u32 pressed, u32 held, int lx, int ly, float dt, int note)
+{
+    swap_player(m);
+    int r = mini_update(m, pressed, held, lx, ly, dt, note);
+    swap_player(m);
+    return r;
+}
+
 void musicui_mini_draw(MusicUi *m)
 {
     float a = clampf(m->mini_anim, 0, 1);
     if (a <= 0.01f)
         return;
+    swap_player(m);
     popup_dim(a);
     float px = (SCREEN_W - PANEL_W) / 2, py = (SCREEN_H - PANEL_H) / 2 + (1 - a) * 8;
     popup_panel(px - 8, py - 8, PANEL_W + 16, PANEL_H + 16, POPUP_DARK, a);
-    draw_player(m, px, py, a, !m->popup);
+    draw_player(m, px, py, a, 1, 0);
     draw_popup(m);
+    swap_player(m);
 }
 
 void musicui_draw(MusicUi *m, float a, float slide)
 {
     draw_list(m, a, slide);
-    draw_player(m, PANEL_X, PANEL_Y + slide, a, m->focus && !m->popup);
+    draw_player(m, PANEL_X, PANEL_Y + slide, a, m->focus, 1);
     draw_popup(m);
 }

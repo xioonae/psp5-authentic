@@ -17,5 +17,7 @@ void osd_draw(void);
 int osd_note_pressed(void);
 /* A picture that osd_draw() draws over the screen, before the volume indicator: the player popup of the sound button (main.c). NULL = none. */
 void osd_set_overlay(void (*draw)(void));
+/* Shows the volume bar now and keeps it for a moment (the player's volume button: ← → then change the volume, and the bar shows what it is). */
+void osd_show_volume(void);
 
 #endif

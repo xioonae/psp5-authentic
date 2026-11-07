@@ -181,6 +181,65 @@ static void mini_overlay(void)
         musicui_mini_draw(s_mini_mu);
 }
 
+/* The sound button, once a frame, in every screen where the music goes on (the main loop, the File Manager, the FTP screen): it opens the popup, the popup gets the buttons while it is open
+ * (and the button that closes it), and the screen below gets none (*in is made neutral: 1 is returned). `allow` = no game is being started. `keep_cover` = the cover is still shown by a screen. */
+static int note_popup(MusicUi *mu, UiInput *in, float dt, int allow, int keep_cover)
+{
+    int note = allow && !s_sleeping ? osd_note_pressed() : 0;
+    if (!mu->mini && note)
+        musicui_mini_open(mu);
+    else if (mu->mini || mu->mini_anim > 0) {
+        int closed = musicui_mini_update(mu, in->pressed, in->held, in->lx, in->ly, dt, note);
+        if (closed && !keep_cover)
+            musicui_release_cover(mu);
+    }
+    if (mu->mini || note) {
+        UiInput none = UI_NO_INPUT;
+        *in = none; /* the screen below is not touched while the popup is open */
+        if (music_needs_cjk())
+            font_ensure_cjk(); /* (Japanese or Russian titles: loaded once) */
+        return 1;
+    }
+    return 0;
+}
+
+/* The File Manager and the FTP screen keep the music going (they are screens of their own, with their own loop, and the Ui of the launcher is gone: the popup has a MusicUi of its own) */
+static MusicUi s_mode_mu;
+static int s_mode_paused; /* the PSP went to sleep and the music was paused: it goes on when the PSP wakes */
+static void mode_music_begin(void)
+{
+    musicui_init(&s_mode_mu);
+    s_mode_paused = 0;
+    s_mini_mu = &s_mode_mu;
+    osd_set_overlay(mini_overlay);
+}
+static void mode_music_end(void)
+{
+    osd_set_overlay(NULL);
+    s_mini_mu = NULL;
+    musicui_free(&s_mode_mu);
+    if (s_mode_paused && music_state() == MUSIC_PAUSED)
+        music_toggle_pause();
+    s_mode_paused = 0;
+}
+/* once a frame in such a screen: the music is paused while the PSP sleeps (as the launcher does) and goes on when it wakes */
+static void mode_music_sleep(void)
+{
+    if (!s_sleeping)
+        return;
+    if (!s_mode_paused && music_state() == MUSIC_PLAYING) {
+        music_toggle_pause();
+        s_mode_paused = 1;
+    }
+    if (s_resumed) {
+        s_sleeping = s_resumed = 0;
+        if (s_mode_paused) {
+            music_toggle_pause();
+            s_mode_paused = 0;
+        }
+    }
+}
+
 /* Bygger upp allt: grafik, typsnitt, spellista, laddartråd. */
 static void app_start(EntryList *list, Ui *ui, int boot)
 {
@@ -250,19 +309,26 @@ static void sleep_and_wake(Ui *ui)
     ui_replay_intro(ui);
 }
 
-/* Frigör allt i omvänd ordning – inför spelstart, USB-läge eller avslut. */
-static void app_stop(EntryList *list, Ui *ui)
+/* Frigör allt i omvänd ordning – inför spelstart, USB-läge eller avslut. `keep_music`: the music goes on (the File Manager and the FTP screen: their screens have no use for the
+ * memory of the music, and the songs are played from the same card they work on). */
+static void app_stop_ex(EntryList *list, Ui *ui, int keep_music)
 {
     umd_stop();
     osd_set_overlay(NULL);
     s_mini_mu = NULL;
     loader_stop(); /* (before music_term: the loader reads the covers of the songs) */
-    music_term();
+    if (!keep_music)
+        music_term();
     sound_term();
     ui_free(ui);
     font_term();
     gfx_term();
     scan_free(list);
+}
+
+static void app_stop(EntryList *list, Ui *ui)
+{
+    app_stop_ex(list, ui, 0);
 }
 
 /* UMD-skivan har satts i eller tagits ut: lägg in den först i listan eller ta bort den. */
@@ -432,6 +498,7 @@ static int ftp_mode(void)
     gfx_init();
     font_init(lang_needs_cjk());
     sound_init();
+    mode_music_begin();
     ftpscreen_open(&s_running);
     power_reset();
     int pending = SA_NONE;
@@ -446,6 +513,9 @@ static int ftp_mode(void)
         last = now;
         if (dt > 0.05f)
             dt = 0.05f;
+        osd_update(dt);
+        mode_music_sleep();
+        note_popup(&s_mode_mu, &in, dt, 1, 0); /* the player of the sound button (the buttons are the popup's while it is open) */
         pending = power_step(&in, dt, 1);
         if (pending != SA_NONE)
             break;
@@ -453,7 +523,6 @@ static int ftp_mode(void)
             break;
         scePowerTick(PSP_POWER_TICK_SUSPEND); /* it must not go to sleep while a computer is connected (the screen's own backlight timer goes on) */
         t += dt;
-        osd_update(dt);
         ftpscreen_draw(t);
         power_draw();
         osd_draw();
@@ -469,6 +538,7 @@ static int ftp_mode(void)
         gfx_end();
     }
     ftpscreen_close();
+    mode_music_end();
     sound_term();
     s_sleeping = s_resumed = 0;
     font_term();
@@ -487,6 +557,7 @@ static int files_mode(int pick)
         files_open_pick();
     else
         files_open();
+    mode_music_begin();
     power_reset();
     int pending = SA_NONE;
     u32 old = ~0u; /* ignore the button that opened it, whichever it is (the confirm button) */
@@ -500,6 +571,8 @@ static int files_mode(int pick)
         if (dt > 0.05f)
             dt = 0.05f;
         osd_update(dt);
+        mode_music_sleep();
+        note_popup(&s_mode_mu, &in, dt, 1, 0); /* the player of the sound button (the buttons are the popup's while it is open) */
         int pwr = power_step(&in, dt, !files_modal());
         if (pwr == SA_SUSPEND) {
             sys_suspend();
@@ -513,6 +586,7 @@ static int files_mode(int pick)
         files_draw();
     }
     files_close();
+    mode_music_end();
     sound_term();
     s_sleeping = s_resumed = 0;
     font_term();
@@ -578,11 +652,11 @@ static int run_action(int action, EntryList *list, Ui *ui)
         after_visit(usb_mode());
         return 1; /* filer kan ha ändrats – skanna om */
     case SA_FILES:
-        app_stop(list, ui);
+        app_stop_ex(list, ui, 1); /* the music goes on in the File Manager */
         after_visit(files_mode(0));
         return 1;
     case SA_PLUGIN_PICK:
-        app_stop(list, ui);
+        app_stop_ex(list, ui, 1);
         after_visit(files_mode(1));
         return 1;
     case SA_WIFI:
@@ -590,7 +664,7 @@ static int run_action(int action, EntryList *list, Ui *ui)
         wifi_mode();
         return 1;
     case SA_FTP:
-        app_stop(list, ui);
+        app_stop_ex(list, ui, 1); /* ... and in the FTP screen */
         after_visit(ftp_mode());
         return 1; /* files may have changed: scan again */
     case SA_CLEAR_CACHE:
@@ -689,21 +763,9 @@ int main(int argc, char *argv[])
             if (up >= START_OK_AFTER)
                 start_confirmed(); /* the menu works */
         }
-        { /* The sound button: the player as a popup over whatever screen is open (musicui.h). While it is open it gets the buttons and the screen below gets none;
-           * the button that closes it is not passed on either. */
-            int note = ui.launch < 0 && !s_sleeping ? osd_note_pressed() : 0;
-            if (!ui.mu.mini && note)
-                musicui_mini_open(&ui.mu);
-            else if (ui.mu.mini || ui.mu.mini_anim > 0) {
-                int closed = musicui_mini_update(&ui.mu, in.pressed, in.held, in.lx, in.ly, dt, note);
-                if (closed && ui.tab != TAB_MUSIC)
-                    musicui_release_cover(&ui.mu);
-            }
-            if (ui.mu.mini || note) {
-                UiInput none = UI_NO_INPUT;
-                in = none; /* the screen below is not touched while the popup is open */
-            }
-        }
+        /* The sound button: the player as a popup over whatever screen is open (musicui.h). While it is open it gets the buttons and the screen below gets none;
+         * the button that closes it is not passed on either. */
+        note_popup(&ui.mu, &in, dt, ui.launch < 0, ui.tab == TAB_MUSIC);
 
         if (in_saves) { /* Games and Apps, Manage Saved Data (opened from Settings > Storage): the list stands still while the screen is open */
             UiInput none = UI_NO_INPUT;

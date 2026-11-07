@@ -129,9 +129,10 @@ Where to go from there:
 - **↑ from the first thing on a tab** selects the top bar: ← → between Games, Media and the cog wheel (in the Library and in Music only the cog wheel: the word is a title) · Confirm opens a tab, or the settings on the cog wheel · ↓ goes back down · Back goes back to the selected game.
 - **Media** is a row of cards like Games; ✕ (or *Open*) on the **Music** card opens the Music screen, ○ comes back.
 - **Music** reads only the `MUSIC` folder (`ms0:/MUSIC`, and `ef0:/MUSIC` on a PSP with internal storage). With both, you first choose *Memory Stick* or *System Storage*; with one, you are in it at once. In the list ✕ opens a folder or plays a song (the songs of that
-  folder play one after the other), ○ goes up a folder (and out of Music from the top), △ moves to the player and back. In the player ← → choose a button (volume, previous, play / pause, next, **⋯**) and ✕ presses it; ↑ chooses the progress bar, then ← → (or the stick)
-  jump 10 seconds; **⋯** opens *Shuffle* (Off / On) and *Repeat* (Off / Current Song / All = the whole folder); the speaker opens the volume.
-- **The music goes on** when you leave Music or the Media tab. The PSP's **♪** button shows the player alone in the middle of the screen, over the screens of the launcher (not in the File Manager, USB Mode and the FTP server: they stop the music); ♪ or ○ closes it.
+  folder play one after the other), ○ goes up a folder (and out of Music from the top), △ moves to the player and back (the △ hint at the top right of the player is black on white while you are in it). In the player ← → choose a button (volume, previous, play / pause, next, **⋯**; the
+  one you are on turns white) and ✕ presses it; ↑ chooses the progress bar, then ← → (or the stick) jump 10 seconds; **⋯** opens *Shuffle*, *Repeat* and *Equalizer*, and ✕ on one opens a popup with its values (Shuffle Off / On, Repeat Off / Current Song / All = the whole folder,
+  Equalizer the PSP's own); the speaker chooses the volume: ← → change the PSP's volume (the launcher's volume bar shows it), ✕ or ○ ends.
+- **The music goes on** when you leave Music or the Media tab, and in the File Manager and the FTP server (USB Mode and starting a game stop it). The PSP's **♪** button shows the player alone in the middle of the screen, over all of these; ♪ or ○ closes it.
 - **What plays**: MP3, WAV (PCM, 8 to 32 bits, mono or stereo) and ATRAC3 / ATRAC3plus (`.at3`, `.oma`, `.aa3`). AAC / M4A, WMA, Ogg and FLAC are not played; a file that can't be played is skipped.
 - **A name that is too long** scrolls after a moment: the name next to the big card, the selected card in the Library, and the highlighted row in the File Manager, *Manage Saved Data* and *Games and Apps*.
 

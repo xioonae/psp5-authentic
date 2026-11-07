@@ -80,7 +80,7 @@ wherever it can, but it doesn't copy the console in everything.
   On a PSP Go with a Memory Stick there are two blocks, one for each storage.
 - **Media and Music.** The Media tab is a row of cards like the Games tab; for now it has one card, **Music** (video and pictures come later), on a drawn background in your theme's colours.
   Music reads only the `MUSIC` folder of the Memory Stick and of the internal storage and shows its folders as folders; it plays MP3, WAV (PCM) and ATRAC3 / ATRAC3plus (`.at3`, `.oma`, `.aa3`) files with title, artist and album art (from the file, or a
-  `cover.jpg` / `folder.jpg` in the folder). The player has a progress bar you can jump in (10 seconds a step), volume, shuffle and repeat (off, one song, the whole folder). The music keeps playing while you browse your games, and the PSP's ♪ button shows the player as a popup.
+  `cover.jpg` / `folder.jpg` in the folder). The player has a progress bar you can jump in (10 seconds a step), volume, shuffle, repeat (off, one song, the whole folder) and the equalizer. The music keeps playing while you browse your games or use the File Manager, and the PSP's ♪ button shows the player as a popup.
 - **Settings** (the cog wheel). One list at a time, like the console's: Confirm opens a page, Back goes back one. The first list has six pages:
   - *psp5 authentic* – boot into psp5 authentic, sounds, startup animation, battery percentage, clear the image cache.
   - *Network* – the PSP's own Wi-Fi screen and the FTP Server.

@@ -10,7 +10,19 @@
  * round the chosen line. ✕ opens a folder or plays a song (and the songs of that folder play one after the other), ○ goes up a folder (and out of the screen from the top),
  * △ moves between the list and the player. On the right the player (the picture "Music Player.png", without the key signs): the cover, the title and the artist, the
  * bar with the time played, and the buttons: volume, previous, play / pause, next and "...". ← → move over the buttons, ↑ selects the bar (← → then jump 10 seconds),
- * ✕ presses a button. "..." opens a popup with Shuffle (Off, On) and Repeat (Off, Current song, All: the folder), the speaker one with the volume, as Settings has it. */
+ * ✕ presses a button. "..." opens a list with Shuffle, Repeat and Equalizer (✕ on one opens a popup with its values, as Settings does), the speaker shows the launcher's volume bar and ← → change the volume. */
+
+/* What the player (the buttons, the bar, the popups) is doing: the Music screen has one, the popup of the sound button has another, so that the two never take each other's presses */
+typedef struct PlayerState {
+    int pbtn;                  /* the button chosen (MU_VOLUME .. MU_MORE), or MU_BAR */
+    int popup;                 /* 0 = none, MU_POPUP_MORE, MU_POPUP_CHOICE, MU_POPUP_VOLUME */
+    int popup_sel;             /* the row of the "..." popup */
+    int choice_sel;            /* the value chosen in the popup of a row */
+    float popup_anim;          /* 0..1 */
+    int rep_dir;               /* a held direction repeats */
+    float rep_timer, rep_held;
+    float seek_to, seek_show;  /* the bar: where the last jump went to, shown a moment (the song has not got there yet) */
+} PlayerState;
 
 typedef struct MusicUi {
     int level;                 /* 0 = the list of storages, 1 = a folder */
@@ -25,18 +37,21 @@ typedef struct MusicUi {
     int sel_stack[16];         /* where the choice was in each folder above this one, for ○ */
     int depth;
     int focus;                 /* 0 = the list, 1 = the player */
-    int pbtn;                  /* in the player: the button chosen (MU_VOLUME ... MU_MORE), or MU_BAR */
-    int popup;                 /* 0 = none, MU_POPUP_MORE, MU_POPUP_VOLUME */
+    /* the player of the screen: */
+    int pbtn;                  /* the button chosen (MU_VOLUME ... MU_MORE), or MU_BAR */
+    int popup;                 /* 0 = none, MU_POPUP_MORE (Shuffle, Repeat, Equalizer), MU_POPUP_CHOICE (the values of one of them), MU_POPUP_VOLUME (the launcher's volume bar is shown and ← → change it) */
     int popup_sel;             /* the row of the "..." popup */
-    int mini;                  /* the player popup of the sound button is open */
-    float mini_anim;           /* 0..1 */
+    int choice_sel;            /* the value chosen in the popup of a row */
     float popup_anim;          /* 0..1 */
-    int volume;                /* the volume in the popup (0..30), -1 = the system cannot say */
     /* a held direction repeats */
     int rep_dir;
     float rep_timer, rep_held;
     /* the bar: where the last jump went to, shown a moment (the song has not got there yet) */
     float seek_to, seek_show;
+    /* the player popup of the sound button: its own state (while it is open the fields above are the screen's) */
+    int mini;                  /* it is open */
+    float mini_anim;           /* 0..1 */
+    PlayerState mp;
     float name_t;              /* seconds since the chosen name was shown, for its scrolling */
     /* the cover of the song that plays */
     Texture *cover;
@@ -46,7 +61,7 @@ typedef struct MusicUi {
 } MusicUi;
 
 enum { MU_VOLUME, MU_PREV, MU_PLAY, MU_NEXT, MU_MORE, MU_BAR, MU_BUTTONS };
-enum { MU_POPUP_MORE = 1, MU_POPUP_VOLUME };
+enum { MU_POPUP_MORE = 1, MU_POPUP_CHOICE, MU_POPUP_VOLUME };
 enum { MUSICUI_NONE, MUSICUI_CLOSE, MUSICUI_TOP }; /* what musicui_update asks of the screen around it: leave the Music screen, or select the top bar */
 
 void musicui_init(MusicUi *m);

@@ -78,6 +78,11 @@ void osd_set_overlay(void (*draw)(void))
     s_overlay = draw;
 }
 
+void osd_show_volume(void)
+{
+    s_shown = SHOW_TIME;
+}
+
 void osd_update(float dt)
 {
     int vol = get_param(PSP_IMPOSE_MAIN_VOLUME), mute = get_param(PSP_IMPOSE_MUTE);

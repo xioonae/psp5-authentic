@@ -828,6 +828,22 @@ void gfx_speaker(float x, float y, u32 color)
     gfx_quad(cone, cc);
 }
 
+void gfx_speaker_scaled(float x, float y, float scale, u32 color)
+{
+    float rad = 4.5f * scale;
+    IconBox b;
+    icon_box(ICON_SPEAKER, x + rad, y, 0, 0, rad, &b);
+    const Texture *tex = icon_get(ICON_SPEAKER, 0, 0, rad, &b);
+    if (tex) {
+        icon_blit(tex, &b, color);
+        return;
+    }
+    gfx_rect(x, y - 3 * scale, 4 * scale, 6 * scale, color);
+    float cone[8] = { x + 3.5f * scale, y - 3 * scale, x + 9 * scale, y - 7.5f * scale, x + 3.5f * scale, y + 3 * scale, x + 9 * scale, y + 7.5f * scale };
+    u32 cc[4] = { color, color, color, color };
+    gfx_quad(cone, cc);
+}
+
 /* The images of the Library picture, one for each height it has been drawn at. They are not in the cache above, which lets go of
  * what was not used for a frame: the card goes through about twenty heights when it grows or shrinks, one new height per frame,
  * and making an image is not something a frame can afford (icon_library_image has the ready-made ones for those heights, so
