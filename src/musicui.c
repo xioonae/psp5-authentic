@@ -571,12 +571,12 @@ static const float BTN_X[5] = { 19, 47, 76, 105, 133 };
 /* the player in the box (px, py): `focus` = the player has the focus (its chosen button is a white disc with a dark symbol, as the cog wheel and the buttons of Games are when they are
  * chosen); `hint` = show the △ button at the top right (the Music screen: it moves between the list and the player: dark with a light △ while the list has the focus, the other way
  * round, like the hints of every screen, in the player) */
-static void draw_player(MusicUi *m, float px, float py, float a, int focus, int hint)
+static void draw_player(MusicUi *m, float px, float py, float a, int focus, int hint, int panel)
 {
     Track t;
     int have = music_track(&t) && music_state() != MUSIC_STOPPED;
     int state = music_state();
-    gfx_round_rect(px, py, PANEL_W, PANEL_H, 10, RGBA(10, 12, 18, (int)(150 * a)));
+    gfx_round_rect(px, py, PANEL_W, PANEL_H, 10, RGBA(10, 12, 18, (int)(panel * a)));
     text_draw(px + 12, py + 18, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_LEFT, L(S_TAB_MUSIC));
     if (hint) {
         u32 plate = focus ? LOOK_HINT_PLATE : LOOK_HINT_MARK, mark = focus ? LOOK_HINT_MARK : LOOK_HINT_PLATE;
@@ -618,11 +618,8 @@ static void draw_player(MusicUi *m, float px, float py, float a, int focus, int 
         time_text(d, sizeof(d), du);
         text_draw(bx + bw, by - 5, 0.42f, 0, fade(TEXT_DIM, a), ALIGN_RIGHT, d);
     }
-    if (focus && m->pbtn == MU_BAR) {
-        popup_choice(bx - 5, by - 6, bw + 10, 15, a);
-        if (have && du > 0)
-            gfx_circle(bx + bw * clampf(el / du, 0, 1), by + 1.5f, 4.5f, fade(LIGHT, a));
-    }
+    if (focus && m->pbtn == MU_BAR && have && du > 0) /* the bar is chosen: a dot where the song is now (no frame round it) */
+        gfx_circle(bx + bw * clampf(el / du, 0, 1), by + 1.5f, 4.5f, fade(LIGHT, a));
 
     /* the buttons: volume, previous, play / pause, next, more. Round, with no frame: the chosen one is a white disc with a dark symbol, the others are only their symbols */
     float by2 = py + BTN_Y;
@@ -879,8 +876,7 @@ void musicui_mini_draw(MusicUi *m)
     swap_player(m);
     popup_dim(a);
     float px = (SCREEN_W - PANEL_W) / 2, py = (SCREEN_H - PANEL_H) / 2 + (1 - a) * 8;
-    popup_panel(px - 8, py - 8, PANEL_W + 16, PANEL_H + 16, POPUP_DARK, a);
-    draw_player(m, px, py, a, 1, 0);
+    draw_player(m, px, py, a, 1, 0, 240); /* only the dark rounded player, nearly solid so that what is behind does not show through (no panel behind it) */
     draw_popup(m);
     swap_player(m);
 }
@@ -888,6 +884,6 @@ void musicui_mini_draw(MusicUi *m)
 void musicui_draw(MusicUi *m, float a, float slide)
 {
     draw_list(m, a, slide);
-    draw_player(m, PANEL_X, PANEL_Y + slide, a, m->focus, 1);
+    draw_player(m, PANEL_X, PANEL_Y + slide, a, m->focus, 1, 150);
     draw_popup(m);
 }

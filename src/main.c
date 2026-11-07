@@ -186,14 +186,15 @@ static void mini_overlay(void)
 static int note_popup(MusicUi *mu, UiInput *in, float dt, int allow, int keep_cover)
 {
     int note = allow && !s_sleeping ? osd_note_pressed() : 0;
+    int closed = 0;
     if (!mu->mini && note)
         musicui_mini_open(mu);
     else if (mu->mini || mu->mini_anim > 0) {
-        int closed = musicui_mini_update(mu, in->pressed, in->held, in->lx, in->ly, dt, note);
+        closed = musicui_mini_update(mu, in->pressed, in->held, in->lx, in->ly, dt, note);
         if (closed && !keep_cover)
             musicui_release_cover(mu);
     }
-    if (mu->mini || note) {
+    if (mu->mini || note || closed) { /* (also in the frame that ○ closes it: that press is the popup's, the screen below does not get it) */
         UiInput none = UI_NO_INPUT;
         *in = none; /* the screen below is not touched while the popup is open */
         if (music_needs_cjk())
