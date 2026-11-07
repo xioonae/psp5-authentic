@@ -46,7 +46,8 @@ struct VideoPlayer {
     float rep_hold;
     int seek_pending;
     float seek_target, seek_wait;
-    int was_paused;      /* the state before the PSP went to sleep */
+    int asleep;          /* the PSP sleeps: the video waits */
+    int held;            /* a popup of the launcher is over the video: it waits */
     float ask_anim;
 };
 
@@ -135,16 +136,25 @@ void videoplay_close(VideoPlayer *v)
     free(v);
 }
 
+/* the engine waits when the user paused it, the question is on screen, a popup of the launcher is over it or the PSP sleeps */
+static void apply_pause(VideoPlayer *v)
+{
+    if (v->vid)
+        video_pause(v->vid, v->paused || v->ask || v->held || v->asleep);
+}
+
 void videoplay_sleep(VideoPlayer *v, int asleep)
 {
-    if (!v->vid)
+    v->asleep = asleep;
+    apply_pause(v);
+}
+
+void videoplay_hold(VideoPlayer *v, int hold)
+{
+    if (hold == v->held)
         return;
-    if (asleep) {
-        v->was_paused = v->paused;
-        video_pause(v->vid, 1);
-    } else {
-        video_pause(v->vid, v->was_paused || v->ask);
-    }
+    v->held = hold;
+    apply_pause(v);
 }
 
 static void go(VideoPlayer *v, int by)
@@ -195,6 +205,7 @@ int videoplay_update(VideoPlayer *v, u32 pressed, u32 held, int lx, int ly, floa
             v->ask = 0;
             if (!video_play(v->vid, v->ask_sel == 0 ? v->resume_at : 0))
                 FAIL(v);
+            apply_pause(v);
         }
         return 0;
     }
@@ -202,12 +213,12 @@ int videoplay_update(VideoPlayer *v, u32 pressed, u32 held, int lx, int ly, floa
         if (v->ended) { /* played to the end: ✕ plays it again */
             v->ended = 0;
             v->paused = 0;
-            video_pause(v->vid, 0);
+            apply_pause(v);
             if (!video_play(v->vid, 0))
                 FAIL(v);
         } else {
             v->paused = !v->paused;
-            video_pause(v->vid, v->paused);
+            apply_pause(v);
         }
     }
     int dir = (held & PSP_CTRL_RIGHT) ? 1 : (held & PSP_CTRL_LEFT) ? -1 : 0;
@@ -236,7 +247,7 @@ int videoplay_update(VideoPlayer *v, u32 pressed, u32 held, int lx, int ly, floa
 #endif
                 FAIL(v);
             }
-            video_pause(v->vid, v->paused);
+            apply_pause(v);
         }
     }
     if (!v->paused && !v->ask)

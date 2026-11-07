@@ -1224,19 +1224,6 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         ui->toast_time -= dt;
     sort_by_size_again(ui, dt);
 
-    if (ui->iv || ui->vp) { /* the image viewer or the video player has the whole screen and all the buttons (○ closes it: the list of its screen is as it was left) */
-        int done = ui->iv ? imageview_update(ui->iv, in->pressed, in->held, in->lx, in->ly, dt) : videoplay_update(ui->vp, in->pressed, in->held, in->lx, in->ly, dt);
-        if (done) {
-            if (ui->iv)
-                imageview_close(ui->iv);
-            else
-                videoplay_close(ui->vp);
-            ui->iv = NULL;
-            ui->vp = NULL;
-            sound_play(SND_BACK);
-        }
-        return UI_NONE;
-    }
     if (ui->launch >= 0) {
         ui->launch += dt / LAUNCH_LEN;
         return ui->launch >= 1 ? UI_LAUNCH : UI_NONE;
@@ -1304,6 +1291,23 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     if (!ui->menu_open && (in->pressed & PSP_CTRL_SELECT) && ui->intro >= 1) { /* on every tab, also with the top bar selected */
         open_power_menu(ui, in);
         in = &none;
+    }
+    if (ui->iv || ui->vp) { /* the image viewer or the video player has the whole screen and all the buttons, but for SELECT (the power popup, above) and while it is open (a video waits) */
+        if (ui->vp)
+            videoplay_hold(ui->vp, ui->menu_open);
+        if (ui->menu_open)
+            return UI_NONE;
+        int done = ui->iv ? imageview_update(ui->iv, in->pressed, in->held, in->lx, in->ly, dt) : videoplay_update(ui->vp, in->pressed, in->held, in->lx, in->ly, dt);
+        if (done) {
+            if (ui->iv)
+                imageview_close(ui->iv);
+            else
+                videoplay_close(ui->vp);
+            ui->iv = NULL;
+            ui->vp = NULL;
+            sound_play(SND_BACK);
+        }
+        return UI_NONE;
     }
     if (ui->tab == TAB_LIBRARY) {
         int avail = lib_buttons(ui);
@@ -2209,6 +2213,7 @@ void ui_draw(Ui *ui)
             imageview_draw(ui->iv);
         else
             videoplay_draw(ui->vp);
+        draw_menu(ui); /* (the power popup, SELECT) */
         osd_draw();
         gfx_end();
         return;
@@ -2230,8 +2235,7 @@ void ui_draw(Ui *ui)
         draw_empty(ui);
     }
     draw_toast(ui); /* under the popup: a toast from the last action must not cover the choices or the question */
-    if (ui->tab == TAB_GAMES || ui->tab == TAB_LIBRARY)
-        draw_menu(ui);
+    draw_menu(ui); /* on every screen: the options popups of Games and the Library, and the power popup (SELECT) of all of them */
     gameops_draw(); /* förloppet när ett spel raderas (annars ingenting) */
     osd_draw();
 

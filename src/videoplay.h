@@ -18,5 +18,7 @@ void videoplay_draw(VideoPlayer *v);
 void videoplay_close(VideoPlayer *v);
 /* the PSP goes to sleep / wakes up: the video is paused (and goes on when it wakes if it played) */
 void videoplay_sleep(VideoPlayer *v, int asleep);
+/* a popup of the launcher is over the video (the power popup): the video waits, and goes on when it is gone */
+void videoplay_hold(VideoPlayer *v, int hold);
 
 #endif
