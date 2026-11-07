@@ -25,8 +25,8 @@ wherever it can, but it doesn't copy the console in everything.
     <td width="50%"><img src="docs/screenshots/games-and-apps.png" alt="Games and Apps"><br><sub><b>Games and Apps</b> – all your games and apps: sort them, mark several and delete them, with the space you get back</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/music.png" alt="Music"><br><sub><b>Music</b> (the Media tab) – your songs with album art; the music keeps playing while you browse your games</sub></td>
-    <td width="50%"><img src="docs/screenshots/file-manager.png" alt="File Manager"><br><sub><b>File Manager</b> – browse the Memory Stick, mark files and folders, then copy, move or delete them</sub></td>
+    <td width="50%"><img src="docs/screenshots/media.png" alt="Media"><br><sub><b>Media</b> – a row of cards like Games; for now it has one card, <i>Music</i>, on a background drawn in your theme's colours (video and pictures come later)</sub></td>
+    <td width="50%"><img src="docs/screenshots/music.png" alt="Music"><br><sub><b>Music</b> (the Media tab → Music) – your songs in a list like the File Manager's and a player you steer with the buttons; the music keeps playing while you browse your games</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/settings.png" alt="Settings"><br><sub><b>Settings</b> – six pages, one list; Confirm opens one, Back goes back</sub></td>
@@ -53,8 +53,8 @@ wherever it can, but it doesn't copy the console in everything.
     <td width="50%"><img src="docs/screenshots/settings-date-time.png" alt="Settings, Date and Time"><br><sub><b>System → Date and Time</b> – the date and time that psp5 authentic shows, with Daylight Saving (one hour less or more), the date format and the 12- or 24-hour clock. The time in the picture is a test value.</sub></td>
   </tr>
   <tr>
+    <td width="50%"><img src="docs/screenshots/file-manager.png" alt="File Manager"><br><sub><b>File Manager</b> – browse the Memory Stick, mark files and folders, then copy, move or delete them</sub></td>
     <td width="50%"><img src="docs/screenshots/file-manager-conflict.png" alt="File Manager, a name that is taken"><br><sub><b>File Manager</b> – when a name is taken: <i>Overwrite</i>, <i>Skip</i>, <i>Merge</i> (folders), <i>Rename</i> or <i>Cancel</i>, with <i>Apply to All</i> (△) for the rest</sub></td>
-    <td width="50%"></td>
   </tr>
 </table>
 

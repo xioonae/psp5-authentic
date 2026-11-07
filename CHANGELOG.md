@@ -21,6 +21,7 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   the PSP's own music format, through the library of the firmware). A file that cannot be played is skipped. **Not in yet: AAC (`.m4a`, `.aac`) and WMA** (the firmware has an AAC decoder, but it can't be used safely without a PSP to try it on), and Ogg and FLAC, which the PSP has no decoder for.
   **None of the decoding has been tried on a real PSP yet:** it was tested against stand-ins of the PSP's libraries, so the player's own logic is checked, not the sound of a codec.
 - The old Music screen's code was replaced: the scan of the whole card for tags is gone (only the song that plays has its tags read), and the Music tab's list, position bar and keys went with it.
+- **README pictures:** new ones of the Media tab and the Music screen (taken in the PPSSPP emulator, with a song of the invented demo stick playing), and four others (Games, Options, Theme, Power menu) taken again because the top bar says *Media* now.
 
 ### Memory
 
