@@ -5,78 +5,164 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include "imageview.h"
 #include "image.h"
 #include "gfx.h"
 #include "lang.h"
 #include "sound.h"
+#include "system.h"
 
 #define OVERLAY_SHOW 3.0f /* seconds the overlay is there after a press */
 #define OVERLAY_FADE 0.5f /* ... the last of them are its going away */
+
+#define CACHE 4 /* pictures kept ready: the one shown, the one before and after it, and the one that is fading out */
+
+typedef struct {
+    int index;    /* -1 = free */
+    Texture *tex; /* NULL = it could not be read (it is not tried again until it has been dropped) */
+} Slot;
 
 struct ImageView {
     char dir[256];
     const MusicEntry *files;
     int count, index;
-    Texture *tex;      /* the picture that is shown (made to fit the screen) */
+    Slot cache[CACHE];
+    Texture *tex;      /* the picture that is shown (made to fit the screen; it belongs to the cache) */
     Texture *old;      /* the one before it, while the new one comes up */
     float fade;        /* 0..1: how much of the new picture there is */
     int failed;        /* the picture that was asked for cannot be read */
     float overlay;     /* seconds left of the overlay */
     float time;
-    /* the thread that reads pictures: the last one asked for wins, and the result goes through one slot that the thread does not touch again before it has been emptied */
+    /* the thread that reads pictures: it makes the one that is shown ready first, then the one after it and the one before it, so that L and R do not wait. `want` is the one it is to read now (-1 = none),
+     * and the result goes through one slot that the thread does not touch again before it has been emptied */
     SceUID thread;
     volatile int quit;
-    volatile int want;    /* serial of the request, 0 = none yet */
-    char path[300];       /* the request (written before `want` is) */
-    volatile int ready;   /* the slot is full: `img`, `ok` and `handled` are the thread's result */
+    volatile int want;
+    volatile int reading; /* the one the thread is reading */
+    volatile int ready;   /* the slot is full: `img`, `ok` and `done` are the thread's result */
     volatile int ok;
-    volatile int handled;
+    volatile int done;    /* the number of the picture in the slot */
     Image img;
-    int serial;
 };
+
+/* how far two pictures of the folder are from each other, round the corner (the last one is next to the first) */
+static int distance(const ImageView *v, int a, int b)
+{
+    int d = abs(a - b);
+    return d > v->count - d ? v->count - d : d;
+}
+
+static Slot *find(ImageView *v, int index)
+{
+    for (int i = 0; i < CACHE; i++)
+        if (v->cache[i].index == index)
+            return &v->cache[i];
+    return NULL;
+}
+
+/* the texture of a picture that has been read goes in the cache; one that is not wanted any more (it is far from the shown one) is left out, and the farthest one makes room */
+static void keep(ImageView *v, int index, Texture *t)
+{
+    if (find(v, index)) { /* (it is there already: the shown ones are not to be freed under the screen) */
+        tex_free(t);
+        return;
+    }
+    Slot *s = NULL;
+    for (int i = 0; i < CACHE && !s; i++)
+        if (v->cache[i].index < 0)
+            s = &v->cache[i];
+    if (!s) {
+        for (int i = 0; i < CACHE; i++) {
+            Slot *c = &v->cache[i];
+            if (c->tex && (c->tex == v->tex || c->tex == v->old))
+                continue; /* (the shown ones stay) */
+            if (!s || distance(v, c->index, v->index) > distance(v, s->index, v->index))
+                s = c;
+        }
+        if (!s || distance(v, s->index, v->index) < distance(v, index, v->index)) {
+            tex_free(t); /* every one that is there is nearer: this one is not kept */
+            return;
+        }
+    }
+    if (s->index >= 0)
+        tex_free(s->tex);
+    s->index = index;
+    s->tex = t;
+}
+
+static int is_png(const char *name)
+{
+    const char *dot = strrchr(name, '.');
+    return dot && !strcasecmp(dot, ".png");
+}
+
+/* the next one the thread is to read: the shown one, then the one after it, then the one before it, when they are not in the cache */
+static void plan(ImageView *v)
+{
+    int order[3] = { v->index, (v->index + 1) % v->count, (v->index + v->count - 1) % v->count };
+    int n = v->count >= 3 ? 3 : v->count;
+    int next = -1;
+    for (int i = 0; i < n && next < 0; i++)
+        if (!find(v, order[i]) && (i == 0 || !is_png(v->files[order[i]].name))) /* (a PNG cannot be stopped half way: it is only read when it is the one that is wanted on the screen) */
+            next = order[i];
+    v->want = next;
+}
+
+/* the picture that was asked for is shown when it is there: it fades in over the one before it */
+static void show(ImageView *v)
+{
+    Slot *s = find(v, v->index);
+    if (!s)
+        return; /* (the one before stays until it comes) */
+    if (s->tex) {
+        if (s->tex != v->tex) {
+            v->old = v->tex;
+            v->tex = s->tex;
+            v->fade = v->old ? 0 : 1;
+        }
+        v->failed = 0;
+    } else {
+        v->failed = 1; /* it could not be read: the screen says so, in place of the picture */
+        v->overlay = OVERLAY_SHOW;
+    }
+}
+
+static int cancel_read(void *arg)
+{
+    ImageView *v = arg;
+    return v->quit || v->want != v->reading; /* (the one that is read is not the one that is wanted any more) */
+}
 
 static int reader(SceSize args, void *argp)
 {
     ImageView *v = *(ImageView **)argp;
-    int last = 0;
     while (!v->quit) {
-        int s = v->want;
-        if (s == last) {
+        int idx = v->want;
+        if (v->ready || idx < 0) {
             sceKernelDelayThread(8000);
             continue;
         }
         char path[300];
-        snprintf(path, sizeof(path), "%s", v->path);
-        __sync_synchronize();
+        snprintf(path, sizeof(path), "%s/%s", v->dir, v->files[idx].name);
         Image img = { 0, 0, NULL };
-        int ok = img_load_fit(path, SCREEN_W, SCREEN_H, &img);
-        last = s;
-        if (v->want != s) { /* another one was asked for meanwhile: this one is not wanted */
-            img_free(&img);
-            continue;
-        }
-        while (v->ready && !v->quit)
-            sceKernelDelayThread(4000);
+        v->reading = idx;
+        int ok = img_load_fit_cancel(path, SCREEN_W, SCREEN_H, &img, cancel_read, v);
         if (v->quit) {
             img_free(&img);
             break;
         }
+        if (!ok && v->want != idx) { /* it was stopped, as another one is wanted now (a picture that cannot be read while it is still the wanted one is a failure) */
+            img_free(&img);
+            continue;
+        }
         v->img = img;
         v->ok = ok;
-        v->handled = s;
+        v->done = idx;
         __sync_synchronize();
         v->ready = 1;
     }
     return 0;
-}
-
-static void request(ImageView *v)
-{
-    v->failed = 0;
-    snprintf(v->path, sizeof(v->path), "%s/%s", v->dir, v->files[v->index].name);
-    __sync_synchronize();
-    v->want = ++v->serial;
 }
 
 ImageView *imageview_open(const char *dir, const MusicEntry *files, int count, int index)
@@ -92,13 +178,16 @@ ImageView *imageview_open(const char *dir, const MusicEntry *files, int count, i
     v->index = index;
     v->overlay = OVERLAY_SHOW;
     v->fade = 1;
-    v->thread = sceKernelCreateThread("psp5_image", reader, 0x20, 0x4000, 0, NULL);
+    for (int i = 0; i < CACHE; i++)
+        v->cache[i].index = -1;
+    plan(v);
+    v->thread = sceKernelCreateThread("psp5_image", reader, 0x28, 0x4000, 0, NULL); /* (below the thread of the screen: the buttons and the drawing come before a picture is read) */
     if (v->thread < 0) {
         free(v);
         return NULL;
     }
+    sys_fast(1);
     ImageView *self = v;
-    request(v);
     sceKernelStartThread(v->thread, sizeof(self), &self);
     return v;
 }
@@ -110,16 +199,19 @@ void imageview_close(ImageView *v)
     v->quit = 1;
     sceKernelWaitThreadEnd(v->thread, NULL);
     sceKernelDeleteThread(v->thread);
+    sys_fast(0);
     img_free(&v->img);
-    tex_free(v->tex);
-    tex_free(v->old);
+    for (int i = 0; i < CACHE; i++)
+        tex_free(v->cache[i].tex);
     free(v);
 }
 
 static void go(ImageView *v, int by)
 {
     v->index = (v->index + by + v->count) % v->count;
-    request(v);
+    v->failed = 0;
+    show(v);
+    plan(v);
     sound_play(SND_MOVE);
 }
 
@@ -130,26 +222,20 @@ int imageview_update(ImageView *v, u32 pressed, u32 held, int lx, int ly, float 
         v->overlay -= dt;
     if (v->fade < 1)
         v->fade = fminf(1, v->fade + dt * 5);
-    if (v->fade >= 1 && v->old) {
-        tex_free(v->old);
-        v->old = NULL;
-    }
-    if (v->ready) { /* the thread has finished one: it is the picture when it is the one asked for last, else it is thrown away */
+    if (v->fade >= 1)
+        v->old = NULL; /* (it stays in the cache) */
+    if (v->ready) { /* the thread has finished one */
         __sync_synchronize();
-        if (v->handled == v->serial) {
+        int idx = v->done;
+        if (distance(v, idx, v->index) <= 1) {
             Texture *t = v->ok && v->img.px ? img_to_texture(&v->img, GU_PSM_8888) : NULL;
-            if (t) {
-                tex_free(v->old);
-                v->old = v->tex;
-                v->tex = t;
-                v->fade = v->old ? 0 : 1;
-                v->failed = 0;
-            } else {
-                v->failed = 1; /* it could not be read: the screen says so, in place of the picture */
-                v->overlay = OVERLAY_SHOW;
-            }
+            keep(v, idx, t);
+            if (idx == v->index)
+                show(v);
         }
         img_free(&v->img);
+        plan(v);
+        __sync_synchronize();
         v->ready = 0;
     }
     if (pressed & PSP_CTRL_CIRCLE)

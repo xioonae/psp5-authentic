@@ -261,7 +261,7 @@ static int shrink_to_fit(Image *img, int mw, int mh)
     return 1;
 }
 
-static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out)
+static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(void *), void *arg)
 {
     struct jpeg_decompress_struct cinfo;
     JpegError err;
@@ -297,7 +297,9 @@ static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out)
     while (cinfo.scale_denom < 8 && (int)(cinfo.image_width / (cinfo.scale_denom * 2)) >= fw && (int)(cinfo.image_height / (cinfo.scale_denom * 2)) >= fh)
         cinfo.scale_denom *= 2;
     cinfo.out_color_space = JCS_RGB;
-    cinfo.dct_method = JDCT_ISLOW; /* a photo is looked at: the exact one */
+    cinfo.dct_method = JDCT_IFAST; /* the fast one: the picture is made smaller to the screen's size, where the small difference is not seen, and a PSP is slow */
+    cinfo.do_fancy_upsampling = FALSE;
+    cinfo.do_block_smoothing = FALSE;
     jpeg_start_decompress(&cinfo);
     int w = cinfo.output_width, h = cinfo.output_height;
     if ((u64)w * h > 4000000ull || cinfo.output_components != 3)
@@ -310,6 +312,8 @@ static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out)
         longjmp(err.jump, 1);
     while (cinfo.output_scanline < cinfo.output_height) {
         int y = cinfo.output_scanline;
+        if (cancel && (y & 15) == 0 && cancel(arg))
+            longjmp(err.jump, 1);
         JSAMPROW rows[1] = { row };
         jpeg_read_scanlines(&cinfo, rows, 1);
         for (int x = 0; x < w; x++)
@@ -355,7 +359,7 @@ static unsigned le16(const unsigned char *p) { return p[0] | (p[1] << 8); }
 static unsigned le32(const unsigned char *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((unsigned)p[3] << 24); }
 
 /* A BMP is read a row at a time, and every block of step x step pixels becomes one pixel of the result, so a big one never needs more memory than the picture it makes */
-static int load_bmp_fit(FILE *fp, int mw, int mh, Image *out)
+static int load_bmp_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(void *), void *arg)
 {
     unsigned char hd[14 + 124];
     if (fread(hd, 1, 14 + 12, fp) != 14 + 12 || hd[0] != 'B' || hd[1] != 'M')
@@ -418,6 +422,10 @@ static int load_bmp_fit(FILE *fp, int mw, int mh, Image *out)
     }
     int ok = 1;
     for (int oy = 0; oy < oh && ok; oy++) {
+        if (cancel && (oy & 7) == 0 && cancel(arg)) {
+            ok = 0;
+            break;
+        }
         memset(sum, 0, (size_t)ow * 3 * sizeof(u32));
         int rows = 0;
         for (int k = 0; k < step && oy * step + k < h && ok; k++) {
@@ -463,25 +471,43 @@ static int load_bmp_fit(FILE *fp, int mw, int mh, Image *out)
     return 1;
 }
 
-int img_load_fit(const char *path, int max_w, int max_h, Image *out)
+int img_load_fit_cancel(const char *path, int max_w, int max_h, Image *out, int (*cancel)(void *), void *arg)
 {
     out->px = NULL;
     out->w = out->h = 0;
+    /* what kind of file it is: read from a first opening of it, so that the second can have the buffer that suits the decoder before anything is read from it */
     FILE *fp = fopen(path, "rb");
     if (!fp)
         return 0;
     unsigned char b[8];
     size_t got = fread(b, 1, sizeof(b), fp);
-    rewind(fp);
+    fclose(fp);
+    int jpeg = got >= 4 && b[0] == 0xFF && b[1] == 0xD8;
+    int png = got >= 8 && b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G';
+    int bmp = got >= 2 && b[0] == 'B' && b[1] == 'M';
+    if (!jpeg && !png && !bmp)
+        return 0;
+    fp = fopen(path, "rb");
+    if (!fp)
+        return 0;
+    /* The Memory Stick is slow to be asked for a few kilobytes at a time, and a JPEG and a PNG are read in pieces of 4 KB or less: a buffer of 64 KB makes one request of sixteen. (Not for a BMP: it is
+     * read a row at a time, the bottom row first, and each of those jumps would read the whole buffer again.) */
+    if (!bmp)
+        setvbuf(fp, NULL, _IOFBF, 65536);
     int ok = 0;
-    if (got >= 4 && b[0] == 0xFF && b[1] == 0xD8)
-        ok = load_jpeg_fit(fp, max_w, max_h, out);
-    else if (got >= 8 && b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G')
+    if (jpeg)
+        ok = load_jpeg_fit(fp, max_w, max_h, out, cancel, arg);
+    else if (png)
         ok = load_png_fit(fp, max_w, max_h, out);
-    else if (got >= 2 && b[0] == 'B' && b[1] == 'M')
-        ok = load_bmp_fit(fp, max_w, max_h, out);
+    else
+        ok = load_bmp_fit(fp, max_w, max_h, out, cancel, arg);
     fclose(fp);
     return ok;
+}
+
+int img_load_fit(const char *path, int max_w, int max_h, Image *out)
+{
+    return img_load_fit_cancel(path, max_w, max_h, out, NULL, NULL);
 }
 
 void img_free(Image *img)

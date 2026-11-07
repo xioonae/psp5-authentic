@@ -56,6 +56,9 @@ const char *sys_ark_full_version(void);
 /* PSP-modell (kuKernelGetModel): 0 = PSP-1000, 1 = PSP-2000, 2/3/6/8 = PSP-3000,
  * 4 = PSP Go, 10 = PSP Street, -1 = okänd */
 int sys_model(void);
+/* The processor at its fastest (333 MHz, the bus 166) for as long as a picture or a video is on the screen: 1 asks for it, 0 gives back what it was. They are counted, so every 1 needs its 0.
+ * Nothing changes when the PSP is already that fast (or has no such call, as an emulator). */
+void sys_fast(int on);
 /* 1 om ms0: och ef0: är samma lagring (ARK pekar om ms0: till internminnet) – skanna då bara ms0: */
 int sys_ms_is_ef(void);
 /* PSP-1000 saknar extra minne och USB-laddning */

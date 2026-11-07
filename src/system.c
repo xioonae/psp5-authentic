@@ -390,6 +390,27 @@ int sys_has_ark(void) { return s_has_ark; }
 int sys_ark_version(void) { return s_ark; }
 const char *sys_ark_full_version(void) { return s_ark_full; }
 int sys_model(void) { return s_model; }
+
+void sys_fast(int on)
+{
+    static int depth, saved_cpu, saved_bus;
+    if (on) {
+        if (depth++ > 0)
+            return;
+        saved_cpu = scePowerGetCpuClockFrequencyInt();
+        saved_bus = scePowerGetBusClockFrequencyInt();
+        if (saved_cpu > 0 && saved_cpu < 333)
+            scePowerSetClockFrequency(333, 333, 166);
+        else
+            saved_cpu = 0; /* it is as fast as it goes already (or it does not say): nothing to give back */
+        return;
+    }
+    if (depth <= 0 || --depth > 0)
+        return;
+    if (saved_cpu > 0 && saved_bus > 0)
+        scePowerSetClockFrequency(saved_cpu, saved_cpu, saved_bus);
+    saved_cpu = 0;
+}
 int sys_ms_is_ef(void) { return s_ms_is_ef; }
 int sys_is_psp1000(void) { return s_model == 0; }
 const char *sys_ark_dir(void) { return s_ark_dir; }

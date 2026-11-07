@@ -13,6 +13,7 @@
 #include "mp4.h"
 #include "mpegps.h"
 #include "music.h"
+#include "system.h"
 
 #ifdef VIDEO_DEBUG
 #include <stdarg.h>
@@ -33,6 +34,48 @@ void vlog(const char *fmt, ...)
 #else
 #define VLOG(...) ((void)0)
 #endif
+
+/* A video that crashes the PSP leaves nothing behind but what was written before it: so the stage the player has reached is written to a small file (video-crash.txt in the PSP5 folder) before each
+ * step that could hang the PSP, and the file is removed when the video is closed the right way. When the next video is opened and the file is there, it is the last one's stage: it is kept as
+ * video-crash-last.txt (to be looked at, or sent to the developer) and a new one is started. No file names or other personal things are written into it. */
+static void crumb_path(char *out, size_t n, const char *name) { snprintf(out, n, "%s/%s", PSP5_DATA_DIR, name); }
+
+static void crumb(const char *what, int a, int b)
+{
+    char path[96], line[120];
+    crumb_path(path, sizeof(path), "video-crash.txt");
+    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_APPEND, 0777);
+    if (fd < 0)
+        return;
+    int n = snprintf(line, sizeof(line), "%s %d %d\n", what, a, b);
+    sceIoWrite(fd, line, n > 0 && n < (int)sizeof(line) ? n : 0);
+    sceIoClose(fd);
+}
+
+static void crumb_start(void)
+{
+    char path[96], last[96], buf[512];
+    crumb_path(path, sizeof(path), "video-crash.txt");
+    crumb_path(last, sizeof(last), "video-crash-last.txt");
+    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+    if (fd >= 0) {
+        int n = sceIoRead(fd, buf, sizeof(buf));
+        sceIoClose(fd);
+        SceUID o = n > 0 ? sceIoOpen(last, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777) : -1;
+        if (o >= 0) {
+            sceIoWrite(o, buf, n);
+            sceIoClose(o);
+        }
+        sceIoRemove(path);
+    }
+}
+
+static void crumb_end(void)
+{
+    char path[96];
+    crumb_path(path, sizeof(path), "video-crash.txt");
+    sceIoRemove(path);
+}
 
 #define PKT 2048
 #define RING_PACKETS 0x100            /* 512 KB of program stream in the ring buffer */
@@ -95,6 +138,7 @@ struct Video {
     volatile unsigned played; /* frames the sound output has taken since the sound started */
     int src_reserved;
     unsigned long *codec;
+    int codec_up; /* the AAC decoder has its memory of the PSP's (to be given back) */
     unsigned char *aac_in;
     short *aac_out;
     double a_base;
@@ -105,6 +149,7 @@ struct Video {
     float idle;
     int ended, failed, no_data, dec_errors, audio_dry;
     int stream_error;
+    int stage; /* what this session has done already, for the crash file (bits): 1 = fed, 2 = first picture asked for, 4 = first sound asked for */
 };
 
 /* the PSP's decoders are loaded once, the first time a video is opened */
@@ -124,6 +169,17 @@ static int load_modules(void)
     sceUtilityLoadModule(PSP_MODULE_AV_ATRAC3PLUS); /* (the sound of a PMF; without it a PMF plays without sound) */
     s_modules = ok ? 1 : -1;
     return ok;
+}
+
+/* the PSP's AAC decoder is a module of its own (the music codecs of music.c are others); an MP4's sound is without it when it cannot be loaded */
+static int load_aac_module(void)
+{
+    static int state; /* 0 = not tried, 1 = loaded, -1 = not */
+    if (state)
+        return state > 0;
+    int r = sceUtilityLoadModule(PSP_MODULE_AV_AAC);
+    state = r >= 0 || (unsigned)r == 0x80111102u ? 1 : -1;
+    return state > 0;
 }
 
 static unsigned be32(const unsigned char *p) { return ((unsigned)p[0] << 24) | ((unsigned)p[1] << 16) | ((unsigned)p[2] << 8) | p[3]; }
@@ -162,6 +218,7 @@ static SceInt32 ring_cb(ScePVoid data, SceInt32 packets, ScePVoid param)
     Video *v = param;
     if (v->kind == VK_PMF) {
         size_t got = fread(data, 1, (size_t)packets * PKT, v->fp);
+        sceKernelDcacheWritebackInvalidateRange(data, (unsigned)((got / PKT) * PKT));
         return (SceInt32)(got / PKT);
     }
     int n = 0;
@@ -171,6 +228,8 @@ static SceInt32 ring_cb(ScePVoid data, SceInt32 packets, ScePVoid param)
         ps_sector(&v->ps, (unsigned char *)data + (size_t)n * PKT);
         n++;
     }
+    /* the sectors were written by the CPU, into its cache: the decoder of the PSP (which is another processor) reads the memory, so they are written out to it */
+    sceKernelDcacheWritebackInvalidateRange(data, (unsigned)n * PKT);
     return n;
 }
 
@@ -276,28 +335,39 @@ static void audio_stop(Video *v)
 /* the AAC decoder of the PSP (sceAudiocodec, codec 0x1003) for an MP4 */
 static int aac_open(Video *v)
 {
-    v->codec = memalign(64, 256);
+    if (!load_aac_module())
+        return 0;
+    /* whole cache lines each (the decoder's own processor writes into the structure, and the CPU must not write a stale line of it back over that) */
+    v->codec = memalign(64, 512);
     v->aac_in = memalign(64, 8192 + 64);
     v->aac_out = memalign(64, AAC_FRAME_BYTES + 64);
     if (!v->codec || !v->aac_in || !v->aac_out)
         return 0;
-    memset(v->codec, 0, 256);
+    memset(v->codec, 0, 512);
+    memset(v->aac_in, 0, 8192 + 64);
+    memset(v->aac_out, 0, AAC_FRAME_BYTES + 64);
     v->codec[10] = (unsigned long)mp4_audio_rate(v->mp4); /* the sample rate, at offset 0x28 */
+    sceKernelDcacheWritebackInvalidateAll();
     if (sceAudiocodecCheckNeedMem(v->codec, PSP_CODEC_AAC) < 0)
         return 0;
+    sceKernelDcacheWritebackInvalidateAll();
     if (sceAudiocodecGetEDRAM(v->codec, PSP_CODEC_AAC) < 0)
         return 0;
+    sceKernelDcacheWritebackInvalidateAll();
     if (sceAudiocodecInit(v->codec, PSP_CODEC_AAC) < 0) {
         sceAudiocodecReleaseEDRAM(v->codec);
         return 0;
     }
+    sceKernelDcacheWritebackInvalidateAll();
+    v->codec_up = 1;
     return 1;
 }
 
 static void aac_close(Video *v)
 {
-    if (v->codec && v->audio_ok && v->kind == VK_MP4)
+    if (v->codec && v->codec_up)
         sceAudiocodecReleaseEDRAM(v->codec);
+    v->codec_up = 0;
     free(v->codec);
     free(v->aac_in);
     free(v->aac_out);
@@ -327,10 +397,13 @@ static int decode_aac(Video *v)
     v->codec[7] = (unsigned long)(size + 7);
     v->codec[8] = (unsigned long)v->aac_out;
     v->codec[9] = AAC_FRAME_BYTES;
-    sceKernelDcacheWritebackInvalidateRange(v->aac_in, size + 8);
-    sceKernelDcacheWritebackInvalidateRange(v->aac_out, AAC_FRAME_BYTES);
+    if (!(v->stage & 4)) {
+        v->stage |= 4;
+        crumb("first-sound", size, 0);
+    }
+    sceKernelDcacheWritebackInvalidateAll(); /* the structure, the frame and the place for the sound all go out to the memory the decoder reads, and nothing of them stays in the cache of the CPU */
     int r = sceAudiocodecDecode(v->codec, PSP_CODEC_AAC);
-    sceKernelDcacheWritebackInvalidateRange(v->aac_out, AAC_FRAME_BYTES);
+    sceKernelDcacheWritebackInvalidateAll();
     if (r < 0) {
         VLOG("aac decode %08x\n", r);
         if (++v->dec_errors > 40)
@@ -447,10 +520,12 @@ static int session_create(Video *v)
 {
     if (!v->ring_data || !v->mpeg_mem)
         return 0;
+    crumb("session", 0, 0);
     int rc = sceMpegRingbufferConstruct(RING(v), RING_PACKETS, v->ring_data, v->ring_size, ring_cb, v);
     VLOG("construct %08x\n", rc);
     if (rc < 0)
         return 0;
+    crumb("mpeg-create", v->mpeg_size, v->ring_size);
     int cr = sceMpegCreate(&v->mpeg, v->mpeg_mem, v->mpeg_size, RING(v), FRAME_W, 0, 0);
     VLOG("create %08x\n", cr);
     if (cr < 0) {
@@ -503,6 +578,10 @@ static void feed(Video *v)
     if (free_packets <= 0)
         return;
     int want = free_packets > 32 ? 32 : free_packets;
+    if (!(v->stage & 1)) {
+        v->stage |= 1;
+        crumb("first-feed", want, free_packets);
+    }
     int r = sceMpegRingbufferPut(RING(v), want, free_packets);
     if (r < 0) {
         VLOG("ring put %08x\n", r);
@@ -540,15 +619,22 @@ static void pmf_header_info(Video *v)
 
 Video *video_open(const char *path)
 {
-    if (!load_modules())
+    crumb_start();
+    crumb("open", 0, 0);
+    if (!load_modules()) {
+        crumb_end(); /* (it failed, it did not crash) */
         return NULL;
+    }
     Video *v = calloc(1, sizeof(*v));
-    if (!v)
+    if (!v) {
+        crumb_end();
         return NULL;
+    }
     int mi = sceMpegInit();
     VLOG("mpeg init %08x\n", mi);
     if (mi < 0) {
         free(v);
+        crumb_end();
         return NULL;
     }
     v->lib_up = 1;
@@ -613,10 +699,13 @@ Video *video_open(const char *path)
         v->audio_ok = mp4_has_audio(v->mp4);
     }
     VLOG("open %s: %dx%d, %.2f s, kind %d\n", path, v->w, v->h, v->duration, v->kind);
+    crumb(v->kind == VK_MP4 ? "mp4" : "pmf", v->w, v->h);
+    if (v->kind == VK_MP4 && v->params_len > 8 && (v->params[4] & 0x1F) == 7)
+        crumb("avc-profile-level", v->params[5], v->params[7]);
     if (v->w <= 0 || v->h <= 0 || v->w > FRAME_W || v->h > 512)
         goto fail;
-    int rows = (v->h + 15) & ~15; /* the decoder writes whole blocks of 16 */
-    size_t frame_bytes = (size_t)FRAME_W * rows * 2;
+    /* the decoder writes whole blocks of 16 and the PSP's own library decides how far it goes: the buffer is always the biggest a video can need (512 by 512 of 16 bits), so nothing can be written past it */
+    size_t frame_bytes = (size_t)FRAME_W * 512 * 2;
     v->frame = memalign(64, frame_bytes);
     v->ring_size = sceMpegRingbufferQueryMemSize(RING_PACKETS);
     v->mpeg_size = sceMpegQueryMemSize(0);
@@ -641,12 +730,15 @@ Video *video_open(const char *path)
     /* the sound: the queue and its thread, and the decoder of an MP4's AAC */
     if (v->audio_ok) {
         int rate = v->kind == VK_MP4 ? mp4_audio_rate(v->mp4) : 44100;
+        crumb("sound-open", rate, v->kind == VK_MP4);
         if (v->kind == VK_MP4 && !aac_open(v))
             v->audio_ok = 0;
+        crumb("sound-out", rate, v->audio_ok);
         if (v->audio_ok && !audio_start(v, rate))
             v->audio_ok = 0;
     }
     v->has_sound = v->audio_ok;
+    crumb("opened", v->has_sound, 0);
     return v;
 fail:
     VLOG("open failed\n");
@@ -658,6 +750,7 @@ void video_close(Video *v)
 {
     if (!v)
         return;
+    crumb("closing", 0, 0);
     v->started = 0;
     audio_stop(v);
     session_destroy(v);
@@ -666,6 +759,7 @@ void video_close(Video *v)
     if (v->lib_up)
         sceMpegFinish();
     aac_close(v);
+    crumb_end(); /* it was closed the right way: nothing to leave behind */
     free(v->frame);
     free(v->ep);
     free(v->sample);
@@ -709,6 +803,7 @@ int video_play(Video *v, float at)
     v->audio_dry = 0;
     v->dec_errors = 0;
     v->stream_error = 0;
+    v->stage = 0;
     v->a_has_base = 0;
     v->atrac_first = 1;
     v->idle = 0;
@@ -795,6 +890,10 @@ int video_update(Video *v, float dt)
             break; /* not yet */
         SceInt32 got = 0;
         void *buf = v->frame;
+        if (!(v->stage & 2)) {
+            v->stage |= 2;
+            crumb("first-picture", v->au_avc.iAuSize, 0);
+        }
         int r = sceMpegAvcDecode(&v->mpeg, &v->au_avc, FRAME_W, &buf, &got);
         v->have_au = 0;
         if (r != 0) {

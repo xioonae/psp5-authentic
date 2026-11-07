@@ -16,6 +16,8 @@ int img_decode_png(const void *data, u32 size, Image *out);
  * a row at a time; turned the way the camera's EXIF says), PNG and BMP (1, 4, 8, 16 (5-5-5), 24 and 32 bits, not packed: read a row at a time and made smaller as it is read). 0 when it is
  * not a picture this can read, is too big for the memory (a progressive JPEG over 5 MB of coefficients, a PNG over 2.2 million pixels) or the file cannot be read. *out is freed by img_free. */
 int img_load_fit(const char *path, int max_w, int max_h, Image *out);
+/* the same, and `cancel` (when it is not NULL) is asked now and then while a JPEG or a BMP is read: when it says 1 the reading stops and the answer is 0 (a viewer that is closed does not wait for a big picture) */
+int img_load_fit_cancel(const char *path, int max_w, int max_h, Image *out, int (*cancel)(void *), void *arg);
 /* the largest size with the proportions of w x h that is inside mw x mh and not bigger than w x h */
 void img_fit_down(int w, int h, int mw, int mh, int *ow, int *oh);
 /* Omslag (JPEG eller PNG, efter innehållet). JPEG skalas ner i avkodaren men blir minst
