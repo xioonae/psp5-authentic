@@ -40,6 +40,8 @@ int music_roots(char roots[2][16]);
 /* The folder `dir`: the folders first, then the songs that can be played, each group by name (capitals and small letters alike). At most 1000 lines.
  * *out is a new array (free() it), the result is its length, or -1 when the folder cannot be read. */
 int music_list_dir(const char *dir, MusicEntry **out);
+/* the same for any kind of file: `ok` says whether a (non-folder) name is listed (the Videos and Images screens, media.c) */
+int music_list_dir_filter(const char *dir, int (*ok)(const char *name), MusicEntry **out);
 
 /* The cover picture in the song's tag (a JPEG or PNG: free() the data), or NULL. Reads the file: not to be called from the player thread. */
 void *music_cover_data(const char *path, u32 *size);

@@ -161,6 +161,329 @@ int img_crop_square(Image *img)
     return 1;
 }
 
+/* ---------------------------------------------------------------------- */
+/* pictures for the image viewer */
+
+#define MAX_VIEW_PNG_PIXELS 2200000
+
+void img_fit_down(int w, int h, int mw, int mh, int *ow, int *oh)
+{
+    if (w <= mw && h <= mh) {
+        *ow = w;
+        *oh = h;
+        return;
+    }
+    if ((long long)w * mh >= (long long)h * mw) { /* wider than the box: the width is what limits */
+        *ow = mw;
+        *oh = (int)(((long long)h * mw + w / 2) / w);
+    } else {
+        *oh = mh;
+        *ow = (int)(((long long)w * mh + h / 2) / h);
+    }
+    if (*ow < 1)
+        *ow = 1;
+    if (*oh < 1)
+        *oh = 1;
+}
+
+/* the way a camera says the picture is turned (EXIF, tag 0x0112): 1 = as it is ... 8, 1 when it says nothing; d points at the data of an APP1 marker */
+static int exif_orientation(const unsigned char *d, unsigned len)
+{
+    if (len < 14 || memcmp(d, "Exif\0\0", 6))
+        return 1;
+    const unsigned char *t = d + 6;
+    unsigned tl = len - 6;
+    int le = t[0] == 'I' && t[1] == 'I';
+    if (!le && !(t[0] == 'M' && t[1] == 'M'))
+        return 1;
+#define U16(p) (le ? (unsigned)((p)[0] | ((p)[1] << 8)) : (unsigned)(((p)[0] << 8) | (p)[1]))
+#define U32(p) (le ? (unsigned)((p)[0] | ((p)[1] << 8) | ((p)[2] << 16) | ((unsigned)(p)[3] << 24)) : (unsigned)(((unsigned)(p)[0] << 24) | ((p)[1] << 16) | ((p)[2] << 8) | (p)[3]))
+    unsigned off = U32(t + 4);
+    if (off > tl || off + 2 > tl)
+        return 1;
+    unsigned n = U16(t + off);
+    for (unsigned i = 0; i < n; i++) {
+        unsigned at = off + 2 + 12 * i;
+        if (at + 12 > tl)
+            break;
+        if (U16(t + at) == 0x0112) {
+            unsigned v = U16(t + at + 8);
+            return v >= 1 && v <= 8 ? (int)v : 1;
+        }
+    }
+#undef U16
+#undef U32
+    return 1;
+}
+
+/* turns the picture as EXIF orientation o says (2 mirror, 3 half turn, 4 flip, 5 mirror on the diagonal, 6 a quarter turn clockwise, 7 mirror on the other diagonal, 8 a quarter turn the other way) */
+static int orient_image(Image *img, int o)
+{
+    if (o <= 1 || o > 8)
+        return 1;
+    int w = img->w, h = img->h, ow = o >= 5 ? h : w, oh = o >= 5 ? w : h;
+    u32 *px = malloc((size_t)ow * oh * 4);
+    if (!px)
+        return 0;
+    for (int y = 0; y < oh; y++)
+        for (int x = 0; x < ow; x++) {
+            int sx, sy;
+            switch (o) {
+            case 2: sx = w - 1 - x; sy = y; break;
+            case 3: sx = w - 1 - x; sy = h - 1 - y; break;
+            case 4: sx = x; sy = h - 1 - y; break;
+            case 5: sx = y; sy = x; break;
+            case 6: sx = y; sy = h - 1 - x; break;
+            case 7: sx = w - 1 - y; sy = h - 1 - x; break;
+            default: sx = w - 1 - y; sy = x; break;
+            }
+            px[y * ow + x] = img->px[sy * w + sx];
+        }
+    free(img->px);
+    img->px = px;
+    img->w = ow;
+    img->h = oh;
+    return 1;
+}
+
+/* the picture made smaller to the size it is shown at (the area average of img_resize), when it is bigger than that */
+static int shrink_to_fit(Image *img, int mw, int mh)
+{
+    int fw, fh;
+    img_fit_down(img->w, img->h, mw, mh, &fw, &fh);
+    if (fw == img->w && fh == img->h)
+        return 1;
+    Image small;
+    if (!img_resize(img, fw, fh, &small))
+        return 0;
+    img_free(img);
+    *img = small;
+    return 1;
+}
+
+static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out)
+{
+    struct jpeg_decompress_struct cinfo;
+    JpegError err;
+    u8 *volatile row = NULL;
+    out->px = NULL;
+    cinfo.err = jpeg_std_error(&err.pub);
+    err.pub.error_exit = jpeg_fail;
+    err.pub.emit_message = jpeg_quiet;
+    if (setjmp(err.jump)) {
+        jpeg_destroy_decompress(&cinfo);
+        free((void *)row);
+        img_free(out);
+        return 0;
+    }
+    jpeg_create_decompress(&cinfo);
+    jpeg_stdio_src(&cinfo, fp);
+    jpeg_save_markers(&cinfo, JPEG_APP0 + 1, 0xFFFF); /* the camera's EXIF: which way up the picture is */
+    if (jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK || (cinfo.progressive_mode && progressive_bytes(&cinfo) > MAX_PROGRESSIVE_BYTES)) {
+        jpeg_destroy_decompress(&cinfo);
+        return 0;
+    }
+    int orient = 1;
+    for (jpeg_saved_marker_ptr mk = cinfo.marker_list; mk; mk = mk->next)
+        if (mk->marker == JPEG_APP0 + 1) {
+            orient = exif_orientation(mk->data, mk->data_length);
+            break;
+        }
+    /* the size it is made at, before it is turned: the box the other way round when the camera was held sideways */
+    int bw = orient >= 5 ? mh : mw, bh = orient >= 5 ? mw : mh, fw, fh;
+    img_fit_down((int)cinfo.image_width, (int)cinfo.image_height, bw, bh, &fw, &fh);
+    cinfo.scale_num = 1;
+    cinfo.scale_denom = 1;
+    while (cinfo.scale_denom < 8 && (int)(cinfo.image_width / (cinfo.scale_denom * 2)) >= fw && (int)(cinfo.image_height / (cinfo.scale_denom * 2)) >= fh)
+        cinfo.scale_denom *= 2;
+    cinfo.out_color_space = JCS_RGB;
+    cinfo.dct_method = JDCT_ISLOW; /* a photo is looked at: the exact one */
+    jpeg_start_decompress(&cinfo);
+    int w = cinfo.output_width, h = cinfo.output_height;
+    if ((u64)w * h > 4000000ull || cinfo.output_components != 3)
+        longjmp(err.jump, 1);
+    out->w = w;
+    out->h = h;
+    out->px = malloc((size_t)w * h * 4);
+    row = malloc(w * 3);
+    if (!out->px || !row)
+        longjmp(err.jump, 1);
+    while (cinfo.output_scanline < cinfo.output_height) {
+        int y = cinfo.output_scanline;
+        JSAMPROW rows[1] = { row };
+        jpeg_read_scanlines(&cinfo, rows, 1);
+        for (int x = 0; x < w; x++)
+            out->px[y * w + x] = RGBA(row[x * 3], row[x * 3 + 1], row[x * 3 + 2], 255);
+    }
+    jpeg_finish_decompress(&cinfo);
+    jpeg_destroy_decompress(&cinfo);
+    free((void *)row);
+    if (!shrink_to_fit(out, bw, bh) || !orient_image(out, orient)) {
+        img_free(out);
+        return 0;
+    }
+    return 1;
+}
+
+static int load_png_fit(FILE *fp, int mw, int mh, Image *out)
+{
+    png_image png;
+    memset(&png, 0, sizeof(png));
+    png.version = PNG_IMAGE_VERSION;
+    if (!png_image_begin_read_from_stdio(&png, fp))
+        return 0;
+    if ((u64)png.width * png.height > MAX_VIEW_PNG_PIXELS) {
+        png_image_free(&png);
+        return 0;
+    }
+    png.format = PNG_FORMAT_RGBA;
+    out->w = png.width;
+    out->h = png.height;
+    out->px = malloc((size_t)png.width * png.height * 4);
+    if (!out->px) {
+        png_image_free(&png);
+        return 0;
+    }
+    if (!png_image_finish_read(&png, NULL, out->px, 0, NULL) || !shrink_to_fit(out, mw, mh)) {
+        img_free(out);
+        return 0;
+    }
+    return 1;
+}
+
+static unsigned le16(const unsigned char *p) { return p[0] | (p[1] << 8); }
+static unsigned le32(const unsigned char *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((unsigned)p[3] << 24); }
+
+/* A BMP is read a row at a time, and every block of step x step pixels becomes one pixel of the result, so a big one never needs more memory than the picture it makes */
+static int load_bmp_fit(FILE *fp, int mw, int mh, Image *out)
+{
+    unsigned char hd[14 + 124];
+    if (fread(hd, 1, 14 + 12, fp) != 14 + 12 || hd[0] != 'B' || hd[1] != 'M')
+        return 0;
+    unsigned data_off = le32(hd + 10), dib = le32(hd + 14);
+    if (dib < 12 || dib > 124 || fread(hd + 26, 1, dib - 12, fp) != dib - 12)
+        return 0;
+    int w, h, bpp, top_down = 0;
+    unsigned comp = 0, colors = 0;
+    if (dib == 12) { /* the old header: 16-bit sizes, 3-byte palette entries */
+        w = (int)le16(hd + 18);
+        h = (int)le16(hd + 20);
+        bpp = (int)le16(hd + 24);
+    } else {
+        w = (int)le32(hd + 18);
+        h = (int)le32(hd + 22);
+        bpp = (int)le16(hd + 28);
+        comp = le32(hd + 30);
+        colors = le32(hd + 46);
+    }
+    if (h < 0) {
+        h = -h;
+        top_down = 1;
+    }
+    if (w <= 0 || h <= 0 || w > 16384 || h > 16384 || (comp != 0 && !(comp == 3 && (bpp == 32 || bpp == 16))))
+        return 0;
+    if (bpp != 1 && bpp != 4 && bpp != 8 && bpp != 16 && bpp != 24 && bpp != 32)
+        return 0;
+    unsigned char pal[256][3] = { { 0 } }; /* r, g, b */
+    if (bpp <= 8) {
+        unsigned n = colors ? colors : 1u << bpp, esz = dib == 12 ? 3 : 4;
+        if (n > 256)
+            n = 256;
+        if (fseek(fp, (long)(14 + dib), SEEK_SET))
+            return 0;
+        for (unsigned i = 0; i < n; i++) {
+            unsigned char e[4];
+            if (fread(e, 1, esz, fp) != esz)
+                return 0;
+            pal[i][0] = e[2];
+            pal[i][1] = e[1];
+            pal[i][2] = e[0];
+        }
+    }
+    unsigned stride = (((unsigned)w * bpp + 31) / 32) * 4;
+    int step = 1;
+    while ((w + step - 1) / step > mw || (h + step - 1) / step > mh)
+        step++;
+    int ow = (w + step - 1) / step, oh = (h + step - 1) / step;
+    unsigned char *line = malloc(stride);
+    u32 *sum = calloc((size_t)ow * 3, sizeof(u32));
+    out->w = ow;
+    out->h = oh;
+    out->px = malloc((size_t)ow * oh * 4);
+    if (!line || !sum || !out->px) {
+        free(line);
+        free(sum);
+        img_free(out);
+        return 0;
+    }
+    int ok = 1;
+    for (int oy = 0; oy < oh && ok; oy++) {
+        memset(sum, 0, (size_t)ow * 3 * sizeof(u32));
+        int rows = 0;
+        for (int k = 0; k < step && oy * step + k < h && ok; k++) {
+            int sy = oy * step + k, frow = top_down ? sy : h - 1 - sy;
+            if (fseek(fp, (long)(data_off + (unsigned)frow * stride), SEEK_SET) || fread(line, 1, stride, fp) != stride) {
+                ok = 0;
+                break;
+            }
+            for (int x = 0; x < w; x++) {
+                unsigned r, g, b;
+                if (bpp == 24) {
+                    b = line[x * 3]; g = line[x * 3 + 1]; r = line[x * 3 + 2];
+                } else if (bpp == 32) {
+                    b = line[x * 4]; g = line[x * 4 + 1]; r = line[x * 4 + 2];
+                } else if (bpp == 16) {
+                    unsigned v = le16(line + x * 2);
+                    r = ((v >> 10) & 31) * 255 / 31; g = ((v >> 5) & 31) * 255 / 31; b = (v & 31) * 255 / 31;
+                } else {
+                    unsigned idx = bpp == 8 ? line[x] : bpp == 4 ? (line[x / 2] >> (x & 1 ? 0 : 4)) & 15 : (line[x / 8] >> (7 - (x & 7))) & 1;
+                    r = pal[idx][0]; g = pal[idx][1]; b = pal[idx][2];
+                }
+                u32 *s = sum + (x / step) * 3;
+                s[0] += r; s[1] += g; s[2] += b;
+            }
+            rows++;
+        }
+        for (int ox = 0; ox < ow && ok; ox++) {
+            int cols = step;
+            if ((ox + 1) * step > w)
+                cols = w - ox * step;
+            unsigned n = (unsigned)(rows * cols);
+            if (!n)
+                n = 1;
+            out->px[oy * ow + ox] = RGBA((sum[ox * 3] + n / 2) / n, (sum[ox * 3 + 1] + n / 2) / n, (sum[ox * 3 + 2] + n / 2) / n, 255);
+        }
+    }
+    free(line);
+    free(sum);
+    if (!ok) {
+        img_free(out);
+        return 0;
+    }
+    return 1;
+}
+
+int img_load_fit(const char *path, int max_w, int max_h, Image *out)
+{
+    out->px = NULL;
+    out->w = out->h = 0;
+    FILE *fp = fopen(path, "rb");
+    if (!fp)
+        return 0;
+    unsigned char b[8];
+    size_t got = fread(b, 1, sizeof(b), fp);
+    rewind(fp);
+    int ok = 0;
+    if (got >= 4 && b[0] == 0xFF && b[1] == 0xD8)
+        ok = load_jpeg_fit(fp, max_w, max_h, out);
+    else if (got >= 8 && b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G')
+        ok = load_png_fit(fp, max_w, max_h, out);
+    else if (got >= 2 && b[0] == 'B' && b[1] == 'M')
+        ok = load_bmp_fit(fp, max_w, max_h, out);
+    fclose(fp);
+    return ok;
+}
+
 void img_free(Image *img)
 {
     free(img->px);

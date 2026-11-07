@@ -88,6 +88,9 @@ void gfx_speaker_scaled(float x, float y, float scale, u32 color);
 void gfx_library_icon(int l, int t, int w, int h, u32 color);
 /* The picture of the Music card of the Media tab (the note of the reference), centred in the card box and two thirds of its height (see gfx.c) */
 void gfx_music_icon(int l, int t, int w, int h, u32 color);
+/* the pictures of the Videos and Images cards of Media (the film frame and the picture frame of the reference pictures), the same way */
+void gfx_video_icon(int l, int t, int w, int h, u32 color);
+void gfx_images_icon(int l, int t, int w, int h, u32 color);
 /* The logo of the boot screen, `h` pixels high (and icon_logo_width(h) wide), its top left corner on the whole pixel (x, y), in one colour (the alpha
  * of the colour fades it). Drawn from its outline into one small image (about 90 x 70 pixels, once: it stays in the icon cache), so it costs a single
  * sprite per frame and is as smooth as the glyphs of the font; with no room for the image (it has to be less than 96 pixels wide with its border,

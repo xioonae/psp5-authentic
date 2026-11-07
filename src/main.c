@@ -278,6 +278,7 @@ static void sleep_and_wake(Ui *ui)
     int music = music_state() == MUSIC_PLAYING;
     if (music)
         music_toggle_pause();
+    ui_sleep(ui, 1); /* a video that plays is paused */
     sound_prepare_boot(); /* startljudet frigjordes efter förra startskärmen */
 
     /* Svart i båda bildbuffertarna, sedan vilar psp5 utan att rita: grafikkretsen ska
@@ -307,6 +308,7 @@ static void sleep_and_wake(Ui *ui)
     boot_run(&s_running);
     if (music)
         music_toggle_pause();
+    ui_sleep(ui, 0);
     ui_replay_intro(ui);
 }
 
@@ -766,7 +768,7 @@ int main(int argc, char *argv[])
         }
         /* The sound button: the player as a popup over whatever screen is open (musicui.h). While it is open it gets the buttons and the screen below gets none;
          * the button that closes it is not passed on either. */
-        note_popup(&ui.mu, &in, dt, ui.launch < 0, ui.tab == TAB_MUSIC);
+        note_popup(&ui.mu, &in, dt, ui.launch < 0 && !ui_video_open(&ui), ui.tab == TAB_MUSIC && ui.mscreen == 0); /* (not over a video: the music is off then and the player has the sound) */
 
         if (in_saves) { /* Games and Apps, Manage Saved Data (opened from Settings > Storage): the list stands still while the screen is open */
             UiInput none = UI_NO_INPUT;

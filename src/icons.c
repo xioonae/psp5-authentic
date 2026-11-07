@@ -249,6 +249,44 @@ static void music_shape(float s, Shape *p)
     memcpy(p->beam, b, sizeof(b));
 }
 
+/* The film frame of the Videos card, measured from "Video Icon.png" (the shape is 500 x 260 in the picture; in units of its width u): the outer rounded rectangle 1 x 0.52, three
+ * rounded holes (0.13 x 0.08) on each side, rows at 0.12, 0.26 and 0.41 from the top, and the square hole in the middle (0.42 x 0.37). */
+static float sd_video(const Shape *p, float px, float py)
+{
+    float u = p->u;
+    float d = sd_rbox(px, py, 0.5f * u, 0.26f * u, 0.03f * u);
+    float hole = sd_rbox(px, py - 0.005f * u, 0.21f * u, 0.185f * u, 0.004f * u);
+    static const float rows[3] = { 0.12f, 0.26f, 0.41f };
+    for (int i = 0; i < 3; i++) {
+        float cy = (rows[i] - 0.26f) * u;
+        hole = fminf(hole, sd_rbox(px + 0.355f * u, py - cy, 0.065f * u, 0.04f * u, 0.035f * u));
+        hole = fminf(hole, sd_rbox(px - 0.355f * u, py - cy, 0.065f * u, 0.04f * u, 0.035f * u));
+    }
+    return fmaxf(d, -hole);
+}
+
+/* The picture frame of the Images card, measured from "Image Icon.png" (105 x 79 in the picture; the points below are in those pixels, from the top left of the shape): the frame (about 9 thick), the
+ * mountain line (4 peaks and valleys, 8 thick), the corner at the bottom right cut away along a slanted line and a turned-up piece of paper in its place. In units of the width u. */
+static float sd_images(const Shape *p, float px, float py)
+{
+    float u = p->u, k = u / 105.0f, ox = -52.5f * k, oy = -39.5f * k; /* (bx, by) -> px = ox + bx k, py = oy + by k */
+    float outer = sd_rbox(px, py, 52.5f * k, 39.5f * k, 1.2f * k);
+    float inner = sd_rbox(px, py, 43.0f * k, 31.0f * k, 0);
+    float ring = fmaxf(outer, -inner);
+    static const float m[5][2] = { { 4, 52 }, { 38, 18 }, { 56, 43 }, { 74, 27 }, { 104, 54 } };
+    float mt = 1e9f;
+    for (int i = 0; i < 5; i++) {
+        mt = fminf(mt, len2(px - (ox + m[i][0] * k), py - (oy + m[i][1] * k)) - 3.8f * k);
+        if (i < 4)
+            mt = fminf(mt, sd_line(px, py, ox + m[i][0] * k, oy + m[i][1] * k, ox + m[i + 1][0] * k, oy + m[i + 1][1] * k, 3.8f * k));
+    }
+    float d = fminf(ring, fmaxf(mt, outer));
+    const float cut[6] = { ox + 113 * k, oy + 41 * k, ox + 66 * k, oy + 88 * k, ox + 115 * k, oy + 92 * k };
+    d = fmaxf(d, -sd_poly(cut, 3, px, py));
+    const float flap[6] = { ox + 80 * k, oy + 56 * k, ox + 98 * k, oy + 55 * k, ox + 78 * k, oy + 74 * k };
+    return fminf(d, sd_poly(flap, 3, px, py));
+}
+
 static float sd_note(const Shape *p, float px, float py)
 {
     const float *n = p->note;
@@ -376,6 +414,10 @@ static float shape_distance(const Shape *p, float px, float py)
         return sd_note(p, px, py);
     case ICON_SPEAKER:
         return sd_speaker(p, px, py);
+    case ICON_VIDEO:
+        return sd_video(p, px, py);
+    case ICON_IMAGES:
+        return sd_images(p, px, py);
     case ICON_LIBRARY:
         return sd_library(&p->lib, px, py);
     case ICON_FOLDER:
@@ -587,6 +629,8 @@ void icon_render(int kind, float w, float h, float r, float cx, float cy, int tw
         note_shape(2 * r, &sh);
     if (kind == ICON_MUSIC)
         music_shape(2 * r, &sh);
+    if (kind == ICON_VIDEO || kind == ICON_IMAGES)
+        sh.u = 2 * r; /* the width of the picture */
     if (kind == ICON_SPEAKER)
         speaker_shape(r / 4.5f, &sh);
     if (kind == ICON_LIBRARY)
@@ -613,7 +657,7 @@ void icon_render(int kind, float w, float h, float r, float cx, float cy, int tw
     float feature = kind == ICON_DISC ? r
                   : kind == ICON_RRECT || kind == ICON_RRING || kind == ICON_RFRAME || kind == ICON_RFRAME_S
                       ? fminf(r, fminf(w, h) / 2) : 99;
-    int fine = kind == ICON_BOLT || kind == ICON_TRI_R || kind == ICON_TRI_L || kind == ICON_NOTE || kind == ICON_MUSIC || kind == ICON_SPEAKER || kind == ICON_WIFI;
+    int fine = kind == ICON_BOLT || kind == ICON_TRI_R || kind == ICON_TRI_L || kind == ICON_NOTE || kind == ICON_MUSIC || kind == ICON_VIDEO || kind == ICON_IMAGES || kind == ICON_SPEAKER || kind == ICON_WIFI;
     if (kind == ICON_LIBRARY && h < 32)
         fine = 1; /* its corners are a pixel or two across at the small size */
     if (kind == ICON_FOLDER && h < 24)

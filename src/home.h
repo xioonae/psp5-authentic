@@ -23,6 +23,10 @@
 #define HOME_LIBRARY (-3)
 /* the one card of the Media tab (its Music card): like the Library card it is not a game, and the loader leaves it alone. Media is not made by home_build(); ui.c puts it in its own view. */
 #define HOME_MEDIA_MUSIC (-4)
+/* ... and its two others: Videos and Images */
+#define HOME_MEDIA_VIDEO (-5)
+#define HOME_MEDIA_IMAGES (-6)
+#define HOME_IS_MEDIA(i) ((i) == HOME_MEDIA_MUSIC || (i) == HOME_MEDIA_VIDEO || (i) == HOME_MEDIA_IMAGES)
 
 /* bits of home_state() */
 enum { HOME_SHOWN = 1, HOME_KEPT = 2 };

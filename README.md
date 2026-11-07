@@ -25,8 +25,16 @@ wherever it can, but it doesn't copy the console in everything.
     <td width="50%"><img src="docs/screenshots/games-and-apps.png" alt="Games and Apps"><br><sub><b>Games and Apps</b> – all your games and apps: sort them, mark several and delete them, with the space you get back</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/media.png" alt="Media"><br><sub><b>Media</b> – a row of cards like Games; for now it has one card, <i>Music</i>, on a background drawn in your theme's colours (video and pictures come later)</sub></td>
+    <td width="50%"><img src="docs/screenshots/media.png" alt="Media"><br><sub><b>Media</b> – a row of cards like Games: <i>Music</i>, <i>Videos</i> and <i>Images</i>, on a background drawn in your theme's colours</sub></td>
     <td width="50%"><img src="docs/screenshots/music.png" alt="Music"><br><sub><b>Music</b> (the Media tab → Music) – your songs in a list like the File Manager's and a player you steer with the buttons; the music keeps playing while you browse your games</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/videos.png" alt="Videos"><br><sub><b>Videos</b> (Media → Videos) – the <code>VIDEO</code> folder of the Memory Stick and of the internal storage, folders and all, in a list that has the whole width</sub></td>
+    <td width="50%"><img src="docs/screenshots/video-player.png" alt="Video player"><br><sub><b>Video player</b> – MP4 (H.264 and AAC) and PMF on the whole screen; the bar, the numbers and L / R show when you press a button and go away after a moment</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/images.png" alt="Images"><br><sub><b>Images</b> (Media → Images) – the <code>PICTURE</code> folder and <code>PSP/PHOTO</code>, folders and all</sub></td>
+    <td width="50%"><img src="docs/screenshots/image-viewer.png" alt="Image viewer"><br><sub><b>Image viewer</b> – JPEG (turned the way the camera says), PNG and BMP on the whole screen; L / R for the one before and after</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/settings.png" alt="Settings"><br><sub><b>Settings</b> – six pages, one list; Confirm opens one, Back goes back</sub></td>
@@ -78,9 +86,11 @@ wherever it can, but it doesn't copy the console in everything.
 - **Console Storage** (*Settings → Storage*). The size of the storage, a coloured bar and the free space, and four rows with their sizes: **Games and Apps** (the list of all your games and apps: sort, mark and delete them),
   Media (music, video and pictures), **Saved Data** (*Manage Saved Data*: the saves of all your games, mark some, delete them and see how much room you get back; ARK's own save folder is locked and can't be deleted) and Other.
   On a PSP Go with a Memory Stick there are two blocks, one for each storage.
-- **Media and Music.** The Media tab is a row of cards like the Games tab; for now it has one card, **Music** (video and pictures come later), on a drawn background in your theme's colours.
+- **Media, Music, Videos and Images.** The Media tab is a row of cards like the Games tab: **Music**, **Videos** and **Images**, on a drawn background in your theme's colours.
   Music reads only the `MUSIC` folder of the Memory Stick and of the internal storage and shows its folders as folders; it plays MP3, WAV (PCM) and ATRAC3 / ATRAC3plus (`.at3`, `.oma`, `.aa3`) files with title, artist and album art (from the file, or a
   `cover.jpg` / `folder.jpg` in the folder). The player has a progress bar you can jump in (10 seconds a step), volume, shuffle, repeat (off, one song, the whole folder) and the equalizer. The music keeps playing while you browse your games or use the File Manager, and the PSP's ♪ button shows the player as a popup.
+  **Videos** lists the `VIDEO` folder the same way, over the whole width, and plays **MP4** (H.264 video with AAC sound) and **PMF / PSMF** on the whole screen: ✕ pauses, ← → jump 10 seconds, L / R play the video before or after, ○ leaves. A video that was left in the middle asks whether to *Continue* from there or start *from the beginning*.
+  **Images** lists the `PICTURE` folder and `PSP/PHOTO` and shows **JPEG** (turned the way the camera says), **PNG** and **BMP** on the whole screen, with L / R for the picture before and after. In both, the little bar with L, the number and R shows when you press a button and goes away after a moment.
 - **Settings** (the cog wheel). One list at a time, like the console's: Confirm opens a page, Back goes back one. The first list has six pages:
   - *psp5 authentic* – boot into psp5 authentic, sounds, startup animation, battery percentage, clear the image cache.
   - *Network* – the PSP's own Wi-Fi screen and the FTP Server.

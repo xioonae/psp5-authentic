@@ -7,6 +7,8 @@
 #include "loader.h"
 #include "folders.h"
 #include "musicui.h"
+#include "imageview.h"
+#include "videoplay.h"
 
 enum { UI_NONE, UI_LAUNCH, UI_SETTINGS, UI_INFO, UI_DELETE,
        UI_XMB, UI_SLEEP, UI_SHUTDOWN, UI_RESTART, UI_RECOVERY /* the power popup of the SELECT button */ };
@@ -118,8 +120,11 @@ typedef struct {
     unsigned pt_secs;     /* ... its seconds */
     char pt_text[16];     /* ... as "54h" or "45min" (made at every draw, in the language of that moment), empty when there is nothing to show */
 
-    /* the Music screen (musicui.c) */
-    MusicUi mu;
+    /* the Music screen (musicui.c); the Videos and Images screens are the same list with another kind (vu, iu), and TAB_MUSIC is the tab of all three: mscreen says which */
+    MusicUi mu, vu, iu;
+    int mscreen;         /* 0 = Music, 1 = Videos, 2 = Images (when tab is TAB_MUSIC) */
+    ImageView *iv;       /* the image viewer, while it is open (it has the whole screen and all the buttons) */
+    VideoPlayer *vp;     /* ... and the video player */
 
     /* START i Spel/Bibliotek (eller ✕ på Alternativ-knappen): en liten alternativmeny för valt kort (Radera, Information, Behåll i Home). Samma meny visar sorteringen i Biblioteket (menu_kind), och, mitt på skärmen och från alla flikar med SELECT,
      * Viloläge / Stäng av / Starta om / Återställningsmeny. */
@@ -163,6 +168,10 @@ void ui_toast(Ui *ui, const char *msg);
 void ui_replay_intro(Ui *ui);
 /* Index i spellistan för markerad post, eller -1 (also when a folder of the Library is selected). */
 int ui_selected(const Ui *ui);
+/* a video is on the screen (the sound button's popup is not offered then: the music is off and the player has the sound) */
+int ui_video_open(const Ui *ui);
+/* the PSP sleeps (1) or wakes (0): an open video is paused / goes on */
+void ui_sleep(Ui *ui, int asleep);
 
 /* Enkel skärm under första skanningen. */
 void ui_draw_scanning(int done, const char *name, float time);

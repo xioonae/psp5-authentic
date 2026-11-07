@@ -389,6 +389,11 @@ static int cmp_entries(const void *a, const void *b)
 
 int music_list_dir(const char *dir, MusicEntry **out)
 {
+    return music_list_dir_filter(dir, music_supported, out);
+}
+
+int music_list_dir_filter(const char *dir, int (*ok)(const char *name), MusicEntry **out)
+{
     *out = NULL;
     SceUID d = sceIoDopen(dir);
     if (d < 0)
@@ -399,7 +404,7 @@ int music_list_dir(const char *dir, MusicEntry **out)
     memset(&ent, 0, sizeof(ent));
     while (e && n < MAX_ENTRIES && sceIoDread(d, &ent) > 0) {
         int isdir = FIO_S_ISDIR(ent.d_stat.st_mode) != 0;
-        if (!name_is_hidden(ent.d_name) && strlen(ent.d_name) < sizeof(e[0].name) && (isdir || music_supported(ent.d_name))) {
+        if (!name_is_hidden(ent.d_name) && strlen(ent.d_name) < sizeof(e[0].name) && (isdir || ok(ent.d_name))) {
             if (n >= cap) {
                 MusicEntry *bigger = realloc(e, cap * 2 * sizeof(MusicEntry));
                 if (!bigger)

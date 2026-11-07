@@ -18,6 +18,8 @@
 #include "lang.h"
 #include "music.h"
 #include "musicui.h"
+#include "imageview.h"
+#include "videoplay.h"
 #include "system.h"
 #include "theme.h"
 #include "osd.h"
@@ -75,6 +77,20 @@
 #define DARK        RGBA(18, 18, 22, 255)
 
 static const StrId TAB_NAMES[TAB_COUNT] = { S_TAB_GAMES, S_TAB_MEDIA, S_TAB_LIBRARY, S_TAB_MUSIC };
+
+/* the name of a tab in the top bar: the screen of the Media cards has the name of the card that opened it (Music, Videos or Images) */
+static StrId tab_name(const Ui *ui, int t)
+{
+    if (t == TAB_MUSIC)
+        return ui->mscreen == 1 ? S_TAB_VIDEOS : ui->mscreen == 2 ? S_TAB_IMAGES : S_TAB_MUSIC;
+    return TAB_NAMES[t];
+}
+
+/* the list of the open Media screen */
+static MusicUi *screen_mu(Ui *ui)
+{
+    return ui->mscreen == 1 ? &ui->vu : ui->mscreen == 2 ? &ui->iu : &ui->mu;
+}
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 static float lerpf(float a, float b, float t) { return a + (b - a) * t; }
@@ -319,7 +335,7 @@ static void rebuild_library(Ui *ui)
 static void build_views(Ui *ui)
 {
     for (int t = 0; t < TAB_COUNT; t++) {
-        ui->views[t].idx = malloc((ui->list->count + 1) * sizeof(int)); /* (Home has the Library card on top of the games) */
+        ui->views[t].idx = malloc((ui->list->count + 3) * sizeof(int)); /* (Home has the Library card on top of the games; Media has its three cards) */
         ui->views[t].count = 0;
     }
     folders_free(&ui->folders);
@@ -329,9 +345,11 @@ static void build_views(Ui *ui)
         if (ui->lib_open < 0)
             ui->lib_open_name[0] = 0;
     }
-    if (ui->views[TAB_MEDIA].idx) { /* Media: one card, Music */
+    if (ui->views[TAB_MEDIA].idx) { /* Media: three cards, Music, Videos and Images */
         ui->views[TAB_MEDIA].idx[0] = HOME_MEDIA_MUSIC;
-        ui->views[TAB_MEDIA].count = 1;
+        ui->views[TAB_MEDIA].idx[1] = HOME_MEDIA_VIDEO;
+        ui->views[TAB_MEDIA].idx[2] = HOME_MEDIA_IMAGES;
+        ui->views[TAB_MEDIA].count = 3;
     }
     LoaderView *homev = &ui->views[TAB_GAMES];
     if (homev->idx)
@@ -438,8 +456,8 @@ static void set_tab(Ui *ui, int tab, SoundId sound)
     ui->still = 0;
     ui->label_for = -2;
     if (tab == TAB_MUSIC)
-        musicui_open(&ui->mu); /* the MUSIC folders are read when the screen opens */
-    else
+        musicui_open_kind(screen_mu(ui), ui->mscreen == 1 ? MK_VIDEO : ui->mscreen == 2 ? MK_IMAGES : MK_MUSIC); /* the folders are read when the screen opens */
+    if (tab != TAB_MUSIC || ui->mscreen != 0)
         musicui_release_cover(&ui->mu);
     ui->lib_focus = 0;
     ui->btn_focus = 0;
@@ -470,8 +488,9 @@ static void close_library(Ui *ui)
 }
 
 /* ✕ on the Music card of Media opens the Music screen, ○ closes it: Media again, on its card */
-static void open_music(Ui *ui)
+static void open_music(Ui *ui, int which)
 {
+    ui->mscreen = which; /* 0 = Music, 1 = Videos, 2 = Images: all three are the screen TAB_MUSIC, with a list of their own */
     set_tab(ui, TAB_MUSIC, SND_SELECT);
 }
 
@@ -497,9 +516,9 @@ static void fit_label(Ui *ui)
     float max_w = SCREEN_W - SMALL_X - MARGIN;
     ui->label_for = i;
     ui->label[0] = 0;
-    if (i < 0 && i != HOME_LIBRARY && i != HOME_MEDIA_MUSIC)
+    if (i < 0 && i != HOME_LIBRARY && !HOME_IS_MEDIA(i))
         return;
-    const char *title = i == HOME_LIBRARY ? L(S_TAB_LIBRARY) : i == HOME_MEDIA_MUSIC ? L(S_TAB_MUSIC) : ui->list->items[i].title;
+    const char *title = i == HOME_LIBRARY ? L(S_TAB_LIBRARY) : i == HOME_MEDIA_MUSIC ? L(S_TAB_MUSIC) : i == HOME_MEDIA_VIDEO ? L(S_TAB_VIDEOS) : i == HOME_MEDIA_IMAGES ? L(S_TAB_IMAGES) : ui->list->items[i].title;
     if (i >= 0)
         max_w -= tag_room(ui->list->items[i].type);
     ui->label_size = TITLE_SIZE; /* as in the Library: a title that does not fit keeps its size and scrolls after a moment */
@@ -521,6 +540,10 @@ void ui_init(Ui *ui, const EntryList *list, int can_launch)
     ui->lib_label_for = -2;
     ui->pt_for = -2;
     musicui_init(&ui->mu);
+    musicui_init(&ui->vu);
+    ui->vu.kind = MK_VIDEO;
+    musicui_init(&ui->iu);
+    ui->iu.kind = MK_IMAGES;
     ui->tab_anim = 1;
     ui->top_focus = -1;
     ui->card_ring = 1;
@@ -539,7 +562,7 @@ void ui_init(Ui *ui, const EntryList *list, int can_launch)
 /* Spellistans index före → efter att posten `removed` (-1 = ingen) tagits bort och/eller en post lagts först. */
 static int remap_index(int i, int removed, int added_front)
 {
-    if (i == HOME_LIBRARY || i == HOME_MEDIA_MUSIC)
+    if (i == HOME_LIBRARY || HOME_IS_MEDIA(i))
         return i; /* not a game of the list: it stays what it is */
     if (i < 0 || i == removed)
         return -1;
@@ -823,7 +846,15 @@ void ui_free(Ui *ui)
     tex_free(ui->bg_old);
     tex_free(ui->bg_cur);
     ui->bg_old = ui->bg_cur = NULL;
+    if (ui->iv)
+        imageview_close(ui->iv);
+    if (ui->vp)
+        videoplay_close(ui->vp);
+    ui->iv = NULL;
+    ui->vp = NULL;
     musicui_free(&ui->mu);
+    musicui_free(&ui->vu);
+    musicui_free(&ui->iu);
     for (int t = 0; t < TAB_COUNT; t++) {
         free(ui->views[t].idx);
         ui->views[t].idx = NULL;
@@ -940,12 +971,31 @@ static void update_background(Ui *ui, float dt)
 }
 
 /* The Music screen (musicui.c): its input is whatever the top bar did not take (`in` is the neutral input while the top bar has the focus) */
+static void open_viewer(Ui *ui)
+{
+    const MusicEntry *files;
+    int count, index;
+    const char *dir = musicui_file(screen_mu(ui), &files, &count, &index);
+    if (index < 0 || index >= count)
+        return;
+    if (ui->mscreen == 2)
+        ui->iv = imageview_open(dir, files, count, index);
+    else if (ui->mscreen == 1)
+        ui->vp = videoplay_open(dir, files, count, index);
+    if (!ui->iv && !ui->vp) {
+        ui_toast(ui, L(ui->mscreen == 2 ? S_IMG_CANT : S_VID_CANT)); /* (no memory for it) */
+        sound_play(SND_ERROR);
+    }
+}
+
 static void update_music(Ui *ui, const UiInput *in, float dt)
 {
-    int r = musicui_update(&ui->mu, in->pressed, in->held, in->lx, in->ly, dt);
+    int r = musicui_update(screen_mu(ui), in->pressed, in->held, in->lx, in->ly, dt);
     if (ui->intro < 1)
         return;
-    if (r == MUSICUI_CLOSE) {
+    if (r == MUSICUI_OPEN)
+        open_viewer(ui);
+    else if (r == MUSICUI_CLOSE) {
         close_music(ui);
     } else if (r == MUSICUI_TOP) { /* ↑ from the first line: the top bar (the Music screen has only its name and the cog wheel there) */
         ui->top_focus = TOP_COG;
@@ -991,7 +1041,11 @@ static void activate_card(Ui *ui)
     if (card == HOME_LIBRARY)
         open_library(ui);
     else if (card == HOME_MEDIA_MUSIC)
-        open_music(ui);
+        open_music(ui, 0);
+    else if (card == HOME_MEDIA_VIDEO)
+        open_music(ui, 1);
+    else if (card == HOME_MEDIA_IMAGES)
+        open_music(ui, 2);
     else if (LIB_IS_FOLDER(card))
         open_folder(ui, LIB_FOLDER_NO(card));
     else
@@ -1170,6 +1224,19 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         ui->toast_time -= dt;
     sort_by_size_again(ui, dt);
 
+    if (ui->iv || ui->vp) { /* the image viewer or the video player has the whole screen and all the buttons (○ closes it: the list of its screen is as it was left) */
+        int done = ui->iv ? imageview_update(ui->iv, in->pressed, in->held, in->lx, in->ly, dt) : videoplay_update(ui->vp, in->pressed, in->held, in->lx, in->ly, dt);
+        if (done) {
+            if (ui->iv)
+                imageview_close(ui->iv);
+            else
+                videoplay_close(ui->vp);
+            ui->iv = NULL;
+            ui->vp = NULL;
+            sound_play(SND_BACK);
+        }
+        return UI_NONE;
+    }
     if (ui->launch >= 0) {
         ui->launch += dt / LAUNCH_LEN;
         return ui->launch >= 1 ? UI_LAUNCH : UI_NONE;
@@ -1412,7 +1479,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     if (music_needs_cjk())
         font_ensure_cjk(); /* japanska/ryska låttitlar (laddas bara en gång) */
     update_background(ui, dt);
-    if (ui->tab == TAB_MUSIC)
+    if (ui->tab == TAB_MUSIC && ui->mscreen == 0)
         musicui_update_cover(&ui->mu, dt);
 
     if (ui->label_for != sel_card(ui)) {
@@ -1601,33 +1668,33 @@ static void draw_top_bar(Ui *ui)
     static const char *sized_lang;
     float room = bar_left - TOP_GAP - MARGIN; /* the last tab's frame (9 px wider than its text) ends 3 px before the first thing on the right */
     int tabs[2], nt = top_tabs(ui, tabs); /* Games and Music, or only Library inside the Library */
-    if (room != sized_room || ui->tab != sized_tab || L(TAB_NAMES[0]) != sized_lang) {
+    if (room != sized_room || ui->tab + 8 * ui->mscreen != sized_tab || L(TAB_NAMES[0]) != sized_lang) {
         size = 0.8f;
         gap = 20;
         for (;;) {
             float w = 0;
             for (int k = 0; k < nt; k++)
-                w += text_width(size, tabs[k] == ui->tab, L(TAB_NAMES[tabs[k]])) + gap;
+                w += text_width(size, tabs[k] == ui->tab, L(tab_name(ui, tabs[k]))) + gap;
             if (w - gap <= room || size <= 0.56f)
                 break;
             size -= 0.04f;
             gap = 14;
         }
         sized_room = room;
-        sized_tab = ui->tab;
+        sized_tab = ui->tab + 8 * ui->mscreen;
         sized_lang = L(TAB_NAMES[0]);
     }
     float x = MARGIN;
     for (int k = 0; k < nt; k++) {
         int t = tabs[k], active = t == ui->tab;
-        float tw = text_width(size, active, L(TAB_NAMES[t])), pick = smooth(ui->top_anim[t]);
+        float tw = text_width(size, active, L(tab_name(ui, t))), pick = smooth(ui->top_anim[t]);
         if (pick * a > 0.01f) { /* selected with ↑ (not the same as the open tab, which is the bold one) */
             float fy, fh; /* centred on the text, which shrinks in long languages */
             popup_frame_around(popup_label_mid(25, size), TOP_FRAME_H, &fy, &fh);
             popup_choice(x - 9, fy, tw + 18, fh, pick * a);
         }
         text_draw(x, 25, size, active, with_alpha(active ? TEXT_MAIN : mix_color(RGBA(255, 255, 255, 120), TEXT_MAIN, pick), a),
-                  ALIGN_LEFT, L(TAB_NAMES[t]));
+                  ALIGN_LEFT, L(tab_name(ui, t)));
         x += tw + gap;
     }
 }
@@ -1665,7 +1732,7 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
 {
     int library = list_index == HOME_LIBRARY; /* the Library card has no icon to load: a card in the theme's colour with its picture */
     int folder = LIB_IS_FOLDER(list_index);   /* ... and so has a folder of the Library: the same colour, a folder with its first letter */
-    int media = list_index == HOME_MEDIA_MUSIC; /* ... and the Music card of Media: the same colour, the note of the Music icon */
+    int media = HOME_IS_MEDIA(list_index); /* ... and the cards of Media: the same colour, the note of the Music icon, the film frame of Videos, the picture frame of Images */
     IconSlot *slot = library || folder || media ? NULL : loader_icon(list_index);
     float r = grid ? 0 : w / 12.0f; /* corner radius: 1/12 of the width at every size, which is what art.c cuts the pictures to; the Library's cards are rectangles (r 0) */
     /* the card's pixels: a pixel is part of it when its middle is (the picture, the ring and the corners all use this box) */
@@ -1692,7 +1759,13 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
         } else if (media) { /* the Music card: the note of the reference on the card's colour */
             int tint = (int)lerpf(200, 255, focus);
             card_plate(grid ? l : x, grid ? t : y, grid ? rt - l : w, grid ? b - t : h, r, RGBA(cc & 0xFF, (cc >> 8) & 0xFF, (cc >> 16) & 0xFF, (int)(255 * pa)));
-            gfx_music_icon(l, t, rt - l, b - t, RGBA(tint, tint, tint, (int)(255 * pa)));
+            u32 tc = RGBA(tint, tint, tint, (int)(255 * pa));
+            if (list_index == HOME_MEDIA_VIDEO)
+                gfx_video_icon(l, t, rt - l, b - t, tc);
+            else if (list_index == HOME_MEDIA_IMAGES)
+                gfx_images_icon(l, t, rt - l, b - t, tc);
+            else
+                gfx_music_icon(l, t, rt - l, b - t, tc);
         } else if (folder) { /* a folder drawn by the launcher, the capital letter of the folder's name cut out of its body */
             int tint = (int)lerpf(200, 255, focus);
             u32 cc_a = RGBA(cc & 0xFF, (cc >> 8) & 0xFF, (cc >> 16) & 0xFF, (int)(255 * pa));
@@ -1840,7 +1913,7 @@ static void draw_details(Ui *ui)
 {
     int i = sel_card(ui);
     float fade = ui->intro * smooth(ui->tab_anim) * (ui->launch < 0 ? 1 : 1 - smooth(ui->launch * 2));
-    if ((i < 0 && i != HOME_LIBRARY && i != HOME_MEDIA_MUSIC) || fade <= 0)
+    if ((i < 0 && i != HOME_LIBRARY && !HOME_IS_MEDIA(i)) || fade <= 0)
         return;
 
     /* titeln bredvid kortet glider in när markeringen byts, med typetiketten (PSP, APP …) framför som på PS5 (the Library card has none) */
@@ -2097,7 +2170,7 @@ static void draw_music(Ui *ui)
 {
     float a = ui->intro * smooth(ui->tab_anim);
     float slide = (1 - smooth(ui->tab_anim)) * 10;
-    musicui_draw(&ui->mu, a, slide);
+    musicui_draw(screen_mu(ui), a, slide);
 }
 
 static void draw_toast(Ui *ui)
@@ -2117,8 +2190,29 @@ static void draw_empty(Ui *ui)
     text_draw(MARGIN, 160, 0.62f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, on_root(L(S_HINT_APPS)));
 }
 
+int ui_video_open(const Ui *ui)
+{
+    return ui->vp != NULL;
+}
+
+void ui_sleep(Ui *ui, int asleep)
+{
+    if (ui->vp)
+        videoplay_sleep(ui->vp, asleep);
+}
+
 void ui_draw(Ui *ui)
 {
+    if (ui->iv || ui->vp) { /* a picture or a video: nothing else on the screen but the volume bar and the sound button's popup */
+        gfx_begin(RGBA(0, 0, 0, 255));
+        if (ui->iv)
+            imageview_draw(ui->iv);
+        else
+            videoplay_draw(ui->vp);
+        osd_draw();
+        gfx_end();
+        return;
+    }
     gfx_begin(CLEAR_COLOR);
     draw_background(ui);
     draw_dim(ui);

@@ -902,30 +902,81 @@ void gfx_library_icon(int l, int t, int w, int h, u32 color)
  * calculated while the card moves (the full size is one image pixel on one screen pixel, so it is as sharp as the other pictures). It stays until gfx_term. */
 #define MUSIC_ICON_S 41
 #define MUSIC_ICON_N (MUSIC_ICON_S + 2) /* with a transparent pixel round it */
-static Texture *s_music_icon;
+/* The Videos and Images cards have the same kind of picture: the film frame of "Video Icon.png" and the picture frame of "Image Icon.png" (ICON_VIDEO, ICON_IMAGES). They are wider than
+ * the note, so each is made in its own square: the film frame is 1.17 times the note's side wide, the picture frame 1.12 times. */
+enum { CARD_ICON_MUSIC, CARD_ICON_VIDEO, CARD_ICON_IMAGES, CARD_ICONS };
+static const int CARD_ICON_KIND[CARD_ICONS] = { ICON_MUSIC, ICON_VIDEO, ICON_IMAGES };
+static const float CARD_ICON_WIDE[CARD_ICONS] = { 1.0f, 1.17f, 1.12f };
+static int card_icon_n(int which)
+{
+    return (int)ceilf(MUSIC_ICON_S * CARD_ICON_WIDE[which]) + 2;
+}
+static Texture *s_card_icon[CARD_ICONS];
 
 static void music_icon_free(void)
 {
-    tex_free(s_music_icon);
-    s_music_icon = NULL;
+    for (int i = 0; i < CARD_ICONS; i++) {
+        tex_free(s_card_icon[i]);
+        s_card_icon[i] = NULL;
+    }
+}
+
+static const Texture *card_icon_image(int which)
+{
+    if (!s_card_icon[which]) {
+        int n = card_icon_n(which);
+        unsigned char *cov = malloc((size_t)n * n);
+        Texture *t = cov ? tex_create(n, n, GU_PSM_8888) : NULL;
+        if (!t) {
+            free(cov);
+            return NULL;
+        }
+        icon_render(CARD_ICON_KIND[which], 0, 0, MUSIC_ICON_S * CARD_ICON_WIDE[which] / 2.0f, n / 2.0f, n / 2.0f, n, n, cov);
+        u32 *px = t->data;
+        for (int y = 0; y < n; y++)
+            for (int x = 0; x < n; x++)
+                px[y * t->stride + x] = RGBA(255, 255, 255, cov[y * n + x]);
+        tex_flush(t);
+        free(cov);
+        s_card_icon[which] = t;
+    }
+    return s_card_icon[which];
 }
 
 static const Texture *music_icon_image(void)
 {
-    if (!s_music_icon) {
-        static unsigned char cov[MUSIC_ICON_N * MUSIC_ICON_N];
-        Texture *t = tex_create(MUSIC_ICON_N, MUSIC_ICON_N, GU_PSM_8888);
-        if (!t)
-            return NULL;
-        icon_render(ICON_MUSIC, 0, 0, MUSIC_ICON_S / 2.0f, MUSIC_ICON_N / 2.0f, MUSIC_ICON_N / 2.0f, MUSIC_ICON_N, MUSIC_ICON_N, cov);
-        u32 *px = t->data;
-        for (int y = 0; y < MUSIC_ICON_N; y++)
-            for (int x = 0; x < MUSIC_ICON_N; x++)
-                px[y * t->stride + x] = RGBA(255, 255, 255, cov[y * MUSIC_ICON_N + x]);
-        tex_flush(t);
-        s_music_icon = t;
+    return card_icon_image(CARD_ICON_MUSIC);
+}
+
+/* the picture of a card, centred in the card box l, t, w, h: MUSIC_ICON_S high-ish (41 pixels at the biggest card) and scaled smaller with the card */
+static void card_icon(int which, int l, int t, int w, int h, u32 color)
+{
+    int s = (int)floorf(h * 0.66f + 0.5f);
+    float k = s / (float)MUSIC_ICON_S;
+    int n = card_icon_n(which);
+    int d = (int)floorf(n * k + 0.5f);
+    int x = l + (w - d + 1) / 2, y = t + (h - d + 1) / 2;
+    const Texture *tex = card_icon_image(which);
+    if (tex) {
+        if (d == n) {
+            IconBox b = { d, d, x, y, d / 2.0f, d / 2.0f, 0, 0 };
+            icon_blit(tex, &b, color); /* the full size: one pixel for one pixel */
+        } else {
+            gfx_tex(tex, x, y, d, d, color);
+        }
+        return;
     }
-    return s_music_icon;
+    gfx_note(l + w / 2.0f, t + h / 2.0f, s, color); /* the image could not be made: the little note */
+}
+
+void gfx_video_icon(int l, int t, int w, int h, u32 color)
+{
+    card_icon(CARD_ICON_VIDEO, l, t, w, h, color);
+}
+
+void gfx_images_icon(int l, int t, int w, int h, u32 color)
+{
+    card_icon(CARD_ICON_IMAGES, l, t, w, h, color);
 }
 
 /* The note, centred in the card box l, t, w, h: 41 pixels high when the card is as high as the biggest card (62), smaller (and then scaled) when it is smaller */

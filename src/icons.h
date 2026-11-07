@@ -32,6 +32,8 @@ enum {
     ICON_LOGO,     /* the logo of the boot screen: three solid shapes drawn from their outline, w * h pixels (see icon_logo_width), in one image */
     ICON_CUBE,     /* the cube of Settings' System row: three faces (top, left, right) of their own brightness in one image, soft edged, in a square of side 2 r (r = 8 for the usual size) */
     ICON_MUSIC,    /* the picture of the Media tab's Music card: the music note of the reference (two heads, two stems, a tilted beam), in a square of side 2 r, all in one piece */
+    ICON_VIDEO,    /* the picture of the Videos card: a film frame, a wide rounded rectangle with three small holes on each side and a square one in the middle, 2 r wide ("Video Icon.png") */
+    ICON_IMAGES,   /* the picture of the Images card: a picture frame with a mountain line in it and a turned-up corner, 2 r wide ("Image Icon.png") */
 };
 
 #define ICON_FRAME_T   2.5f /* thickness of ICON_RFRAME in pixels (about what the big card's ring always had) */

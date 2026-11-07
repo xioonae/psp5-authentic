@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "musicui.h"
+#include "media.h"
 #include "lang.h"
 #include "loader.h"
 #include "look.h"
@@ -17,7 +18,8 @@
 
 /* layout (480 x 272): the list as in the file manager (rows of 24, the same frame and the same faint lines), the player in the panel at its right */
 #define LIST_X     24.0f
-#define LIST_W     266.0f
+#define LIST_W     266.0f  /* (the Music list; the Videos and Images lists have the whole width: list_w()) */
+#define LIST_W_WIDE 428.0f
 #define LIST_TOP   62.0f
 #define ROW_H      24.0f
 #define ROWS       7
@@ -35,6 +37,7 @@
 #define LIGHT     RGBA(236, 236, 240, 255)
 #define DARK      RGBA(20, 20, 26, 255)
 
+static float list_w(const MusicUi *m) { return m->kind == MK_MUSIC ? LIST_W : LIST_W_WIDE; }
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 static float approach(float cur, float target, float speed, float dt) { return cur + (target - cur) * (1.0f - expf(-speed * dt)); }
 static u32 fade(u32 c, float a) { return COLOR_ALPHA(c, (int)(((c >> 24) & 0xFF) * clampf(a, 0, 1))); }
@@ -81,7 +84,7 @@ static void adopt_dir(MusicUi *m, const char *dir, MusicEntry *e, int n)
 static void load_dir(MusicUi *m, const char *dir)
 {
     MusicEntry *e = NULL;
-    int n = music_list_dir(dir, &e);
+    int n = media_list_dir(m->kind, dir, &e);
     adopt_dir(m, dir, e, n);
 }
 
@@ -107,7 +110,7 @@ static int answers_with_another_folder(const MusicUi *m, const MusicEntry *e, in
     char top[16];
     snprintf(top, sizeof(top), "%.*s/", (int)(colon - m->dir) + 1, m->dir);
     MusicEntry *t = NULL;
-    int nt = music_list_dir(top, &t);
+    int nt = media_list_dir(m->kind, top, &t);
     int same = nt > 0 && same_lines(e, n, t, nt);
     free(t);
     return same;
@@ -127,7 +130,7 @@ void musicui_open(MusicUi *m)
     int had = m->level == 1 && m->dir[0];
     snprintf(keep, sizeof(keep), "%s", m->dir);
     int keep_sel = m->sel;
-    m->nroots = music_roots(m->roots);
+    m->nroots = media_roots(m->kind, m->roots);
     m->warn_t = 0;
     m->focus = 0;
     m->popup = 0;
@@ -155,6 +158,29 @@ void musicui_open(MusicUi *m)
         m->n = m->nroots;
         m->ok = 1;
     }
+}
+
+void musicui_open_kind(MusicUi *m, int kind)
+{
+    if (kind != m->kind) { /* another kind of file: its own folders, from the top */
+        free_list(m);
+        m->kind = kind;
+        m->level = 0;
+        m->dir[0] = 0;
+        m->depth = 0;
+    }
+    musicui_open(m);
+}
+
+const char *musicui_file(const MusicUi *m, const MusicEntry **files, int *count, int *index)
+{
+    int first = 0;
+    while (first < m->n && m->e[first].dir)
+        first++;
+    *files = m->e + first;
+    *count = m->n - first;
+    *index = m->sel - first;
+    return m->dir;
 }
 
 /* the number of lines that the list has now */
@@ -198,11 +224,11 @@ static int go_up(MusicUi *m)
 }
 
 /* ✕ on a line of the list */
-static void activate(MusicUi *m)
+static int activate(MusicUi *m)
 {
     if (m->level == 0) {
         if (m->sel < 0 || m->sel >= m->nroots)
-            return;
+            return 0;
         char root[16];
         snprintf(root, sizeof(root), "%s", m->roots[m->sel]);
         m->sel_stack[0] = m->sel; /* (not needed to go back: ○ finds the storage by its name) */
@@ -210,32 +236,36 @@ static void activate(MusicUi *m)
         m->level = 1;
         m->depth = 0;
         sound_play(SND_SELECT);
-        return;
+        return 0;
     }
     if (m->sel < 0 || m->sel >= m->n)
-        return;
+        return 0;
     const MusicEntry *e = &m->e[m->sel];
     if (e->dir) {
         if (m->depth >= 15)
-            return;
+            return 0;
         char sub[256];
         if (snprintf(sub, sizeof(sub), "%s/%s", m->dir, e->name) >= (int)sizeof(sub))
-            return;
+            return 0;
         MusicEntry *ne = NULL;
-        int nn = music_list_dir(sub, &ne);
+        int nn = media_list_dir(m->kind, sub, &ne);
         if (nn > 0 && answers_with_another_folder(m, ne, nn)) {
             free(ne);
             m->warn_t = 4;
             sound_play(SND_ERROR);
-            return;
+            return 0;
         }
         m->sel_stack[m->depth++] = m->sel;
         adopt_dir(m, sub, ne, nn);
         sound_play(SND_SELECT);
+    } else if (m->kind != MK_MUSIC) { /* a video or an image: the screen around this one opens its player or viewer (musicui_file) */
+        sound_play(SND_SELECT);
+        return 1;
     } else {
         music_play_folder(m->dir, m->e, m->n, m->sel);
         sound_play(SND_SELECT);
     }
+    return 0;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -453,7 +483,7 @@ int musicui_update(MusicUi *m, u32 pressed, u32 held, int lx, int ly, float dt)
         update_popup(m, pressed, mv);
         return MUSICUI_NONE;
     }
-    if (pressed & PSP_CTRL_TRIANGLE) { /* between the list and the player */
+    if (m->kind == MK_MUSIC && (pressed & PSP_CTRL_TRIANGLE)) { /* between the list and the player (only the Music screen has a player) */
         m->focus = !m->focus;
         if (m->focus && m->pbtn == MU_BAR)
             m->pbtn = MU_PLAY;
@@ -483,8 +513,8 @@ int musicui_update(MusicUi *m, u32 pressed, u32 held, int lx, int ly, float dt)
             sound_play(SND_MOVE);
         }
     }
-    if ((pressed & PSP_CTRL_CROSS) && n)
-        activate(m);
+    if ((pressed & PSP_CTRL_CROSS) && n && activate(m))
+        return MUSICUI_OPEN;
     float target = m->scroll;
     if (m->sel < (int)target)
         target = (float)m->sel;
@@ -646,7 +676,7 @@ static void draw_player(MusicUi *m, float px, float py, float a, int focus, int 
     }
 }
 
-static void draw_row_icon(float x, float y, const MusicEntry *e, float a)
+static void draw_row_icon(float x, float y, const MusicEntry *e, float a, int kind)
 {
     if (e->dir) { /* the folder of the Library's folder cards, 14 px high, as in the file manager */
         gfx_folder_picture((int)ceilf(x - 0.5f), (int)ceilf(y + 2.5f), 14, fade(RGBA(222, 222, 228, 255), a));
@@ -654,7 +684,9 @@ static void draw_row_icon(float x, float y, const MusicEntry *e, float a)
     }
     const char *dot = strrchr(e->name, '.');
     const char *ext = dot && dot != e->name && strlen(dot + 1) <= 4 ? dot + 1 : NULL;
-    gfx_round_rect(x + 1, y + 1, 16, 18, 2.5f, fade(RGBA(52, 156, 110, 255), a)); /* (the green of the sound files of the file manager) */
+    /* the colour of the badge: the green of the sound files of the file manager, the orange of its pictures, and a rose for the videos */
+    u32 badge = kind == MK_VIDEO ? RGBA(190, 84, 108, 255) : kind == MK_IMAGES ? RGBA(206, 128, 62, 255) : RGBA(52, 156, 110, 255);
+    gfx_round_rect(x + 1, y + 1, 16, 18, 2.5f, fade(badge, a));
     if (ext) {
         char up[5];
         int n = 0;
@@ -677,13 +709,14 @@ static void shown_name(const MusicEntry *e, char *out, int size)
 static void draw_list(MusicUi *m, float a, float slide)
 {
     int n = lines(m);
+    float lw = list_w(m);
     /* the line above the list: the folder that is open (the storages: nothing) */
     if (m->level == 1) {
         static char head[160];
         snprintf(head, sizeof(head), "%s", m->dir);
         float w = text_width(0.5f, 0, head);
         const char *s = head;
-        while (w > LIST_W && *s) { /* a long path loses its beginning */
+        while (w > lw && *s) { /* a long path loses its beginning */
             s++;
             w = text_width(0.5f, 0, s);
         }
@@ -694,10 +727,12 @@ static void draw_list(MusicUi *m, float a, float slide)
     }
     if (n == 0) {
         float y = 130;
-        text_draw(LIST_X, y, 0.8f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(m->level == 0 || m->nroots == 0 ? S_NO_MUSIC : S_F_EMPTY));
-        if (m->nroots == 0) { /* where the songs go: the hint says ms0:/, on a PSP Go with its internal storage it says ef0:/ */
+        StrId none = m->kind == MK_VIDEO ? S_NO_VIDEOS : m->kind == MK_IMAGES ? S_NO_IMAGES : S_NO_MUSIC;
+        StrId put = m->kind == MK_VIDEO ? S_HINT_VIDEO : m->kind == MK_IMAGES ? S_HINT_IMAGES : S_HINT_MUSIC;
+        text_draw(LIST_X, y, 0.8f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(m->level == 0 || m->nroots == 0 ? none : S_F_EMPTY));
+        if (m->nroots == 0) { /* where the files go: the hint says ms0:/, on a PSP Go with its internal storage it says ef0:/ */
             static char hint[160];
-            const char *h = L(S_HINT_MUSIC), *p = strstr(h, "ms0:");
+            const char *h = L(put), *p = strstr(h, "ms0:");
             if (p && strcmp(g_root, "ms0:"))
                 snprintf(hint, sizeof(hint), "%.*s%s%s", (int)(p - h), h, g_root, p + 4);
             else
@@ -711,7 +746,7 @@ static void draw_list(MusicUi *m, float a, float slide)
     if (music_state() != MUSIC_STOPPED)
         snprintf(cur_dir, sizeof(cur_dir), "%s", music_folder());
     float bottom = LIST_TOP + ROWS * ROW_H;
-    gfx_clip(0, LIST_TOP - 2, LIST_X + LIST_W + 12, ROWS * ROW_H + 4);
+    gfx_clip(0, LIST_TOP - 2, LIST_X + lw + 12, ROWS * ROW_H + 4);
     for (int i = (int)m->scroll; i < n && i <= (int)m->scroll + ROWS; i++) {
         float y = LIST_TOP + (i - m->scroll) * ROW_H + slide;
         if (y > bottom + slide)
@@ -719,10 +754,10 @@ static void draw_list(MusicUi *m, float a, float slide)
         int sel = i == m->sel && !m->popup;
         float sa = m->focus ? 0.45f : 1.0f; /* the frame is fainter while the player has the focus */
         if (sel) {
-            gfx_rect(LIST_X, y, LIST_W, ROW_H, RGBA(255, 255, 255, (int)(16 * a * sa)));
-            gfx_frame(LIST_X, y, LIST_W, ROW_H, 1, fade(RGBA(232, 232, 236, 230), a * sa));
+            gfx_rect(LIST_X, y, lw, ROW_H, RGBA(255, 255, 255, (int)(16 * a * sa)));
+            gfx_frame(LIST_X, y, lw, ROW_H, 1, fade(RGBA(232, 232, 236, 230), a * sa));
         } else if (i < n - 1 && i + 1 != m->sel) {
-            gfx_rect(LIST_X + 4, y + ROW_H - 1, LIST_W - 8, 1, RGBA(255, 255, 255, (int)(22 * a)));
+            gfx_rect(LIST_X + 4, y + ROW_H - 1, lw - 8, 1, RGBA(255, 255, 255, (int)(22 * a)));
         }
         float x = LIST_X + 8;
         MusicEntry as_entry;
@@ -731,14 +766,19 @@ static void draw_list(MusicUi *m, float a, float slide)
         if (m->level == 0) { /* a storage: the folder picture and the name of the storage */
             memset(&as_entry, 0, sizeof(as_entry));
             as_entry.dir = 1;
-            draw_row_icon(x, y + 2, &as_entry, a);
+            draw_row_icon(x, y + 2, &as_entry, a, m->kind);
             name = L(!strncmp(m->roots[i], "ef0", 3) ? S_F_INTERNAL : S_F_MS);
-            snprintf(shown, sizeof(shown), "%s", name);
+            if (m->kind == MK_IMAGES && m->nroots > 1) { /* several folders of pictures: the storage and the folder ("Memory Stick · PICTURE") */
+                const char *slash = strrchr(m->roots[i], '/');
+                snprintf(shown, sizeof(shown), "%s · %s", name, slash ? slash + 1 : m->roots[i]);
+            } else {
+                snprintf(shown, sizeof(shown), "%s", name);
+            }
         } else {
-            draw_row_icon(x, y + 2, &m->e[i], a);
+            draw_row_icon(x, y + 2, &m->e[i], a, m->kind);
             shown_name(&m->e[i], shown, sizeof(shown));
         }
-        float room = LIST_W - 26 - 28;
+        float room = lw - 26 - 28;
         if (sel && text_width(0.58f, 0, shown) > room)
             text_draw_marquee(x + 26, y + 16.5f, 0.58f, 0, fade(TEXT_MAIN, a), room, shown, m->name_t);
         else {
@@ -746,9 +786,9 @@ static void draw_list(MusicUi *m, float a, float slide)
             text_ellipsis(cut, sizeof(cut), shown, 0.58f, room);
             text_draw(x + 26, y + 16.5f, 0.58f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, cut);
         }
-        if (m->level == 1 && !m->e[i].dir && music_is_playing_file(m->dir, m->e[i].name)) {
+        if (m->kind == MK_MUSIC && m->level == 1 && !m->e[i].dir && music_is_playing_file(m->dir, m->e[i].name)) {
             playing_row = i;
-            float bx = LIST_X + LIST_W - 22;
+            float bx = LIST_X + lw - 22;
             int paused = music_state() == MUSIC_PAUSED;
             for (int k = 0; k < 3; k++) { /* small bars that move while the song plays */
                 float hgt = paused ? 3 : 3 + 7 * (0.5f + 0.5f * sinf(m->time * (7 + k * 2.3f) + k));
@@ -762,7 +802,7 @@ static void draw_list(MusicUi *m, float a, float slide)
     if (n > ROWS) { /* scroll bar */
         float h = ROWS * ROW_H, th = clampf(h * ROWS / n, 12, h);
         float ty = LIST_TOP + (h - th) * m->scroll / (n - ROWS);
-        gfx_round_rect(LIST_X + LIST_W + 6, ty + slide, 3, th, 1.5f, fade(RGBA(255, 255, 255, 70), a));
+        gfx_round_rect(LIST_X + lw + 6, ty + slide, 3, th, 1.5f, fade(RGBA(255, 255, 255, 70), a));
     }
 }
 
@@ -884,6 +924,8 @@ void musicui_mini_draw(MusicUi *m)
 void musicui_draw(MusicUi *m, float a, float slide)
 {
     draw_list(m, a, slide);
+    if (m->kind != MK_MUSIC)
+        return; /* Videos and Images: the list is all there is */
     draw_player(m, PANEL_X, PANEL_Y + slide, a, m->focus, 1, 150);
     draw_popup(m);
 }
