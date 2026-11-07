@@ -695,6 +695,8 @@ static const char *const T[S_COUNT][NL] = {
     [S_MU_SHUFFLE] = { "Shuffle", "Blanda", "Zufallswiedergabe", "Lecture aléatoire", "Aleatorio", "Riproduzione casuale", "Willekeurig", "Aleatório", "Перемешать", "シャッフル", "Náhodně" },
     [S_MU_REPEAT] = { "Repeat", "Upprepa", "Wiederholen", "Répéter", "Repetir", "Ripeti", "Herhalen", "Repetir", "Повтор", "リピート", "Opakovat" },
     [S_MU_REPEAT_ONE] = { "Current song", "Aktuell låt", "Aktuelles Lied", "Titre en cours", "Canción actual", "Brano corrente", "Huidig nummer", "Música atual", "Текущая песня", "現在の曲", "Aktuální skladba" },
+    [S_MU_BAD_FOLDER] = { "This folder can't be opened", "Mappen kan inte öppnas", "Dieser Ordner lässt sich nicht öffnen", "Ce dossier ne peut pas être ouvert", "Esta carpeta no se puede abrir",
+                          "Questa cartella non può essere aperta", "Deze map kan niet worden geopend", "Esta pasta não pode ser aberta", "Эту папку нельзя открыть", "このフォルダを開けません", "Tuto složku nelze otevřít" },
 };
 
 static const char *const NAMES[LANG_COUNT] = { "", "English", "Svenska", "Deutsch", "Français", "Español",

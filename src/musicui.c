@@ -62,18 +62,55 @@ void musicui_free(MusicUi *m)
     m->cover = NULL;
 }
 
-/* lists the folder `dir` (a folder that cannot be read is an empty list) */
-static void load_dir(MusicUi *m, const char *dir)
+/* the folder `dir` is the one that is open, with the lines `e` (n of them, or -1: it could not be read; the list is ours from now on) */
+static void adopt_dir(MusicUi *m, const char *dir, MusicEntry *e, int n)
 {
     free_list(m);
     snprintf(m->dir, sizeof(m->dir), "%s", dir);
-    m->n = music_list_dir(dir, &m->e);
-    m->ok = m->n >= 0;
+    m->e = e;
+    m->n = n;
+    m->ok = n >= 0;
     if (m->n < 0)
         m->n = 0;
     m->sel = 0;
     m->scroll = 0;
     m->name_t = 0;
+}
+
+/* lists the folder `dir` (a folder that cannot be read is an empty list) */
+static void load_dir(MusicUi *m, const char *dir)
+{
+    MusicEntry *e = NULL;
+    int n = music_list_dir(dir, &e);
+    adopt_dir(m, dir, e, n);
+}
+
+static int same_lines(const MusicEntry *a, int na, const MusicEntry *b, int nb)
+{
+    if (na != nb || na <= 0)
+        return 0;
+    for (int i = 0; i < na; i++)
+        if (a[i].dir != b[i].dir || strcmp(a[i].name, b[i].name))
+            return 0;
+    return 1;
+}
+
+/* A folder whose lines are those of the folder it is in, or those of the top of its storage, is not a folder inside this one: the PSP answered with the wrong folder (the path of a card whose
+ * folder entry points to the top of the Memory Stick gets the top of the Memory Stick for any name below it, however deep). Entering it would only make the path longer every time. */
+static int answers_with_another_folder(const MusicUi *m, const MusicEntry *e, int n)
+{
+    if (same_lines(e, n, m->e, m->n))
+        return 1;
+    const char *colon = strchr(m->dir, ':');
+    if (!colon || colon - m->dir > 8)
+        return 0;
+    char top[16];
+    snprintf(top, sizeof(top), "%.*s/", (int)(colon - m->dir) + 1, m->dir);
+    MusicEntry *t = NULL;
+    int nt = music_list_dir(top, &t);
+    int same = nt > 0 && same_lines(e, n, t, nt);
+    free(t);
+    return same;
 }
 
 static int dir_is_under_a_root(const MusicUi *m, const char *dir)
@@ -91,6 +128,7 @@ void musicui_open(MusicUi *m)
     snprintf(keep, sizeof(keep), "%s", m->dir);
     int keep_sel = m->sel;
     m->nroots = music_roots(m->roots);
+    m->warn_t = 0;
     m->focus = 0;
     m->popup = 0;
     m->popup_anim = 0;
@@ -183,8 +221,16 @@ static void activate(MusicUi *m)
         char sub[256];
         if (snprintf(sub, sizeof(sub), "%s/%s", m->dir, e->name) >= (int)sizeof(sub))
             return;
+        MusicEntry *ne = NULL;
+        int nn = music_list_dir(sub, &ne);
+        if (nn > 0 && answers_with_another_folder(m, ne, nn)) {
+            free(ne);
+            m->warn_t = 4;
+            sound_play(SND_ERROR);
+            return;
+        }
         m->sel_stack[m->depth++] = m->sel;
-        load_dir(m, sub);
+        adopt_dir(m, sub, ne, nn);
         sound_play(SND_SELECT);
     } else {
         music_play_folder(m->dir, m->e, m->n, m->sel);
@@ -397,6 +443,8 @@ int musicui_update(MusicUi *m, u32 pressed, u32 held, int lx, int ly, float dt)
 {
     m->time += dt;
     m->name_t += dt;
+    if (m->warn_t > 0)
+        m->warn_t -= dt;
     if (m->seek_show > 0)
         m->seek_show -= dt;
     m->popup_anim = clampf(m->popup_anim + (m->popup ? 7 : -7) * dt, 0, 1);
@@ -642,7 +690,10 @@ static void draw_list(MusicUi *m, float a, float slide)
             s++;
             w = text_width(0.5f, 0, s);
         }
-        text_draw(LIST_X, HEAD_Y, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_LEFT, s);
+        if (m->warn_t > 0) /* a folder that was not entered: this, in the place of the path */
+            text_draw(LIST_X, HEAD_Y, 0.5f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_MU_BAD_FOLDER));
+        else
+            text_draw(LIST_X, HEAD_Y, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_LEFT, s);
     }
     if (n == 0) {
         float y = 130;

@@ -32,6 +32,7 @@ typedef struct MusicUi {
     MusicEntry *e;             /* its lines (the folders first), n of them */
     int n;
     int ok;                    /* the folder could be read */
+    float warn_t;              /* seconds left of the message that a folder was not entered (instead of the path) */
     int sel;                   /* the chosen line */
     float scroll;              /* animated top line */
     int sel_stack[16];         /* where the choice was in each folder above this one, for ○ */
