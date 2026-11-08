@@ -59,15 +59,16 @@ int mpegps_unit_has_sps(const uint8_t *u, int len)
 }
 
 /* The unit the way the PSP's own streams have it: an access unit delimiter that says what kinds of slices the unit has (10 for I, 30 for I and P, 50 for B too), the parameter sets of a key frame
- * behind it, and a start code of four bytes in front of the delimiter and the parameter sets and of three in front of everything else. */
+ * behind it, and a start code of four bytes in front of the delimiter and the parameter sets and of three in front of everything else. A delimiter that the sample has is the one that is used,
+ * wherever it is in the sample (an encoder that writes the stream headers in front of the first picture puts it behind them); there is only one in a unit. */
 int mpegps_annexb(const uint8_t *s, int len, int nal_size, const uint8_t *params, int params_len, int key, uint8_t *out, int cap)
 {
     int n = 0;
     if (nal_size < 1 || nal_size > 4 || len < nal_size)
         return -1;
-    /* what the sample has in it: does it start with an access unit delimiter, does it carry the parameter sets itself, and what kinds of slices */
-    int first_type = -1, has_params = 0, kind = -1;
-    for (int pos = 0, k = 0; pos + nal_size <= len; k++) {
+    /* what the sample has in it: its delimiter, whether it carries the parameter sets itself, and what kinds of slices */
+    int has_params = 0, kind = -1, aud_pos = -1, aud_len = 0;
+    for (int pos = 0; pos + nal_size <= len;) {
         int l = 0;
         for (int i = 0; i < nal_size; i++)
             l = (l << 8) | s[pos + i];
@@ -75,8 +76,10 @@ int mpegps_annexb(const uint8_t *s, int len, int nal_size, const uint8_t *params
         if (l <= 0 || pos + l > len)
             return -1;
         int t = s[pos] & 0x1F;
-        if (k == 0)
-            first_type = t;
+        if (t == 9 && aud_pos < 0) {
+            aud_pos = pos;
+            aud_len = l;
+        }
         if (t == 7 || t == 8)
             has_params = 1;
         if (t == 1 || t == 5) {
@@ -86,18 +89,12 @@ int mpegps_annexb(const uint8_t *s, int len, int nal_size, const uint8_t *params
         }
         pos += l;
     }
-    /* The delimiter is the first NAL unit of the unit, the parameter sets come after it: a delimiter that the sample brought comes first and the sets are put behind it. */
-    int pos = 0;
-    if (first_type == 9) {
-        int l = 0;
-        for (int i = 0; i < nal_size; i++)
-            l = (l << 8) | s[i];
-        if (n + 4 + l > cap)
+    if (aud_pos >= 0) {
+        if (4 + aud_len > cap)
             return -1;
         out[n++] = 0; out[n++] = 0; out[n++] = 0; out[n++] = 1;
-        memcpy(out + n, s + nal_size, (size_t)l);
-        n += l;
-        pos = nal_size + l;
+        memcpy(out + n, s + aud_pos, (size_t)aud_len);
+        n += aud_len;
     } else {
         if (cap < 6)
             return -1;
@@ -111,27 +108,27 @@ int mpegps_annexb(const uint8_t *s, int len, int nal_size, const uint8_t *params
         memcpy(out + n, params, (size_t)params_len);
         n += params_len;
     }
-    while (pos + nal_size <= len) {
+    for (int pos = 0; pos + nal_size <= len;) {
         int l = 0;
         for (int i = 0; i < nal_size; i++)
             l = (l << 8) | s[pos + i];
         pos += nal_size;
-        if (l <= 0 || pos + l > len)
-            return -1;
         int t = s[pos] & 0x1F;
-        int sc = (t == 7 || t == 8 || t == 9) ? 4 : 3;
-        if (n + sc + l > cap)
-            return -1;
-        if (sc == 4)
+        if (t != 9) {
+            int sc = (t == 7 || t == 8) ? 4 : 3;
+            if (n + sc + l > cap)
+                return -1;
+            if (sc == 4)
+                out[n++] = 0;
             out[n++] = 0;
-        out[n++] = 0;
-        out[n++] = 0;
-        out[n++] = 1;
-        memcpy(out + n, s + pos, (size_t)l);
-        n += l;
+            out[n++] = 0;
+            out[n++] = 1;
+            memcpy(out + n, s + pos, (size_t)l);
+            n += l;
+        }
         pos += l;
     }
-    return pos == len ? n : -1;
+    return n;
 }
 
 int mpegps_adts(const uint8_t *asc, int asc_len, int payload, uint8_t out[7])

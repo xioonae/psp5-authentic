@@ -168,6 +168,18 @@ static void crumb_end(void)
     sceIoRemove(path);
 }
 
+/* A video that did not play (it could not be opened, the decoder gave errors, it was given up) is closed the right way, so nothing would be left of its crash file: it is kept as video-failed.txt, to
+ * be sent to the developer. */
+static void crumb_keep(void)
+{
+    char path[96], kept[96];
+    crumb_path(path, sizeof(path), "video-crash.txt");
+    crumb_path(kept, sizeof(kept), "video-failed.txt");
+    sceIoRemove(kept);
+    if (sceIoRename(path, kept) < 0)
+        sceIoRemove(path);
+}
+
 /* The PSP's own AAC decoder (sceAudiocodec, codec 0x1003) crashed a real PSP on its first frame: the crash file of the first test on one ended with "first-sound", written just before that call, and the
  * picture decoder had not been asked for anything yet. PPSSPP accepts the call, and what a PSP wants in the parameter block cannot be found out without crashing one, so an MP4 is played without
  * sound until the sound is made another way. A build with -DVIDEO_HW_AAC (PPSSPP tests only) still uses the decoder. */
@@ -254,6 +266,7 @@ struct Video {
     int stream_error;
     int decoded;                      /* the picture decoder has been asked for a picture in this session (it is only stopped then) */
     int n_put, n_au, n_dec;           /* packets fed, units given, pictures asked for (for the crash file) */
+    int err_total;                    /* errors of the library in all (feeding, units, decoding): the crash file is kept when there were any */
     unsigned seen[6];                 /* the first different answers of sceMpegGetAvcAu (for the crash file) */
     int n_seen, hb_lines;
     float hb, since;                  /* the time to the next sign of life in the crash file, and the time this session has gone without a picture */
@@ -672,12 +685,15 @@ static int session_create(Video *v)
     crumb("session", 0, 0);
     int rc = sceMpegRingbufferConstruct(RING(v), RING_PACKETS, v->ring_data, v->ring_size, ring_cb, v);
     VLOG("construct %08x\n", rc);
-    if (rc < 0)
+    if (rc < 0) {
+        crumbh("fail-construct", (unsigned)rc, 0, 0, 0);
         return 0;
+    }
     crumb("mpeg-create", v->mpeg_size, v->ring_size);
     int cr = sceMpegCreate(&v->mpeg, v->mpeg_mem, v->mpeg_size, RING(v), FRAME_W, 0, 0);
     VLOG("create %08x\n", cr);
     if (cr < 0) {
+        crumbh("fail-create", (unsigned)cr, 0, 0, 0);
         sceMpegRingbufferDestruct(RING(v));
         return 0;
     }
@@ -689,20 +705,26 @@ static int session_create(Video *v)
         make_header(v, v->header);
     int qo = sceMpegQueryStreamOffset(&v->mpeg, v->header, &off), qs = sceMpegQueryStreamSize(v->header, &size);
     VLOG("query offset %08x (%d) size %08x (%d)\n", qo, (int)off, qs, (int)size);
-    if (qo < 0 || qs < 0)
+    if (qo < 0 || qs < 0) {
+        crumbh("fail-query", (unsigned)qo, (unsigned)qs, (unsigned)off, (unsigned)size);
         goto fail_up;
+    }
     v->s_avc = sceMpegRegistStream(&v->mpeg, 0, 0);
     VLOG("regist avc %p\n", (void *)v->s_avc);
-    if (!v->s_avc)
+    if (!v->s_avc) {
+        crumb("fail-regist", 0, 0);
         goto fail_up;
+    }
     if (v->kind == VK_PMF && v->pmf_atrac && v->audio_ok)
         v->s_atrac = sceMpegRegistStream(&v->mpeg, 1, 0);
     v->es_avc = sceMpegMallocAvcEsBuf(&v->mpeg);
     int ia = v->es_avc ? sceMpegInitAu(&v->mpeg, v->es_avc, &v->au_avc) : -1;
     VLOG("es %p init au %08x\n", v->es_avc, ia);
     crumbh("setup", (unsigned)(uintptr_t)v->s_avc, (unsigned)(uintptr_t)v->es_avc, (unsigned)ia, (unsigned)v->au_avc.iEsBuffer);
-    if (ia < 0)
+    if (ia < 0) {
+        crumb("fail-initau", ia, 0);
         goto fail_up;
+    }
     if (v->s_atrac) {
         SceInt32 es = 0, out = 0;
         if (sceMpegQueryAtracEsSize(&v->mpeg, &es, &out) < 0 || es <= 0 || out <= 0)
@@ -742,6 +764,7 @@ static void feed(Video *v)
         if (v->stream_error < 3)
             crumb("put-error", r, v->stream_error);
         v->stream_error++;
+        v->err_total++;
     } else if (r == 0) {
         v->src_eof |= 1;
         crumb("source-end", v->n_put, 0);
@@ -781,19 +804,22 @@ Video *video_open(const char *path)
     crumb_start();
     crumb("open", 0, 0);
     if (!load_modules()) {
-        crumb_end(); /* (it failed, it did not crash) */
+        crumb("open-fail", __LINE__, 0);
+        crumb_keep(); /* (it failed, it did not crash) */
         return NULL;
     }
     Video *v = calloc(1, sizeof(*v));
     if (!v) {
-        crumb_end();
+        crumb("open-fail", __LINE__, 0);
+        crumb_keep();
         return NULL;
     }
     int mi = sceMpegInit();
     VLOG("mpeg init %08x\n", mi);
     if (mi < 0) {
+        crumb("open-fail", __LINE__, mi);
         free(v);
-        crumb_end();
+        crumb_keep();
         return NULL;
     }
     v->lib_up = 1;
@@ -804,19 +830,19 @@ Video *video_open(const char *path)
         v->kind = VK_PMF;
         v->fp = fopen(path, "rb");
         if (!v->fp || fread(v->header, 1, PKT, v->fp) != PKT || memcmp(v->header, "PSMF", 4))
-            goto fail;
+            { crumb("open-fail", __LINE__, 0); goto fail; }
         v->stream_off = be32(v->header + 8);
         v->stream_size = be32(v->header + 12);
         if (v->stream_off < PKT || (v->stream_off & (PKT - 1)) || v->stream_off > (1 << 20))
-            goto fail;
+            { crumb("open-fail", __LINE__, 0); goto fail; }
         /* the whole head of the file (the entry points can be after the first sector) */
         unsigned char *whole = malloc(v->stream_off);
         if (!whole)
-            goto fail;
+            { crumb("open-fail", __LINE__, 0); goto fail; }
         fseek(v->fp, 0, SEEK_SET);
         if (fread(whole, 1, v->stream_off, v->fp) != v->stream_off) {
             free(whole);
-            goto fail;
+            { crumb("open-fail", __LINE__, 0); goto fail; }
         }
         const unsigned char *e0 = NULL;
         int streams = (whole[0x80] << 8) | whole[0x81];
@@ -842,7 +868,7 @@ Video *video_open(const char *path)
         v->kind = VK_MP4;
         v->mp4 = mp4_open(path);
         if (!v->mp4)
-            goto fail;
+            { crumb("open-fail", __LINE__, 0); goto fail; }
         v->w = mp4_width(v->mp4);
         v->h = mp4_height(v->mp4);
         v->duration = mp4_duration(v->mp4);
@@ -857,13 +883,13 @@ Video *video_open(const char *path)
             free(tmp);
         }
         if (v->au_cap <= 0 || v->au_cap > MAX_AU)
-            goto fail;
+            { crumb("open-fail", __LINE__, 0); goto fail; }
         v->sample = malloc((size_t)v->au_cap);
         v->au[0] = malloc((size_t)v->au_cap + 4096);
         v->au[1] = malloc((size_t)v->au_cap + 4096);
         if (!v->params_len || !v->sample || !v->au[0] || !v->au[1]) {
             VLOG("no memory for the samples\n");
-            goto fail;
+            { crumb("open-fail", __LINE__, 0); goto fail; }
         }
         v->audio_ok = mp4_has_audio(v->mp4);
     }
@@ -876,7 +902,7 @@ Video *video_open(const char *path)
                n >= 12 ? (unsigned)v->params[8] << 24 | v->params[9] << 16 | v->params[10] << 8 | v->params[11] : 0, n >= 16 ? (unsigned)v->params[12] << 24 | v->params[13] << 16 | v->params[14] << 8 | v->params[15] : 0);
     }
     if (v->w <= 0 || v->h <= 0 || v->w > FRAME_W || v->h > 512)
-        goto fail;
+        { crumb("open-fail", __LINE__, 0); goto fail; }
     /* the decoder writes whole blocks of 16 and the PSP's own library decides how far it goes: the buffer is always the biggest a video can need (512 by 512 of 16 bits), so nothing can be written past it */
     size_t frame_bytes = (size_t)FRAME_W * 512 * 2;
     v->frame = memalign(64, frame_bytes);
@@ -888,7 +914,7 @@ Video *video_open(const char *path)
     }
     if (!v->frame || !v->ring_data || !v->mpeg_mem) {
         VLOG("no memory for the picture and the ring buffer\n");
-        goto fail;
+        { crumb("open-fail", __LINE__, 0); goto fail; }
     }
     memset(v->frame, 0, frame_bytes);
     sceKernelDcacheWritebackInvalidateRange(v->frame, (unsigned)frame_bytes);
@@ -915,6 +941,7 @@ Video *video_open(const char *path)
     return v;
 fail:
     VLOG("open failed\n");
+    v->failed = 1;
     video_close(v);
     return NULL;
 }
@@ -932,7 +959,11 @@ void video_close(Video *v)
     if (v->lib_up && TD_STEP(TD_FINISH))
         sceMpegFinish();
     aac_close(v);
-    crumb_end(); /* it was closed the right way: nothing to leave behind */
+    crumb4("end", v->n_put, v->n_au, v->n_dec, v->err_total);
+    if (v->failed || v->err_total > 0)
+        crumb_keep(); /* it did not play right: the file stays (video-failed.txt) */
+    else
+        crumb_end(); /* it was closed the right way and played: nothing to leave behind */
     free(v->frame);
     free(v->ep);
     free(v->sample);
@@ -1006,6 +1037,8 @@ int video_play(Video *v, float at)
     }
     int ok = session_create(v);
     VLOG("play at %.2f: session %d\n", at, ok);
+    if (!ok)
+        v->failed = 1; /* (the crash file is kept) */
     return ok;
 }
 
@@ -1074,6 +1107,7 @@ int video_update(Video *v, float dt)
             }
             if (r != 0) {
                 VLOG("get au %08x\n", r);
+                v->err_total++;
                 if (++v->stream_error > 30)
                     v->failed = 1;
                 break;
@@ -1120,6 +1154,7 @@ int video_update(Video *v, float dt)
             crumbh("first-decode", (unsigned)r, (unsigned)got, v->au_avc.iAuSize, (unsigned)(uintptr_t)buf);
         if (r != 0) {
             VLOG("avc decode %08x\n", r);
+            v->err_total++;
             if (v->dec_errors < 3)
                 crumbh("decode-error", (unsigned)r, (unsigned)v->dec_errors, v->au_avc.iAuSize, 0);
             if (++v->dec_errors > 30)
