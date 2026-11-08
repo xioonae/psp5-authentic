@@ -2,14 +2,71 @@
 #include <string.h>
 #include "mpegps.h"
 
+/* what kind of slices a NAL unit has: 0 = I, 1 = P, 2 = B (the first two numbers of a slice header are the first macroblock and the slice type); -1 when it cannot be read */
+static int slice_kind(const uint8_t *nal, int len)
+{
+    uint8_t b[12];
+    int n = 0;
+    for (int i = 1; i < len && n < 12; i++) {
+        if (n >= 2 && b[n - 1] == 0 && b[n - 2] == 0 && nal[i] == 3)
+            continue; /* emulation prevention byte */
+        b[n++] = nal[i];
+    }
+    int pos = 0, v[2];
+    for (int k = 0; k < 2; k++) {
+        int zeros = 0;
+        while (pos < n * 8 && !((b[pos >> 3] >> (7 - (pos & 7))) & 1)) {
+            zeros++;
+            pos++;
+        }
+        if (zeros > 15 || pos + zeros + 1 > n * 8)
+            return -1;
+        pos++;
+        int val = 0;
+        for (int i = 0; i < zeros; i++, pos++)
+            val = (val << 1) | ((b[pos >> 3] >> (7 - (pos & 7))) & 1);
+        v[k] = (1 << zeros) - 1 + val;
+    }
+    int t = v[1] % 5; /* 0 P, 1 B, 2 I, 3 SP, 4 SI */
+    return t == 2 || t == 4 ? 0 : t == 1 ? 2 : 1;
+}
+
+int mpegps_sample_has_params(const uint8_t *s, int len, int nal_size)
+{
+    if (nal_size < 1 || nal_size > 4)
+        return 0;
+    for (int pos = 0; pos + nal_size <= len;) {
+        int l = 0;
+        for (int i = 0; i < nal_size; i++)
+            l = (l << 8) | s[pos + i];
+        pos += nal_size;
+        if (l <= 0 || pos + l > len)
+            return 0;
+        int t = s[pos] & 0x1F;
+        if (t == 7 || t == 8)
+            return 1;
+        pos += l;
+    }
+    return 0;
+}
+
+int mpegps_unit_has_sps(const uint8_t *u, int len)
+{
+    for (int i = 0; i + 4 < len && i < 64; i++)
+        if (u[i] == 0 && u[i + 1] == 0 && u[i + 2] == 1 && (u[i + 3] & 0x1F) == 7)
+            return 1;
+    return 0;
+}
+
+/* The unit the way the PSP's own streams have it: an access unit delimiter that says what kinds of slices the unit has (10 for I, 30 for I and P, 50 for B too), the parameter sets of a key frame
+ * behind it, and a start code of four bytes in front of the delimiter and the parameter sets and of three in front of everything else. */
 int mpegps_annexb(const uint8_t *s, int len, int nal_size, const uint8_t *params, int params_len, int key, uint8_t *out, int cap)
 {
-    static const uint8_t aud[6] = { 0, 0, 0, 1, 0x09, 0xF0 }; /* "any slice type" */
     int n = 0;
     if (nal_size < 1 || nal_size > 4 || len < nal_size)
         return -1;
-    /* what the sample has in it: does it start with an access unit delimiter, and does it carry the parameter sets itself */
-    int first_type = -1, has_params = 0;
+    /* what the sample has in it: does it start with an access unit delimiter, does it carry the parameter sets itself, and what kinds of slices */
+    int first_type = -1, has_params = 0, kind = -1;
     for (int pos = 0, k = 0; pos + nal_size <= len; k++) {
         int l = 0;
         for (int i = 0; i < nal_size; i++)
@@ -22,23 +79,30 @@ int mpegps_annexb(const uint8_t *s, int len, int nal_size, const uint8_t *params
             first_type = t;
         if (t == 7 || t == 8)
             has_params = 1;
+        if (t == 1 || t == 5) {
+            int sk = slice_kind(s + pos, l);
+            if (sk > kind)
+                kind = sk;
+        }
         pos += l;
     }
     /* The delimiter is the first NAL unit of the unit, the parameter sets come after it: a delimiter that the sample brought comes first and the sets are put behind it. */
-    int pos = 0, first_len = 0;
+    int pos = 0;
     if (first_type == 9) {
+        int l = 0;
         for (int i = 0; i < nal_size; i++)
-            first_len = (first_len << 8) | s[i];
-        if (n + 4 + first_len > cap)
+            l = (l << 8) | s[i];
+        if (n + 4 + l > cap)
             return -1;
         out[n++] = 0; out[n++] = 0; out[n++] = 0; out[n++] = 1;
-        memcpy(out + n, s + nal_size, (size_t)first_len);
-        n += first_len;
-        pos = nal_size + first_len;
+        memcpy(out + n, s + nal_size, (size_t)l);
+        n += l;
+        pos = nal_size + l;
     } else {
         if (cap < 6)
             return -1;
-        memcpy(out, aud, 6);
+        out[0] = 0; out[1] = 0; out[2] = 0; out[3] = 1; out[4] = 0x09;
+        out[5] = (uint8_t)(kind >= 0 ? (kind << 5) | 0x10 : 0xF0);
         n = 6;
     }
     if (key && params_len > 0 && !has_params) {
@@ -54,9 +118,12 @@ int mpegps_annexb(const uint8_t *s, int len, int nal_size, const uint8_t *params
         pos += nal_size;
         if (l <= 0 || pos + l > len)
             return -1;
-        if (n + 4 + l > cap)
+        int t = s[pos] & 0x1F;
+        int sc = (t == 7 || t == 8 || t == 9) ? 4 : 3;
+        if (n + sc + l > cap)
             return -1;
-        out[n++] = 0;
+        if (sc == 4)
+            out[n++] = 0;
         out[n++] = 0;
         out[n++] = 0;
         out[n++] = 1;
@@ -92,77 +159,100 @@ int mpegps_adts(const uint8_t *asc, int asc_len, int payload, uint8_t out[7])
 /* ---------------------------------------------------------------------- */
 /* the program stream */
 
-void ps_init(PsWriter *w)
-{
-    memset(w, 0, sizeof(*w));
-}
-
-void ps_au(PsWriter *w, const uint8_t *annexb, int len, int64_t pts, int64_t dts)
-{
-    w->data = annexb;
-    w->len = len;
-    w->pos = 0;
-    w->pts = pts < 0 ? 0 : pts;
-    /* the PSP's own streams have the decoding time at least one picture (3003 ticks) before the time to show it, also when nothing is reordered */
-    w->dts = dts > w->pts - 3003 ? w->pts - 3003 : dts;
-    if (w->dts < 0)
-        w->dts = 0;
-    w->first = 1;
-}
-
-int ps_pending(const PsWriter *w)
-{
-    return w->len - w->pos;
-}
-
-/* what is in a sector: the pack header, [system header, the table packet], then one PES packet. The first sector of a unit has the time stamps (always both) and the P-STD extension of the PSP's own streams */
 #define PS_PACK 14
 #define PS_SYSTEM 18
-#define PS_PES_FIXED 9
-#define PS_STAMPS 13
+#define PS_PES_FIXED 9 /* the start code, the length and the three bytes of flags */
+#define PS_STAMPS_FIRST 13 /* PTS, DTS and the P-STD extension */
+#define PS_STAMPS 10       /* PTS and DTS */
 #define PS_TABLE_PACKET(n) (6 + 18 + 4 * (n))
 
 static const uint8_t SYSTEM_HEADER[PS_SYSTEM] = { 0x00, 0x00, 0x01, 0xBB, 0x00, 0x0C, 0x80, 0xC3, 0x51, 0x80, 0xF0, 0x7F, 0xB9, 0xE0, 0x55, 0xBD, 0xE0, 0x08 };
 
-void ps_group(PsWriter *w, const int *sizes, int n)
+void ps_init(PsWriter *w, int first, int count, PsSize size, PsPull pull, void *arg)
 {
-    w->table_n = 0;
-    if (n < 1 || n > PS_TABLE_MAX)
-        return;
-    for (int k = 0; k < n; k++)
-        if (sizes[k] < 1 || sizes[k] > 65535)
-            return;
-    int room_first = 2048 - PS_PACK - PS_SYSTEM - PS_TABLE_PACKET(n) - PS_PES_FIXED - PS_STAMPS;
-    int room_other = 2048 - PS_PACK - PS_PES_FIXED - PS_STAMPS, room_next = 2048 - PS_PACK - PS_PES_FIXED;
-    if (room_first < 1)
-        return;
-    int sector = 0;
-    for (int k = 0; k < n; k++) {
-        int first = k == 0 ? room_first : room_other;
-        int sectors = 1 + (sizes[k] > first ? (sizes[k] - first + room_next - 1) / room_next : 0);
-        sector += sectors; /* (every unit starts in a sector of its own) */
-        w->table[k] = (uint16_t)sizes[k];
-        if (k < 4)
-            w->words[k] = (uint16_t)(sector - 1); /* the sector this unit ends in, counted from the first */
-    }
-    for (int k = n; k < 4; k++)
-        w->words[k] = w->words[n - 1];
-    w->table_n = n;
+    memset(w, 0, sizeof(*w));
+    w->size = size;
+    w->pull = pull;
+    w->arg = arg;
+    w->plan_at = first;
+    w->count = count;
+    w->last_stamp_idx = -1000;
+    w->cur_idx = -1;
 }
 
-int ps_group_plan(PsWriter *w, int i, int count, int (*unit)(void *arg, int j, int *key), void *arg)
+/* the units of the next group: from the next key frame (or the first unit) to the one before the next, at most PS_TABLE_MAX; their table and the four sector numbers. Returns their number. */
+static int plan_group(PsWriter *w)
 {
-    int sizes[PS_TABLE_MAX], n = 0;
-    for (int j = i; j < count && n < PS_TABLE_MAX; j++) {
-        int key = 0, len = unit(arg, j, &key);
+    int sizes[PS_TABLE_MAX], n = 0, big = 0, j = w->plan_at;
+    for (; j < w->count && n < PS_TABLE_MAX; j++) {
+        int key = 0, len = w->size(w->arg, j, &key);
         if (len < 0)
             continue;
         if (n > 0 && key)
             break;
         sizes[n++] = len;
+        if (len > 65535)
+            big = 1; /* it does not fit the table (16 bits): the group has none */
     }
-    ps_group(w, sizes, n);
+    w->plan_at = j;
+    w->table_n = 0;
+    if (n > 0 && !big) {
+        int room_first = 2048 - PS_PACK - PS_SYSTEM - PS_TABLE_PACKET(n) - PS_PES_FIXED - PS_STAMPS_FIRST, room_next = 2048 - PS_PACK - PS_PES_FIXED;
+        int end = 0;
+        for (int k = 0; k < n; k++) {
+            end += sizes[k];
+            w->table[k] = (uint16_t)sizes[k];
+            if (k < 4)
+                w->words[k] = (uint16_t)(end - 1 < room_first ? 0 : 1 + (end - 1 - room_first) / room_next); /* the sector the last byte of the unit is in, counted from the first */
+        }
+        for (int k = n; k < 4; k++)
+            w->words[k] = w->words[n - 1];
+        w->table_n = n;
+    }
+    w->group_left = n;
+    w->new_group = n > 0;
     return n;
+}
+
+static void take_ts(int64_t pts, int64_t dts, int64_t *out_pts, int64_t *out_dts)
+{
+    /* the PSP's own streams have the decoding time at least one picture (3003 ticks) before the time to show it, also when nothing is reordered */
+    *out_pts = pts < 0 ? 0 : pts;
+    *out_dts = dts > *out_pts - 3003 ? *out_pts - 3003 : dts;
+    if (*out_dts < 0)
+        *out_dts = 0;
+}
+
+/* the unit after the current one, pulled but not yet current */
+static int ahead(PsWriter *w)
+{
+    if (w->has_ahead)
+        return 1;
+    if (w->group_left <= 0)
+        return 0;
+    int64_t pts, dts;
+    w->group_left--;
+    if (!w->pull(w->arg, &w->adata, &w->alen, &pts, &dts) || w->alen <= 0) {
+        w->group_left = 0; /* the stream gave less than was planned (it is the same samples: it cannot be) */
+        return 0;
+    }
+    take_ts(pts, dts, &w->apts, &w->adts);
+    w->has_ahead = 1;
+    return 1;
+}
+
+static int advance(PsWriter *w)
+{
+    if (!ahead(w))
+        return 0;
+    w->data = w->adata;
+    w->len = w->alen;
+    w->pos = 0;
+    w->pts = w->apts;
+    w->dts = w->adts;
+    w->has_ahead = 0;
+    w->cur_idx++;
+    return 1;
 }
 
 static void put_ts(uint8_t *p, int prefix, int64_t ts)
@@ -174,13 +264,54 @@ static void put_ts(uint8_t *p, int prefix, int64_t ts)
     p[4] = (uint8_t)(((ts & 0x7F) << 1) | 1);
 }
 
-void ps_sector(PsWriter *w, uint8_t out[2048])
+int ps_sector(PsWriter *w, uint8_t out[2048])
 {
+    w->cur_starts = 0;
+    if (w->pos >= w->len) { /* the unit is written: the next one of the group, or the first of the next group */
+        if (w->group_left <= 0 && !w->has_ahead && !plan_group(w))
+            return 0;
+        if (!advance(w))
+            return 0;
+        w->cur_starts = 1;
+    }
+    int group_start = w->new_group;
+    w->new_group = 0;
     memset(out, 0xFF, 2048);
-    /* the pack header, with the system clock a little before the decoding time */
-    int64_t scr = w->dts - 9000;
+    uint8_t *p = out + PS_PACK;
+    int table = group_start && w->table_n > 0;
+    if (table)
+        p += PS_SYSTEM + PS_TABLE_PACKET(w->table_n);
+    /* does a time stamp go in: always at the start of a group; later when a unit starts in this packet and enough units have started since the last stamp */
+    int stamp = 0, ext = 0;
+    int64_t spts = w->pts, sdts = w->dts;
+    if (group_start) {
+        stamp = 1;
+        ext = 1;
+        w->last_stamp_idx = w->cur_idx;
+    } else {
+        int idx = -1;
+        int room_s = 2048 - PS_PACK - PS_PES_FIXED - PS_STAMPS;
+        if (w->cur_starts) {
+            idx = w->cur_idx;
+        } else if (w->len - w->pos < room_s && ahead(w)) {
+            idx = w->cur_idx + 1;
+            spts = w->apts;
+            sdts = w->adts;
+        }
+        if (idx >= 0 && idx - w->last_stamp_idx >= PS_STAMP_EVERY) {
+            stamp = 1;
+            w->last_stamp_idx = idx;
+        }
+    }
+    int hdr = stamp ? (ext ? PS_STAMPS_FIRST : PS_STAMPS) : 0;
+    int room = 2048 - (int)(p - out) - PS_PES_FIXED - hdr; /* payload that fits behind the PES header of this sector */
+    /* the system clock leads the decoding time by about a second */
+    int64_t scr = (stamp ? sdts : w->dts) - 86000;
+    if (scr < w->scr)
+        scr = w->scr;
     if (scr < 0)
         scr = 0;
+    w->scr = scr;
     out[0] = 0; out[1] = 0; out[2] = 1; out[3] = 0xBA;
     out[4] = (uint8_t)(0x44 | (((scr >> 30) & 7) << 3) | ((scr >> 28) & 3));
     out[5] = (uint8_t)((scr >> 20) & 0xFF);
@@ -188,70 +319,78 @@ void ps_sector(PsWriter *w, uint8_t out[2048])
     out[7] = (uint8_t)((scr >> 5) & 0xFF);
     out[8] = (uint8_t)(0x04 | ((scr & 0x1F) << 3));
     out[9] = 0x01;
-    out[10] = 0x01; out[11] = 0x89; out[12] = 0xC3; /* 25200 * 50 bytes a second */
+    out[10] = 0x01; out[11] = 0x86; out[12] = 0xA3; /* 25000 * 50 bytes a second, as the PSP's own streams */
     out[13] = 0xF8;
-    uint8_t *p = out + PS_PACK;
-    int table = w->first && w->table_n > 0;
     if (table) { /* the start of a group: the system header and the table of the sizes of its units */
-        memcpy(p, SYSTEM_HEADER, PS_SYSTEM);
-        p += PS_SYSTEM;
+        uint8_t *t = out + PS_PACK;
+        memcpy(t, SYSTEM_HEADER, PS_SYSTEM);
+        t += PS_SYSTEM;
         int n = w->table_n, len = 18 + 4 * n;
-        p[0] = 0; p[1] = 0; p[2] = 1; p[3] = 0xBF;
-        p[4] = (uint8_t)(len >> 8); p[5] = (uint8_t)len;
-        p[6] = 0x01; p[7] = 0xE0;
+        t[0] = 0; t[1] = 0; t[2] = 1; t[3] = 0xBF;
+        t[4] = (uint8_t)(len >> 8); t[5] = (uint8_t)len;
+        t[6] = 0x01; t[7] = 0xE0;
         for (int k = 0; k < 4; k++) {
-            p[8 + 2 * k] = (uint8_t)(w->words[k] >> 8);
-            p[9 + 2 * k] = (uint8_t)w->words[k];
+            t[8 + 2 * k] = (uint8_t)(w->words[k] >> 8);
+            t[9 + 2 * k] = (uint8_t)w->words[k];
         }
-        memset(p + 16, 0, 4);
-        p[20] = (uint8_t)((2 + 4 * n) >> 8); p[21] = (uint8_t)(2 + 4 * n);
-        p[22] = (uint8_t)(n >> 8); p[23] = (uint8_t)n;
+        memset(t + 16, 0, 4);
+        t[20] = (uint8_t)((2 + 4 * n) >> 8); t[21] = (uint8_t)(2 + 4 * n);
+        t[22] = (uint8_t)(n >> 8); t[23] = (uint8_t)n;
         for (int k = 0; k < n; k++) { /* (the flag is 0x0080, and 0 for the last unit of the table) */
-            p[24 + 4 * k] = 0;
-            p[25 + 4 * k] = k == n - 1 ? 0x00 : 0x80;
-            p[26 + 4 * k] = (uint8_t)(w->table[k] >> 8);
-            p[27 + 4 * k] = (uint8_t)w->table[k];
+            t[24 + 4 * k] = 0;
+            t[25 + 4 * k] = k == n - 1 ? 0x00 : 0x80;
+            t[26 + 4 * k] = (uint8_t)(w->table[k] >> 8);
+            t[27 + 4 * k] = (uint8_t)w->table[k];
         }
-        p += PS_TABLE_PACKET(n);
-        w->table_n = 0;
     }
-    int stamps = w->first ? PS_STAMPS : 0;
-    int room = 2048 - (int)(p - out) - PS_PES_FIXED - stamps; /* payload that fits behind the PES header of this sector */
-    int rest = w->len - w->pos;
-    int payload = rest < room ? rest : room;
-    int slack = room - payload;
-    int stuff = 0, pad = 0;
+    /* the payload: the rest of the unit, and the units after it of the group while there is room */
+    uint8_t *q = p + PS_PES_FIXED + hdr;
+    int left = room;
+    while (left > 0) {
+        int rem = w->len - w->pos;
+        if (rem == 0) {
+            if (!advance(w))
+                break; /* the group is at its end */
+            rem = w->len;
+        }
+        int take = rem < left ? rem : left;
+        memcpy(q, w->data + w->pos, (size_t)take);
+        w->pos += take;
+        q += take;
+        left -= take;
+    }
+    int slack = left, stuff = 0, pad = 0;
     if (slack > 0 && slack < 6)
         stuff = slack; /* too little for a padding packet: stuffing bytes in the PES header */
     else
         pad = slack;
-    int hdr = stamps + stuff;
+    if (stuff) { /* the payload moves behind the stuffing bytes */
+        memmove(p + PS_PES_FIXED + hdr + stuff, p + PS_PES_FIXED + hdr, (size_t)(room - slack));
+        memset(p + PS_PES_FIXED + hdr, 0xFF, (size_t)stuff);
+    }
+    int payload = room - slack;
+    int pes_len = 3 + hdr + stuff + payload;
     p[0] = 0; p[1] = 0; p[2] = 1; p[3] = 0xE0;
-    int pes_len = 3 + hdr + payload;
     p[4] = (uint8_t)(pes_len >> 8);
     p[5] = (uint8_t)(pes_len & 0xFF);
     p[6] = 0x81;
-    p[7] = (uint8_t)(w->first ? 0xC1 : 0x00); /* time stamps (both) and the extension */
-    p[8] = (uint8_t)hdr;
-    uint8_t *q = p + 9;
-    if (w->first) {
-        put_ts(q, 3, w->pts);
-        put_ts(q + 5, 1, w->dts);
-        q[10] = 0x1E; /* the extension holds the size of the decoder's buffer (P-STD): 85 KB, as in the PSP's own streams */
-        q[11] = 0x60;
-        q[12] = 0x55;
+    p[7] = (uint8_t)(stamp ? (ext ? 0xC1 : 0xC0) : 0x00);
+    p[8] = (uint8_t)(hdr + stuff);
+    if (stamp) {
+        put_ts(p + 9, 3, spts);
+        put_ts(p + 14, 1, sdts);
+        if (ext) {
+            p[19] = 0x1E; /* the extension holds the size of the decoder's buffer (P-STD): 85 KB, as in the PSP's own streams */
+            p[20] = 0x60;
+            p[21] = 0x55;
+        }
     }
-    q += stamps;
-    for (int i = 0; i < stuff; i++)
-        *q++ = 0xFF;
-    memcpy(q, w->data + w->pos, (size_t)payload);
-    q += payload;
     if (pad >= 6) { /* a padding packet to the end of the sector */
-        q[0] = 0; q[1] = 0; q[2] = 1; q[3] = 0xBE;
-        q[4] = (uint8_t)((pad - 6) >> 8);
-        q[5] = (uint8_t)((pad - 6) & 0xFF);
-        memset(q + 6, 0xFF, (size_t)(pad - 6));
+        uint8_t *e = p + PS_PES_FIXED + hdr + payload;
+        e[0] = 0; e[1] = 0; e[2] = 1; e[3] = 0xBE;
+        e[4] = (uint8_t)((pad - 6) >> 8);
+        e[5] = (uint8_t)((pad - 6) & 0xFF);
+        memset(e + 6, 0xFF, (size_t)(pad - 6));
     }
-    w->pos += payload;
-    w->first = 0;
+    return 1;
 }

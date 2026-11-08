@@ -9,34 +9,55 @@
  * frame) and the NAL units each behind a start code. Returns the bytes written, or -1 when it does not fit in cap or the sample is damaged. out must not be the sample. */
 int mpegps_annexb(const uint8_t *sample, int len, int nal_size, const uint8_t *params, int params_len, int key, uint8_t *out, int cap);
 
+/* 1 when the sample carries parameter sets (SPS or PPS) itself: such a stream (the PSP's own are) is not given the ones of the MP4's header, which can be older than the ones the stream changed to */
+int mpegps_sample_has_params(const uint8_t *sample, int len, int nal_size);
+/* 1 when the unit (Annex B) has an SPS in it: it starts a sequence, and so a group of the program stream */
+int mpegps_unit_has_sps(const uint8_t *unit, int len);
+
 /* the 7 byte ADTS header of an AAC frame of `payload` bytes, from the AudioSpecificConfig of the MP4 (AAC-LC and the other object types of 1 to 4 bits); 0 when the config is not understood */
 int mpegps_adts(const uint8_t *asc, int asc_len, int payload, uint8_t out[7]);
 
-/* The program stream writer: it cuts one access unit after another into 2048 byte sectors, each a pack header and one PES packet (the first sector of a unit has its time stamps,
- * the others none; a short last sector is filled up with a padding packet). Times are in ticks of 90 kHz. */
-#define PS_TABLE_MAX 59 /* the most units one table lists (the PSP's own streams have at most 59 or 60 pictures in a group) */
+/* The program stream writer. It makes what the PSP's own PMF files look like (read off the real test.pmf of PPSSPP's tests, whose stream it reproduces sector for sector):
+ *  - the units (pictures) of a group run one after the other through 2048 byte sectors, each sector a pack header and one PES packet that is filled up; only the last sector of a group has room
+ *    left (a padding packet fills it);
+ *  - a group of at most PS_TABLE_MAX units starts a sector, which has the system header and a "private stream 2" packet behind its pack header: the table of the size of every unit of the group, and
+ *    in four numbers the sector (counted from this one) each of the first four units ends in. The PSP's library very likely cuts the units out of the stream by that table;
+ *  - the PES packet of that first sector has both time stamps (of the first unit) and the P-STD extension; a PES packet later in the group has both time stamps (no extension) when a unit starts in
+ *    it and at least PS_STAMP_EVERY units have started since the last stamp (they belong to the first unit that starts in the packet); every other one has none. */
+#define PS_TABLE_MAX 59
+#define PS_STAMP_EVERY 16
+
+/* unit j of the stream: its size in bytes as pull() will give it (-1: the unit is left out) and whether it is a key frame */
+typedef int (*PsSize)(void *arg, int j, int *key);
+/* the next unit that is not left out: its data (it must stay as it is until the unit after it has been pulled, and until the one after that is asked for: two buffers do), size and time stamps in
+ * ticks of 90 kHz; 0 when there are no more */
+typedef int (*PsPull)(void *arg, const uint8_t **data, int *len, int64_t *pts, int64_t *dts);
 
 typedef struct {
-    const uint8_t *data;
+    PsSize size;
+    PsPull pull;
+    void *arg;
+    int plan_at, count;            /* the next unit to plan a group from, and the number of units */
+    const uint8_t *data;           /* the unit that is being written */
     int len, pos;
     int64_t pts, dts;
-    int first;
-    int table_n; /* units in the table that the first sector of the next unit carries (0 = none) */
+    int has_ahead;                 /* the unit after it has been pulled already (to know its time stamps) */
+    const uint8_t *adata;
+    int alen;
+    int64_t apts, adts;
+    int group_left;                /* units of the group that are not pulled yet */
+    int new_group;                 /* the next sector starts a group */
+    int table_n;
     uint16_t table[PS_TABLE_MAX];
     uint16_t words[4];
+    int cur_idx, last_stamp_idx;   /* the number of the unit that is written and of the last one that got a stamp */
+    int cur_starts;                /* the unit that is written starts at the start of the sector */
+    int64_t scr;
 } PsWriter;
 
-void ps_init(PsWriter *w);
-/* Every group of pictures (GOP) of a PSP's own PMF file starts with a system header and a "private stream 2" packet that holds a table: the size in bytes of each picture of the group, and in
- * four numbers the sector (counted from this one) each of the first four pictures ends in. The PSP's library very likely cuts the units of the video out of the stream by that table, and a stream
- * without it gave no unit at all on a real PSP. ps_group() makes the table of `n` units (sizes in bytes of the Annex B data, the units as ps_au() will get them) and the first sector of the next
- * unit carries it. n at most PS_TABLE_MAX, and every size at most 65535 (it does not fit the table otherwise: nothing is written then). */
-void ps_group(PsWriter *w, const int *sizes, int n);
-/* Plans the group that starts at unit `i` of `count`: unit(arg, j, &key) gives the size of unit j as ps_au() will get it (-1: the unit is left out) and whether it is a key frame; the group ends
- * before the next key frame or after PS_TABLE_MAX units. The table is made (ps_group). Returns the number of units the group has. */
-int ps_group_plan(PsWriter *w, int i, int count, int (*unit)(void *arg, int j, int *key), void *arg);
-void ps_au(PsWriter *w, const uint8_t *annexb, int len, int64_t pts, int64_t dts); /* the data must stay where it is until ps_pending() is 0 */
-int ps_pending(const PsWriter *w);                                                  /* bytes of the unit that are not in a sector yet */
-void ps_sector(PsWriter *w, uint8_t out[2048]);                                     /* the next sector of the unit (ps_pending() > 0) */
+/* units first .. count-1 are written, grouped by planning with size() and pulled with pull() */
+void ps_init(PsWriter *w, int first, int count, PsSize size, PsPull pull, void *arg);
+/* the next sector of the stream; 0 when there are no more units */
+int ps_sector(PsWriter *w, uint8_t out[2048]);
 
 #endif

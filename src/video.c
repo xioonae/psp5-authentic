@@ -89,18 +89,72 @@ static void crumb_mem(const char *what, unsigned addr)
            (unsigned)b[12] << 24 | b[13] << 16 | b[14] << 8 | b[15]);
 }
 
+/* The steps of the closing that crashed a PSP are never made again on it: when the crash file that a video left behind ends in the line of one of them, that step is written into video-skip.txt, and
+ * the closing leaves it out from then on (the memory it would have freed is left to the PSP until psp5 ends). */
+enum { TD_STOP, TD_FLUSH, TD_FREE_ES, TD_UNREG, TD_DELETE, TD_RING, TD_FINISH, TD_N };
+static const char *const TD_NAME[TD_N] = { "td-stop", "td-flush", "td-free-es", "td-unregist", "td-delete", "td-ring", "td-finish" };
+static unsigned s_skip;
+
+static void skip_load(void)
+{
+    char path[96], buf[256];
+    crumb_path(path, sizeof(path), "video-skip.txt");
+    s_skip = 0;
+    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+    if (fd < 0)
+        return;
+    int n = sceIoRead(fd, buf, sizeof(buf) - 1);
+    sceIoClose(fd);
+    if (n <= 0)
+        return;
+    buf[n] = 0;
+    for (int i = 0; i < TD_N; i++)
+        if (strstr(buf, TD_NAME[i]))
+            s_skip |= 1u << i;
+}
+
+static void skip_save(void)
+{
+    char path[96], buf[256];
+    int n = 0;
+    crumb_path(path, sizeof(path), "video-skip.txt");
+    for (int i = 0; i < TD_N; i++)
+        if (s_skip & (1u << i))
+            n += snprintf(buf + n, sizeof(buf) - (size_t)n, "%s\n", TD_NAME[i]);
+    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+    if (fd >= 0) {
+        sceIoWrite(fd, buf, n);
+        sceIoClose(fd);
+    }
+}
+
 static void crumb_start(void)
 {
     char path[96], last[96], buf[512];
     crumb_path(path, sizeof(path), "video-crash.txt");
     crumb_path(last, sizeof(last), "video-crash-last.txt");
+    skip_load();
     SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
     if (fd >= 0) {
-        int n = sceIoRead(fd, buf, sizeof(buf));
+        int n = sceIoRead(fd, buf, sizeof(buf) - 1);
         sceIoClose(fd);
+        if (n > 0) { /* the last line of the file of a video that did not end the right way: a step of the closing, when that is where it was */
+            buf[n] = 0;
+            int e = n;
+            while (e > 0 && (buf[e - 1] == '\n' || buf[e - 1] == ' '))
+                buf[--e] = 0;
+            const char *ln = strrchr(buf, '\n');
+            ln = ln ? ln + 1 : buf;
+            for (int i = 0; i < TD_N; i++)
+                if (!strncmp(ln, TD_NAME[i], strlen(TD_NAME[i])) && (ln[strlen(TD_NAME[i])] == ' ' || ln[strlen(TD_NAME[i])] == 0)) {
+                    s_skip |= 1u << i;
+                    skip_save();
+                }
+        }
         SceUID o = n > 0 ? sceIoOpen(last, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777) : -1;
         if (o >= 0) {
-            sceIoWrite(o, buf, n);
+            sceIoWrite(o, buf, (int)strlen(buf));
+            sceIoWrite(o, "\n", 1);
             sceIoClose(o);
         }
         sceIoRemove(path);
@@ -153,12 +207,12 @@ struct Video {
     /* an MP4 */
     Mp4 *mp4;
     PsWriter ps;
-    unsigned char *sample, *au;
-    int au_cap;
+    unsigned char *sample, *au[2]; /* the units the program stream writer holds (the one it writes and the one after it) */
+    int au_cap, au_sel;
+    int inband; /* the parameter sets are in the samples of the video (the first one has them) */
     unsigned char params[512];
     int params_len;
     int vnext, anext;
-    int group_left; /* units of the group whose table was written that are not written yet */
     int src_eof;
     /* sceMpeg */
     int mpeg_up, lib_up;
@@ -172,6 +226,8 @@ struct Video {
     int atrac_out;
     unsigned char *pcm_tmp;
     int have_au, atrac_first;
+    double au_ts, last_ts, frame_dur; /* the time of the unit that was given (its decoding time, or what follows the one before when it has none) */
+    int have_ts;
     void *frame;
     Texture pic;
     int have_pic;
@@ -238,15 +294,16 @@ static unsigned be32(const unsigned char *p) { return ((unsigned)p[0] << 24) | (
 static unsigned long long be48(const unsigned char *p) { return ((unsigned long long)be32(p) << 16) | ((unsigned)p[4] << 8) | p[5]; }
 static unsigned long long au_pts(const SceMpegAu *a) { return ((unsigned long long)a->iPtsMSB << 32) | a->iPts; }
 static double au_sec(const SceMpegAu *a) { return ((double)au_pts(a) - PTS0) / 90000.0; }
+/* a time stamp the PSP's library gives for a unit that has one: -1 (all ones) is none */
+static int ts_valid(unsigned msb, unsigned lo) { return msb == 0 && lo != 0xFFFFFFFFu; }
 static int pow2(int n) { int p = 1; while (p < n) p <<= 1; return p; }
 
 /* ---------------------------------------------------------------------- */
 /* what the ring buffer is fed with */
 
-/* video sample i of the MP4 made into what the program stream carries (in v->au): its length, or -1 when the sample is left out (it cannot be read or understood) */
-static int mp4_unit(void *arg, int i, int *key)
+/* video sample i of the MP4 made into what the program stream carries, in buf: its length, or -1 when the sample is left out (it cannot be read or understood) */
+static int mp4_convert(Video *v, int i, int *key, unsigned char *buf)
 {
-    Video *v = arg;
     int size = mp4_video_size(v->mp4, i);
     float dts, pts;
     *key = 0;
@@ -255,23 +312,37 @@ static int mp4_unit(void *arg, int i, int *key)
     mp4_video_times(v->mp4, i, &dts, &pts, key);
     if (mp4_video_read(v->mp4, i, v->sample, v->au_cap) != size)
         return -1;
-    return mpegps_annexb(v->sample, size, mp4_nal_size(v->mp4), v->params, v->params_len, *key, v->au, v->au_cap + 4096);
+    /* a stream that carries its parameter sets in its samples is left as it is (see mpegps_sample_has_params); the others get the ones of the MP4's header on every key frame */
+    int l = mpegps_annexb(v->sample, size, mp4_nal_size(v->mp4), v->inband ? NULL : v->params, v->inband ? 0 : v->params_len, *key, buf, v->au_cap + 4096);
+    if (l > 0)
+        *key = mpegps_unit_has_sps(buf, l); /* (what starts a group is a unit with a sequence header in it) */
+    return l;
 }
 
-/* the next video sample of the MP4, as sectors in the program stream writer; a group of samples starts with the table of their sizes (see ps_group) */
-static int mp4_next_au(Video *v)
+/* the size of unit j for the planning of a group (it is made into a buffer that nothing holds then) */
+static int mp4_size(void *arg, int j, int *key)
 {
+    Video *v = arg;
+    return mp4_convert(v, j, key, v->au[0]);
+}
+
+/* the next unit for the program stream writer: it takes turns with two buffers */
+static int mp4_pull(void *arg, const uint8_t **data, int *len, int64_t *pts, int64_t *dts)
+{
+    Video *v = arg;
     while (v->vnext < mp4_video_count(v->mp4)) {
-        if (v->group_left <= 0)
-            v->group_left = ps_group_plan(&v->ps, v->vnext, mp4_video_count(v->mp4), mp4_unit, v);
         int i = v->vnext++, key;
-        int len = mp4_unit(v, i, &key);
-        if (len < 0)
+        unsigned char *buf = v->au[v->au_sel];
+        int l = mp4_convert(v, i, &key, buf);
+        if (l < 0)
             continue;
-        v->group_left--;
-        float dts, pts;
-        mp4_video_times(v->mp4, i, &dts, &pts, &key);
-        ps_au(&v->ps, v->au, len, (long long)(pts * 90000.0) + PTS0, (long long)(dts * 90000.0) + PTS0);
+        float d, p;
+        mp4_video_times(v->mp4, i, &d, &p, &key);
+        *data = buf;
+        *len = l;
+        *pts = (int64_t)((double)p * 90000.0) + PTS0;
+        *dts = (int64_t)((double)d * 90000.0) + PTS0;
+        v->au_sel ^= 1;
         return 1;
     }
     return 0;
@@ -286,12 +357,8 @@ static SceInt32 ring_cb(ScePVoid data, SceInt32 packets, ScePVoid param)
         return (SceInt32)(got / PKT);
     }
     int n = 0;
-    while (n < packets) {
-        if (ps_pending(&v->ps) == 0 && !mp4_next_au(v))
-            break;
-        ps_sector(&v->ps, (unsigned char *)data + (size_t)n * PKT);
+    while (n < packets && ps_sector(&v->ps, (unsigned char *)data + (size_t)n * PKT))
         n++;
-    }
     /* the sectors were written by the CPU, into its cache: the decoder of the PSP (which is another processor) reads the memory, so they are written out to it */
     sceKernelDcacheWritebackInvalidateRange(data, (unsigned)n * PKT);
     return n;
@@ -556,6 +623,9 @@ static void make_header(Video *v, unsigned char *h)
     h[0x8F] = (unsigned char)((v->h + 15) / 16);
 }
 
+/* one step of the closing: its line goes into the crash file first, and it is left out when it crashed this PSP before (see TD_NAME) */
+#define TD_STEP(step) (crumb(TD_NAME[step], 0, 0), (s_skip & (1u << (step))) ? (crumb("td-skipped", step, 0), VLOG("closing: %s left out\n", TD_NAME[step]), 0) : 1)
+
 static void session_destroy(Video *v)
 {
     if (!v->mpeg_up)
@@ -563,32 +633,30 @@ static void session_destroy(Video *v)
     SceInt32 stop_status = 0;
     /* the end of the decoding and the flush belong to a decoder that has been used: a PSP died in them when it was closed before it had got a single picture */
     if (v->decoded) {
-        crumb("td-stop", 0, 0);
-        sceMpegAvcDecodeStop(&v->mpeg, FRAME_W, &v->frame, &stop_status);
-        crumb("td-flush", 0, 0);
-        sceMpegFlushAllStream(&v->mpeg);
+        if (TD_STEP(TD_STOP))
+            sceMpegAvcDecodeStop(&v->mpeg, FRAME_W, &v->frame, &stop_status);
+        if (TD_STEP(TD_FLUSH))
+            sceMpegFlushAllStream(&v->mpeg);
     }
     v->decoded = 0;
     if (v->es_atrac)
         free(v->es_atrac);
-    if (v->es_avc) {
-        crumb("td-free-es", 0, 0);
+    if (v->es_avc && TD_STEP(TD_FREE_ES))
         sceMpegFreeAvcEsBuf(&v->mpeg, v->es_avc);
-    }
-    /* A PSP died in sceMpegUnRegistStream after its picture decoder had given nothing but errors: after errors the stream is left registered (sceMpegDelete ends it) */
+    /* A PSP died in sceMpegUnRegistStream when it was given the handle itself, as the SDK's header says (the first test, with a clean session of the PSP's own PMF): like all the other calls it takes
+     * the address of the handle. After decode errors the stream is left registered (sceMpegDelete ends it). */
     if (v->dec_errors > 0 || v->failed) {
         crumb("td-unregist-skipped", v->dec_errors, v->failed);
-    } else {
-        crumb("td-unregist", 0, 0);
+    } else if (TD_STEP(TD_UNREG)) {
         if (v->s_avc)
-            sceMpegUnRegistStream(v->mpeg, v->s_avc);
+            sceMpegUnRegistStream((SceMpeg)&v->mpeg, v->s_avc);
         if (v->s_atrac)
-            sceMpegUnRegistStream(v->mpeg, v->s_atrac);
+            sceMpegUnRegistStream((SceMpeg)&v->mpeg, v->s_atrac);
     }
-    crumb("td-delete", 0, 0);
-    sceMpegDelete(&v->mpeg);
-    crumb("td-ring", 0, 0);
-    sceMpegRingbufferDestruct(RING(v));
+    if (TD_STEP(TD_DELETE))
+        sceMpegDelete(&v->mpeg);
+    if (TD_STEP(TD_RING))
+        sceMpegRingbufferDestruct(RING(v));
     crumb("td-done", 0, 0);
     free(v->pcm_tmp);
     v->es_atrac = v->es_avc = NULL;
@@ -731,6 +799,7 @@ Video *video_open(const char *path)
     v->lib_up = 1;
     const char *dot = strrchr(path, '.');
     int pmf = dot && (!strcasecmp(dot, ".pmf") || !strcasecmp(dot, ".psmf"));
+    v->frame_dur = 1001.0 / 30000.0; /* (a PMF: the usual 29.97; an MP4 sets its own below) */
     if (pmf) {
         v->kind = VK_PMF;
         v->fp = fopen(path, "rb");
@@ -777,13 +846,22 @@ Video *video_open(const char *path)
         v->w = mp4_width(v->mp4);
         v->h = mp4_height(v->mp4);
         v->duration = mp4_duration(v->mp4);
+        v->frame_dur = mp4_video_count(v->mp4) > 0 && v->duration > 0 ? (double)v->duration / mp4_video_count(v->mp4) : 1001.0 / 30000.0;
         v->params_len = mp4_param_sets(v->mp4, v->params, sizeof(v->params));
         v->au_cap = mp4_video_max_size(v->mp4);
+        {   /* does the first sample carry the parameter sets itself */
+            int s0 = mp4_video_size(v->mp4, 0);
+            unsigned char *tmp = s0 > 0 && s0 <= MAX_AU ? malloc((size_t)s0) : NULL;
+            if (tmp && mp4_video_read(v->mp4, 0, tmp, s0) == s0)
+                v->inband = mpegps_sample_has_params(tmp, s0, mp4_nal_size(v->mp4));
+            free(tmp);
+        }
         if (v->au_cap <= 0 || v->au_cap > MAX_AU)
             goto fail;
         v->sample = malloc((size_t)v->au_cap);
-        v->au = malloc((size_t)v->au_cap + 4096);
-        if (!v->params_len || !v->sample || !v->au) {
+        v->au[0] = malloc((size_t)v->au_cap + 4096);
+        v->au[1] = malloc((size_t)v->au_cap + 4096);
+        if (!v->params_len || !v->sample || !v->au[0] || !v->au[1]) {
             VLOG("no memory for the samples\n");
             goto fail;
         }
@@ -851,16 +929,15 @@ void video_close(Video *v)
     session_destroy(v);
     free(v->ring_data);
     free(v->mpeg_mem);
-    if (v->lib_up) {
-        crumb("td-finish", 0, 0);
+    if (v->lib_up && TD_STEP(TD_FINISH))
         sceMpegFinish();
-    }
     aac_close(v);
     crumb_end(); /* it was closed the right way: nothing to leave behind */
     free(v->frame);
     free(v->ep);
     free(v->sample);
-    free(v->au);
+    free(v->au[0]);
+    free(v->au[1]);
     if (v->fp)
         fclose(v->fp);
     mp4_close(v->mp4);
@@ -894,6 +971,7 @@ int video_play(Video *v, float at)
     session_destroy(v);
     v->src_eof = 0;
     v->have_au = 0;
+    v->have_ts = 0;
     v->have_pic = 0;
     v->ended = 0;
     v->no_data = 0;
@@ -913,13 +991,8 @@ int video_play(Video *v, float at)
     if (v->kind == VK_MP4) {
         v->vnext = mp4_video_at(v->mp4, at);
         v->anext = v->audio_ok ? mp4_audio_at(v->mp4, at) : 0;
-        ps_init(&v->ps);
-        v->group_left = 0;
-        if (v->vnext > 0 || at > 0) {
-            float dts, pts;
-            int key;
-            mp4_video_times(v->mp4, v->vnext, &dts, &pts, &key);
-        }
+        v->au_sel = 0;
+        ps_init(&v->ps, v->vnext, mp4_video_count(v->mp4), mp4_size, mp4_pull, v);
     } else {
         unsigned off = 0;
         for (int i = 0; i < v->n_ep; i++) { /* the last entry point at or before the time */
@@ -1008,14 +1081,24 @@ int video_update(Video *v, float dt)
             v->no_data = 0;
             v->have_au = 1;
             v->n_au++;
+            if (v->n_au <= 4)
+                crumbh("unit-ts", v->au_avc.iPtsMSB, v->au_avc.iPts, v->au_avc.iDtsMSB, v->au_avc.iDts);
+            /* The time the unit is decoded at: its decoding time. A unit that has no time stamp of its own (only about every 16th has one in the PSP's own streams) is given -1, so it is the one
+             * before it and one picture later. */
+            if (ts_valid(v->au_avc.iDtsMSB, v->au_avc.iDts))
+                v->au_ts = ((double)v->au_avc.iDts - PTS0) / 90000.0;
+            else if (ts_valid(v->au_avc.iPtsMSB, v->au_avc.iPts))
+                v->au_ts = au_sec(&v->au_avc) - 0.034;
+            else if (v->have_ts)
+                v->au_ts = v->last_ts + v->frame_dur;
+            else
+                v->au_ts = v->clock;
         }
-        double pts = v->au_avc.iPts == 0xFFFFFFFFu && v->au_avc.iPtsMSB == 0 ? v->clock : au_sec(&v->au_avc);
+        double pts = v->au_ts;
         if (!(v->stage & 16)) {
             v->stage |= 16;
             crumb4("first-unit", (int)(pts * 1000), (int)(v->clock * 1000), (int)v->au_avc.iAuSize, (int)v->au_avc.iPtsMSB);
         }
-        if (!v->audio_ok && !v->have_pic && pts > v->clock + 1.0)
-            v->clock = pts; /* no sound to keep time by: the clock goes to the first unit, whatever time stamps the stream has */
         if (pts > v->clock + 0.004)
             break; /* not yet */
         SceInt32 got = 0;
@@ -1031,6 +1114,8 @@ int video_update(Video *v, float dt)
         int r = sceMpegAvcDecode(&v->mpeg, &v->au_avc, FRAME_W, &buf, &got);
         v->have_au = 0;
         v->n_dec++;
+        v->last_ts = v->au_ts;
+        v->have_ts = 1;
         if (v->n_dec == 1)
             crumbh("first-decode", (unsigned)r, (unsigned)got, v->au_avc.iAuSize, (unsigned)(uintptr_t)buf);
         if (r != 0) {
@@ -1042,7 +1127,7 @@ int video_update(Video *v, float dt)
             continue;
         }
         v->dec_errors = 0;
-        if (got == 1 && pts >= v->skip_until - 0.03) {
+        if (got == 1 && pts + 0.034 >= v->skip_until - 0.03) {
             shown = 1;
             v->have_pic = 1;
         }
