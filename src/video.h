@@ -34,5 +34,7 @@ const Texture *video_picture(const Video *v); /* the last picture, in the size o
 float video_time(const Video *v);              /* where the video is, in seconds */
 int video_ended(const Video *v);
 int video_failed(const Video *v); /* the decoder gave up: the video cannot go on */
+/* 1 when the PSP's video library gave a fatal error earlier (the decoder's own, or a semaphore of its that is gone): after that every video fails, and video_open() refuses them, until psp5 is started again */
+int video_poisoned(void);
 
 #endif

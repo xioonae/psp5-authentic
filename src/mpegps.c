@@ -2,6 +2,8 @@
 #include <string.h>
 #include "mpegps.h"
 
+#define SPS_BUF 320 /* room for an SPS and the VUI of the PSP's own streams in it */
+
 /* what kind of slices a NAL unit has: 0 = I, 1 = P, 2 = B (the first two numbers of a slice header are the first macroblock and the slice type); -1 when it cannot be read */
 static int slice_kind(const uint8_t *nal, int len)
 {
@@ -61,13 +63,27 @@ int mpegps_unit_has_sps(const uint8_t *u, int len)
 /* The unit the way the PSP's own streams have it: an access unit delimiter that says what kinds of slices the unit has (10 for I, 30 for I and P, 50 for B too), the parameter sets of a key frame
  * behind it, and a start code of four bytes in front of the delimiter and the parameter sets and of three in front of everything else. A delimiter that the sample has is the one that is used,
  * wherever it is in the sample (an encoder that writes the stream headers in front of the first picture puts it behind them); there is only one in a unit. */
-int mpegps_annexb(const uint8_t *s, int len, int nal_size, const uint8_t *params, int params_len, int key, uint8_t *out, int cap)
+/* a NAL unit (header byte and all) behind a start code of sc bytes (3 or 4) */
+static int put_nal(uint8_t *out, int n, int cap, int sc, const uint8_t *nal, int len)
+{
+    if (n + sc + len > cap)
+        return -1;
+    if (sc == 4)
+        out[n++] = 0;
+    out[n++] = 0;
+    out[n++] = 0;
+    out[n++] = 1;
+    memcpy(out + n, nal, (size_t)len);
+    return n + len;
+}
+
+int mpegps_annexb(const uint8_t *s, int len, int nal_size, const uint8_t *params, int params_len, int key, uint8_t *out, int cap, const PsSynth *sy)
 {
     int n = 0;
     if (nal_size < 1 || nal_size > 4 || len < nal_size)
         return -1;
     /* what the sample has in it: its delimiter, whether it carries the parameter sets itself, and what kinds of slices */
-    int has_params = 0, kind = -1, aud_pos = -1, aud_len = 0;
+    int has_params = 0, kind = -1, aud_pos = -1, aud_len = 0, idr = 0;
     for (int pos = 0; pos + nal_size <= len;) {
         int l = 0;
         for (int i = 0; i < nal_size; i++)
@@ -82,6 +98,8 @@ int mpegps_annexb(const uint8_t *s, int len, int nal_size, const uint8_t *params
         }
         if (t == 7 || t == 8)
             has_params = 1;
+        if (t == 5)
+            idr = 1;
         if (t == 1 || t == 5) {
             int sk = slice_kind(s + pos, l);
             if (sk > kind)
@@ -90,11 +108,9 @@ int mpegps_annexb(const uint8_t *s, int len, int nal_size, const uint8_t *params
         pos += l;
     }
     if (aud_pos >= 0) {
-        if (4 + aud_len > cap)
+        n = put_nal(out, 0, cap, 4, s + aud_pos, aud_len);
+        if (n < 0)
             return -1;
-        out[n++] = 0; out[n++] = 0; out[n++] = 0; out[n++] = 1;
-        memcpy(out + n, s + aud_pos, (size_t)aud_len);
-        n += aud_len;
     } else {
         if (cap < 6)
             return -1;
@@ -108,23 +124,39 @@ int mpegps_annexb(const uint8_t *s, int len, int nal_size, const uint8_t *params
         memcpy(out + n, params, (size_t)params_len);
         n += params_len;
     }
+    int sei_done = 0;
     for (int pos = 0; pos + nal_size <= len;) {
         int l = 0;
         for (int i = 0; i < nal_size; i++)
             l = (l << 8) | s[pos + i];
         pos += nal_size;
         int t = s[pos] & 0x1F;
-        if (t != 9) {
-            int sc = (t == 7 || t == 8) ? 4 : 3;
-            if (n + sc + l > cap)
+        if (sy && !sei_done && (t == 1 || t == 5)) { /* the messages of the PSP's own streams, in front of the first slice */
+            uint8_t m[64];
+            int ml;
+            if (idr) {
+                if ((ml = h264_sei_buffering(m, sizeof(m))) < 0 || (n = put_nal(out, n, cap, 3, m, ml)) < 0)
+                    return -1;
+            }
+            if ((ml = h264_sei_pic_timing(sy->cpb_removal_delay, sy->dpb_output_delay, m, sizeof(m))) < 0 || (n = put_nal(out, n, cap, 3, m, ml)) < 0)
                 return -1;
-            if (sc == 4)
-                out[n++] = 0;
-            out[n++] = 0;
-            out[n++] = 0;
-            out[n++] = 1;
-            memcpy(out + n, s + pos, (size_t)l);
-            n += l;
+            if (idr) {
+                if ((ml = h264_sei_recovery(m, sizeof(m))) < 0 || (n = put_nal(out, n, cap, 3, m, ml)) < 0)
+                    return -1;
+            }
+            sei_done = 1;
+        }
+        if (t == 9 || (sy && t == 6)) {
+            /* (a delimiter is written first, and a stream that is given the PSP's messages does not keep its own) */
+        } else if (sy && t == 7) {
+            uint8_t sps[SPS_BUF];
+            int sl = h264_sps_rewrite(s + pos, l, sy->tick, sps, sizeof(sps));
+            if (sl < 0 || (n = put_nal(out, n, cap, 4, sps, sl)) < 0)
+                return -1;
+        } else {
+            int sc = (t == 7 || t == 8) ? 4 : 3;
+            if ((n = put_nal(out, n, cap, sc, s + pos, l)) < 0)
+                return -1;
         }
         pos += l;
     }
@@ -213,9 +245,10 @@ static int plan_group(PsWriter *w)
 
 static void take_ts(int64_t pts, int64_t dts, int64_t *out_pts, int64_t *out_dts)
 {
-    /* the PSP's own streams have the decoding time at least one picture (3003 ticks) before the time to show it, also when nothing is reordered */
+    /* the PSP's own streams have the decoding time one picture (3003 ticks) before the time to show it also when nothing is reordered: every decoding time is put one picture earlier (the order
+     * of the units and the delay that reordering needs stay as they are) */
     *out_pts = pts < 0 ? 0 : pts;
-    *out_dts = dts > *out_pts - 3003 ? *out_pts - 3003 : dts;
+    *out_dts = dts - 3003;
     if (*out_dts < 0)
         *out_dts = 0;
 }

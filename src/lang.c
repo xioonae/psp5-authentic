@@ -717,6 +717,8 @@ static const char *const T[S_COUNT][NL] = {
                        "Este vídeo no se puede reproducir", "Questo video non può essere riprodotto", "Deze video kan niet worden afgespeeld", "Este vídeo não pode ser reproduzido", "Это видео нельзя воспроизвести", "このビデオは再生できません", "Toto video nelze přehrát" },
     [S_IMG_CANT] = { "This image can't be shown", "Bilden kan inte visas", "Dieses Bild lässt sich nicht anzeigen", "Cette image ne peut pas être affichée",
                        "Esta imagen no se puede mostrar", "Questa immagine non può essere mostrata", "Deze afbeelding kan niet worden getoond", "Esta imagem não pode ser mostrada", "Это изображение нельзя показать", "この画像は表示できません", "Tento obrázek nelze zobrazit" },
+    [S_VID_POISON] = { "Restart psp5 to play videos again", "Starta om psp5 för att spela videor igen", "psp5 neu starten, um Videos wieder abzuspielen", "Relancez psp5 pour lire à nouveau des vidéos",
+                         "Reinicia psp5 para volver a reproducir vídeos", "Riavvia psp5 per riprodurre di nuovo i video", "Start psp5 opnieuw om weer video's af te spelen", "Reinicie o psp5 para voltar a reproduzir vídeos", "Перезапустите psp5, чтобы снова смотреть видео", "ビデオを再生するには psp5 を再起動してください", "Restartujte psp5, aby šla videa znovu přehrát" },
 };
 
 static const char *const NAMES[LANG_COUNT] = { "", "English", "Svenska", "Deutsch", "Français", "Español",

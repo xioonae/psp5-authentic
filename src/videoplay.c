@@ -36,6 +36,7 @@ struct VideoPlayer {
     int count, index;
     Video *vid;
     int failed;          /* this video cannot be played */
+    int poison;          /* ... because the PSP's video library failed on an earlier one: psp5 has to be started again */
     int ask;             /* the question "continue from ..." is on screen */
     int ask_sel;         /* 0 = continue, 1 = from the beginning */
     float resume_at;
@@ -87,7 +88,7 @@ static void drop(VideoPlayer *v)
 static void load_current(VideoPlayer *v)
 {
     drop(v);
-    v->failed = v->ask = v->ended = v->paused = v->seek_pending = 0;
+    v->failed = v->ask = v->ended = v->paused = v->seek_pending = v->poison = 0;
     v->since_save = 0;
     v->overlay = OVERLAY_SHOW;
     char path[300];
@@ -97,6 +98,7 @@ static void load_current(VideoPlayer *v)
 #ifdef VIDEO_DEBUG
         vlog("open failed: %s\n", path);
 #endif
+        v->poison = video_poisoned();
         FAIL(v);
         return;
     }
@@ -354,7 +356,7 @@ void videoplay_draw(VideoPlayer *v)
     if (v->vid && !v->failed)
         draw_picture(video_picture(v->vid));
     if (v->failed)
-        text_draw(SCREEN_W / 2, SCREEN_H / 2 + 5, 0.7f, 0, RGBA(238, 238, 242, 255), ALIGN_CENTER, L(S_VID_CANT));
+        text_draw(SCREEN_W / 2, SCREEN_H / 2 + 5, 0.7f, 0, RGBA(238, 238, 242, 255), ALIGN_CENTER, L(v->poison ? S_VID_POISON : S_VID_CANT));
     float a = v->overlay >= OVERLAY_FADE ? 1 : v->overlay > 0 ? v->overlay / OVERLAY_FADE : 0;
     if (v->failed || v->ask)
         a = fmaxf(a, v->failed ? 1 : 0);

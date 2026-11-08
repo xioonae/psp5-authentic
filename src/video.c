@@ -12,6 +12,7 @@
 #include "video.h"
 #include "mp4.h"
 #include "mpegps.h"
+#include "unit.h"
 #include "music.h"
 #include "system.h"
 
@@ -94,6 +95,7 @@ static void crumb_mem(const char *what, unsigned addr)
 enum { TD_STOP, TD_FLUSH, TD_FREE_ES, TD_UNREG, TD_DELETE, TD_RING, TD_FINISH, TD_N };
 static const char *const TD_NAME[TD_N] = { "td-stop", "td-flush", "td-free-es", "td-unregist", "td-delete", "td-ring", "td-finish" };
 static unsigned s_skip;
+static int s_poisoned; /* see video_poisoned() */
 
 static void skip_load(void)
 {
@@ -221,9 +223,7 @@ struct Video {
     PsWriter ps;
     unsigned char *sample, *au[2]; /* the units the program stream writer holds (the one it writes and the one after it) */
     int au_cap, au_sel;
-    int inband; /* the parameter sets are in the samples of the video (the first one has them) */
-    unsigned char params[512];
-    int params_len;
+    UnitMaker um; /* makes the units of the MP4 (parameter sets, the PSP's timing) */
     int vnext, anext;
     int src_eof;
     /* sceMpeg */
@@ -314,22 +314,11 @@ static int pow2(int n) { int p = 1; while (p < n) p <<= 1; return p; }
 /* ---------------------------------------------------------------------- */
 /* what the ring buffer is fed with */
 
-/* video sample i of the MP4 made into what the program stream carries, in buf: its length, or -1 when the sample is left out (it cannot be read or understood) */
+/* video sample i of the MP4 made into what the program stream carries, in buf: its length, or -1 when the sample is left out (it cannot be read or understood); *key is 1 when the unit has an
+ * SPS (it starts a group) */
 static int mp4_convert(Video *v, int i, int *key, unsigned char *buf)
 {
-    int size = mp4_video_size(v->mp4, i);
-    float dts, pts;
-    *key = 0;
-    if (size <= 0 || size > v->au_cap)
-        return -1;
-    mp4_video_times(v->mp4, i, &dts, &pts, key);
-    if (mp4_video_read(v->mp4, i, v->sample, v->au_cap) != size)
-        return -1;
-    /* a stream that carries its parameter sets in its samples is left as it is (see mpegps_sample_has_params); the others get the ones of the MP4's header on every key frame */
-    int l = mpegps_annexb(v->sample, size, mp4_nal_size(v->mp4), v->inband ? NULL : v->params, v->inband ? 0 : v->params_len, *key, buf, v->au_cap + 4096);
-    if (l > 0)
-        *key = mpegps_unit_has_sps(buf, l); /* (what starts a group is a unit with a sequence header in it) */
-    return l;
+    return unit_make(&v->um, i, buf, v->au_cap + 4096, key);
 }
 
 /* the size of unit j for the planning of a group (it is made into a buffer that nothing holds then) */
@@ -799,8 +788,12 @@ static void pmf_header_info(Video *v)
     }
 }
 
+int video_poisoned(void) { return s_poisoned; }
+
 Video *video_open(const char *path)
 {
+    if (s_poisoned)
+        return NULL; /* (nothing is written: the file of the video that did it stays) */
     crumb_start();
     crumb("open", 0, 0);
     if (!load_modules()) {
@@ -873,33 +866,30 @@ Video *video_open(const char *path)
         v->h = mp4_height(v->mp4);
         v->duration = mp4_duration(v->mp4);
         v->frame_dur = mp4_video_count(v->mp4) > 0 && v->duration > 0 ? (double)v->duration / mp4_video_count(v->mp4) : 1001.0 / 30000.0;
-        v->params_len = mp4_param_sets(v->mp4, v->params, sizeof(v->params));
         v->au_cap = mp4_video_max_size(v->mp4);
-        {   /* does the first sample carry the parameter sets itself */
-            int s0 = mp4_video_size(v->mp4, 0);
-            unsigned char *tmp = s0 > 0 && s0 <= MAX_AU ? malloc((size_t)s0) : NULL;
-            if (tmp && mp4_video_read(v->mp4, 0, tmp, s0) == s0)
-                v->inband = mpegps_sample_has_params(tmp, s0, mp4_nal_size(v->mp4));
-            free(tmp);
-        }
         if (v->au_cap <= 0 || v->au_cap > MAX_AU)
             { crumb("open-fail", __LINE__, 0); goto fail; }
         v->sample = malloc((size_t)v->au_cap);
         v->au[0] = malloc((size_t)v->au_cap + 4096);
         v->au[1] = malloc((size_t)v->au_cap + 4096);
-        if (!v->params_len || !v->sample || !v->au[0] || !v->au[1]) {
+        if (!v->sample || !v->au[0] || !v->au[1]) {
             VLOG("no memory for the samples\n");
+            { crumb("open-fail", __LINE__, 0); goto fail; }
+        }
+        if (!unit_init(&v->um, v->mp4, v->sample, v->au_cap) || !v->um.params_len) {
             { crumb("open-fail", __LINE__, 0); goto fail; }
         }
         v->audio_ok = mp4_has_audio(v->mp4);
     }
     VLOG("open %s: %dx%d, %.2f s, kind %d\n", path, v->w, v->h, v->duration, v->kind);
     crumb(v->kind == VK_MP4 ? "mp4" : "pmf", v->w, v->h);
-    if (v->kind == VK_MP4 && v->params_len > 8 && (v->params[4] & 0x1F) == 7) {
-        crumb("avc-profile-level", v->params[5], v->params[7]);
-        int n = v->params_len < 24 ? v->params_len : 24; /* the head of the parameter sets, as they were given to the decoder (profile, sizes, flags) */
-        crumbh("params", (unsigned)v->params[0] << 24 | v->params[1] << 16 | v->params[2] << 8 | v->params[3], (unsigned)v->params[4] << 24 | v->params[5] << 16 | v->params[6] << 8 | v->params[7],
-               n >= 12 ? (unsigned)v->params[8] << 24 | v->params[9] << 16 | v->params[10] << 8 | v->params[11] : 0, n >= 16 ? (unsigned)v->params[12] << 24 | v->params[13] << 16 | v->params[14] << 8 | v->params[15] : 0);
+    if (v->kind == VK_MP4 && v->um.params_len > 8 && (v->um.params[4] & 0x1F) == 7) {
+        const unsigned char *pp = v->um.params;
+        crumb("avc-profile-level", pp[5], pp[7]);
+        int n = v->um.params_len < 24 ? v->um.params_len : 24; /* the head of the parameter sets, as they were given to the decoder (profile, sizes, flags) */
+        crumbh("params", (unsigned)pp[0] << 24 | pp[1] << 16 | pp[2] << 8 | pp[3], (unsigned)pp[4] << 24 | pp[5] << 16 | pp[6] << 8 | pp[7],
+               n >= 12 ? (unsigned)pp[8] << 24 | pp[9] << 16 | pp[10] << 8 | pp[11] : 0, n >= 16 ? (unsigned)pp[12] << 24 | pp[13] << 16 | pp[14] << 8 | pp[15] : 0);
+        crumb4("timing", v->um.synth, v->um.inband, (int)v->um.tick.num_units, (int)v->um.tick.time_scale); /* synth 1 = the PSP's timing is written into the stream */
     }
     if (v->w <= 0 || v->h <= 0 || v->w > FRAME_W || v->h > 512)
         { crumb("open-fail", __LINE__, 0); goto fail; }
@@ -1108,6 +1098,8 @@ int video_update(Video *v, float dt)
             if (r != 0) {
                 VLOG("get au %08x\n", r);
                 v->err_total++;
+                if (r == 0x80020199u)
+                    s_poisoned = 1; /* (an unknown semaphore: what a PSP says to every video after a fatal error of the decoder) */
                 if (++v->stream_error > 30)
                     v->failed = 1;
                 break;
@@ -1155,6 +1147,8 @@ int video_update(Video *v, float dt)
         if (r != 0) {
             VLOG("avc decode %08x\n", r);
             v->err_total++;
+            if ((unsigned)r == 0x80628002u)
+                s_poisoned = 1; /* (the decoder's fatal error: a PSP gave nothing but 0x80020199 to every video after it) */
             if (v->dec_errors < 3)
                 crumbh("decode-error", (unsigned)r, (unsigned)v->dec_errors, v->au_avc.iAuSize, 0);
             if (++v->dec_errors > 30)
