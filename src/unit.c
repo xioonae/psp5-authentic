@@ -29,7 +29,10 @@ static int find_sps(const uint8_t *p, int n, int *off, int *len)
 
 int unit_init(UnitMaker *u, Mp4 *m, uint8_t *sample, int cap)
 {
+    int no_synth = u->no_synth, no_main = u->no_main; /* (set by the caller before) */
     memset(u, 0, sizeof(*u));
+    u->no_synth = no_synth;
+    u->no_main = no_main;
     u->m = m;
     u->sample = sample;
     u->cap = cap;
@@ -64,35 +67,38 @@ int unit_init(UnitMaker *u, Mp4 *m, uint8_t *sample, int cap)
     }
     if (!sps)
         return u->params_len > 0 || u->inband; /* no SPS found: left as it is */
-    u->synth = !h264_sps_has_hrd(sps, sps_len);
-    /* a Baseline stream that has no slice groups is made a Main one (see h264_sps_rewrite): the PPS says; one in the samples is looked for too */
-    if (sps_len > 1 && (sps[0] & 0x1F) == 7 && sps[1] == 66) {
-        int fmo = 1, cabac = 0, found = 0;
-        for (int i = 0; i + 4 < u->params_len && !found; i++)
-            if (u->params[i] == 0 && u->params[i + 1] == 0 && u->params[i + 2] == 1 && (u->params[i + 3] & 0x1F) == 8) {
-                int e = i + 4;
-                while (e + 2 < u->params_len && !(u->params[e] == 0 && u->params[e + 1] == 0 && u->params[e + 2] <= 1))
-                    e++;
-                fmo = h264_pps_info(u->params + i + 3, (e + 2 < u->params_len ? e : u->params_len) - (i + 3), &cabac);
+    u->synth = !h264_sps_has_hrd(sps, sps_len) && !u->no_synth;
+    { int pr; h264_sps_info(sps, sps_len, &pr, &u->nref, &u->wmb, &u->hmb, &u->poc); }
+    /* the PPS: slice groups, the entropy mode, the reference pictures (the one of the header's block, or else the first sample's) */
+    int fmo = 1, cabac = 0, found = 0;
+    for (int i = 0; i + 4 < u->params_len && !found; i++)
+        if (u->params[i] == 0 && u->params[i + 1] == 0 && u->params[i + 2] == 1 && (u->params[i + 3] & 0x1F) == 8) {
+            int e = i + 4;
+            while (e + 2 < u->params_len && !(u->params[e] == 0 && u->params[e + 1] == 0 && u->params[e + 2] <= 1))
+                e++;
+            fmo = h264_pps_info(u->params + i + 3, (e + 2 < u->params_len ? e : u->params_len) - (i + 3), &cabac, &u->nref0, &u->weighted);
+            found = 1;
+        }
+    if (!found && u->inband && s0 > 0) {
+        int nal = mp4_nal_size(m);
+        for (int pos = 0; pos + nal <= s0 && !found;) {
+            int l = 0;
+            for (int i = 0; i < nal; i++)
+                l = (l << 8) | sample[pos + i];
+            pos += nal;
+            if (l <= 0 || pos + l > s0)
+                break;
+            if ((sample[pos] & 0x1F) == 8) {
+                fmo = h264_pps_info(sample + pos, l, &cabac, &u->nref0, &u->weighted);
                 found = 1;
             }
-        if (!found && u->inband && s0 > 0) { /* (the PPS of the first sample) */
-            int nal = mp4_nal_size(m);
-            for (int pos = 0; pos + nal <= s0 && !found;) {
-                int l = 0;
-                for (int i = 0; i < nal; i++)
-                    l = (l << 8) | sample[pos + i];
-                pos += nal;
-                if (l <= 0 || pos + l > s0)
-                    break;
-                if ((sample[pos] & 0x1F) == 8) {
-                    fmo = h264_pps_info(sample + pos, l, &cabac);
-                    found = 1;
-                }
-                pos += l;
-            }
+            pos += l;
         }
-        u->to_main = found && !fmo;
+    }
+    u->cabac = cabac;
+    /* a Baseline stream that has no slice groups is made a Main one (see h264_sps_rewrite) */
+    if (sps_len > 1 && (sps[0] & 0x1F) == 7 && sps[1] == 66) {
+        u->to_main = found && !fmo && !u->no_main;
         u->tick.to_main = u->to_main;
     }
     if (!u->synth) { /* the PSP's timing is in it already: only a Baseline SPS is relabelled, in the header's block and (by the converter) in the samples */

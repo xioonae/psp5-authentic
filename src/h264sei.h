@@ -29,8 +29,12 @@ int h264_sps_rewrite(const uint8_t *nal, int len, H264Tick tick, uint8_t *out, i
  * Returns the length of the NAL unit written to out, -1 on an error. */
 int h264_sps_relabel(const uint8_t *nal, int len, uint8_t *out, int cap);
 
-/* 1 when the PPS (NAL unit with its header byte) uses slice groups (FMO: Baseline only) or cannot be read; *cabac gets the entropy coding mode (1 = CABAC, 0 = CAVLC) */
-int h264_pps_info(const uint8_t *nal, int len, int *cabac);
+/* 1 when the PPS (NAL unit with its header byte) uses slice groups (FMO: Baseline only) or cannot be read; *cabac gets the entropy coding mode (1 = CABAC, 0 = CAVLC), *nref0 the number of
+ * reference pictures a slice has by default and *weighted whether weighted prediction is on */
+int h264_pps_info(const uint8_t *nal, int len, int *cabac, int *nref0, int *weighted);
+
+/* what an SPS says of the stream: the profile, the number of reference frames, the size in macroblocks and the picture order count type; 0 when it cannot be read */
+int h264_sps_info(const uint8_t *nal, int len, int *profile, int *nref, int *wmb, int *hmb, int *poc_type);
 
 /* SEI NAL units (header byte included, no start code); each returns its length or -1 */
 int h264_sei_buffering(uint8_t *out, int cap);                                                 /* buffering period of a key frame: the first delay is one second (90000) */

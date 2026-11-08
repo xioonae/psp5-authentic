@@ -290,10 +290,10 @@ int h264_sps_relabel(const uint8_t *nal, int len, uint8_t *out, int cap)
     return e < 0 ? -1 : e + 1;
 }
 
-int h264_pps_info(const uint8_t *nal, int len, int *cabac)
+int h264_pps_info(const uint8_t *nal, int len, int *cabac, int *nref0, int *weighted)
 {
     uint8_t rbsp[64];
-    *cabac = 0;
+    *cabac = *nref0 = *weighted = 0;
     if (len < 4 || len > (int)sizeof(rbsp) + 1 || (nal[0] & 0x1F) != 8)
         return 1;
     int n = unescape(nal + 1, len - 1, rbsp);
@@ -303,7 +303,46 @@ int h264_pps_info(const uint8_t *nal, int len, int *cabac)
     *cabac = (int)rd(&r, 1);
     rd(&r, 1);
     unsigned groups = rd_ue(&r);
+    if (groups == 0) {
+        *nref0 = (int)rd_ue(&r) + 1;
+        rd_ue(&r);
+        *weighted = (int)rd(&r, 1);
+    }
     return r.err || groups != 0;
+}
+
+int h264_sps_info(const uint8_t *nal, int len, int *profile, int *nref, int *wmb, int *hmb, int *poc_type)
+{
+    uint8_t rbsp[SPS_MAX];
+    if (len < 5 || len > SPS_MAX || (nal[0] & 0x1F) != 7)
+        return 0;
+    int n = unescape(nal + 1, len - 1, rbsp);
+    *profile = rbsp[0];
+    BR r = { rbsp, n * 8, 0, 0 };
+    /* the same walk as sps_vui_pos(), keeping what is wanted */
+    rd(&r, 24);
+    rd_ue(&r);
+    if (*profile >= 100) { /* (the High profiles: their extra fields are not looked at: only what comes first) */
+        *nref = *wmb = *hmb = *poc_type = -1;
+        return 1;
+    }
+    rd_ue(&r);
+    *poc_type = (int)rd_ue(&r);
+    if (*poc_type == 0) {
+        rd_ue(&r);
+    } else if (*poc_type == 1) {
+        rd(&r, 1);
+        rd_se(&r);
+        rd_se(&r);
+        unsigned k = rd_ue(&r);
+        for (unsigned i = 0; i < k && !r.err; i++)
+            rd_se(&r);
+    }
+    *nref = (int)rd_ue(&r);
+    rd(&r, 1);
+    *wmb = (int)rd_ue(&r) + 1;
+    *hmb = (int)rd_ue(&r) + 1;
+    return !r.err;
 }
 
 int h264_sps_rewrite(const uint8_t *nal, int len, H264Tick tick, uint8_t *out, int cap)

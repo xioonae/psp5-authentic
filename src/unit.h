@@ -15,11 +15,14 @@ typedef struct {
     int params_len;
     int inband; /* the parameter sets are in the samples of the video (the first one has them) */
     int synth;  /* the stream is given the timing of the PSP's own */
+    int no_synth, no_main; /* test switches (PSP5/video-opts.txt): leave the timing out / leave a Baseline SPS as it is */
+    int nref, wmb, hmb, poc, cabac, nref0, weighted; /* what the SPS and the PPS that are given to the decoder say (0 when the stream carries them in its samples) */
     int to_main; /* ... and its Baseline SPS is made a Main one */
     H264Tick tick;
     double tick_s;
 } UnitMaker;
 
+/* the switches no_synth and no_main have to be set before unit_init() when they are wanted */
 /* reads the parameter sets, finds out whether the stream carries them itself and whether it has the PSP's timing; sample is room for the biggest sample (cap bytes). 1 when it can be made, 0 when not. */
 int unit_init(UnitMaker *u, Mp4 *m, uint8_t *sample, int cap);
 

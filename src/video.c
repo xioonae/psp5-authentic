@@ -876,6 +876,20 @@ Video *video_open(const char *path)
             VLOG("no memory for the samples\n");
             { crumb("open-fail", __LINE__, 0); goto fail; }
         }
+        { /* test switches (PSP5/video-opts.txt: "synth=0" leaves the PSP's timing out, "main=0" leaves a Baseline SPS as it is) */
+            char opt[96], buf[64];
+            snprintf(opt, sizeof(opt), "%s/video-opts.txt", PSP5_DATA_DIR);
+            SceUID fd = sceIoOpen(opt, PSP_O_RDONLY, 0);
+            if (fd >= 0) {
+                int n = sceIoRead(fd, buf, sizeof(buf) - 1);
+                sceIoClose(fd);
+                if (n > 0) {
+                    buf[n] = 0;
+                    v->um.no_synth = strstr(buf, "synth=0") != NULL;
+                    v->um.no_main = strstr(buf, "main=0") != NULL;
+                }
+            }
+        }
         if (!unit_init(&v->um, v->mp4, v->sample, v->au_cap) || !v->um.params_len) {
             { crumb("open-fail", __LINE__, 0); goto fail; }
         }
@@ -890,6 +904,7 @@ Video *video_open(const char *path)
         crumbh("params", (unsigned)pp[0] << 24 | pp[1] << 16 | pp[2] << 8 | pp[3], (unsigned)pp[4] << 24 | pp[5] << 16 | pp[6] << 8 | pp[7],
                n >= 12 ? (unsigned)pp[8] << 24 | pp[9] << 16 | pp[10] << 8 | pp[11] : 0, n >= 16 ? (unsigned)pp[12] << 24 | pp[13] << 16 | pp[14] << 8 | pp[15] : 0);
         crumb4("timing", v->um.synth, v->um.inband, (int)v->um.tick.num_units, (int)v->um.tick.time_scale); /* synth 1 = the PSP's timing is written into the stream */
+        crumb4("stream", v->um.nref, v->um.wmb * 1000 + v->um.hmb, v->um.cabac * 100 + v->um.weighted * 10 + v->um.to_main, v->um.nref0); /* reference frames, size in macroblocks, CABAC / weighted prediction / relabelled, default reference pictures */
     }
     if (v->w <= 0 || v->h <= 0 || v->w > FRAME_W || v->h > 512)
         { crumb("open-fail", __LINE__, 0); goto fail; }
