@@ -9,13 +9,14 @@
 /* What makes a stream that has none of the timing of the PSP's own into one that has it (see h264sei.h): the clock tick (to rewrite an SPS in the sample), and in ticks the time the unit waits
  * to be decoded (counted from the key frame) and the time from its decoding to its showing. */
 typedef struct {
-    H264Tick tick;
+    H264Tick tick;      /* with tick.to_main a Baseline SPS becomes a Main one */
+    int timing;         /* 1: the SPS gets the PSP's VUI and the SEI messages are replaced; 0: only the profile of a Baseline SPS is changed */
     unsigned cpb_removal_delay, dpb_output_delay;
 } PsSynth;
 
 /* One H.264 sample (NAL units, each with a length of nal_size bytes in front) -> Annex B in out: an access unit delimiter, the parameter sets (params, of n bytes, when this is a key
  * frame) and the NAL units each behind a start code. Returns the bytes written, or -1 when it does not fit in cap or the sample is damaged. out must not be the sample.
- * With `synth` the sample's own SEI messages are left out, an SPS in it gets the VUI of the PSP's own streams, and the unit gets the messages of those: a picture timing before its first slice,
+ * With `synth` (and synth->timing) the sample's own SEI messages are left out, an SPS in it gets the VUI of the PSP's own streams, and the unit gets the messages of those: a picture timing before its first slice,
  * and in front of that a buffering period (and after it a recovery point) when it is a key frame (an IDR slice). `params` have to have been rewritten the same way by the caller. */
 int mpegps_annexb(const uint8_t *sample, int len, int nal_size, const uint8_t *params, int params_len, int key, uint8_t *out, int cap, const PsSynth *synth);
 

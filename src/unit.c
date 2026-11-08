@@ -65,8 +65,50 @@ int unit_init(UnitMaker *u, Mp4 *m, uint8_t *sample, int cap)
     if (!sps)
         return u->params_len > 0 || u->inband; /* no SPS found: left as it is */
     u->synth = !h264_sps_has_hrd(sps, sps_len);
-    if (!u->synth)
+    /* a Baseline stream that has no slice groups is made a Main one (see h264_sps_rewrite): the PPS says; one in the samples is looked for too */
+    if (sps_len > 1 && (sps[0] & 0x1F) == 7 && sps[1] == 66) {
+        int fmo = 1, cabac = 0, found = 0;
+        for (int i = 0; i + 4 < u->params_len && !found; i++)
+            if (u->params[i] == 0 && u->params[i + 1] == 0 && u->params[i + 2] == 1 && (u->params[i + 3] & 0x1F) == 8) {
+                int e = i + 4;
+                while (e + 2 < u->params_len && !(u->params[e] == 0 && u->params[e + 1] == 0 && u->params[e + 2] <= 1))
+                    e++;
+                fmo = h264_pps_info(u->params + i + 3, (e + 2 < u->params_len ? e : u->params_len) - (i + 3), &cabac);
+                found = 1;
+            }
+        if (!found && u->inband && s0 > 0) { /* (the PPS of the first sample) */
+            int nal = mp4_nal_size(m);
+            for (int pos = 0; pos + nal <= s0 && !found;) {
+                int l = 0;
+                for (int i = 0; i < nal; i++)
+                    l = (l << 8) | sample[pos + i];
+                pos += nal;
+                if (l <= 0 || pos + l > s0)
+                    break;
+                if ((sample[pos] & 0x1F) == 8) {
+                    fmo = h264_pps_info(sample + pos, l, &cabac);
+                    found = 1;
+                }
+                pos += l;
+            }
+        }
+        u->to_main = found && !fmo;
+        u->tick.to_main = u->to_main;
+    }
+    if (!u->synth) { /* the PSP's timing is in it already: only a Baseline SPS is relabelled, in the header's block and (by the converter) in the samples */
+        if (u->to_main && !u->inband && u->params_len > 0 && off >= 4) {
+            uint8_t block[512];
+            int n = off;
+            memcpy(block, u->params, (size_t)n);
+            int sl = h264_sps_relabel(u->params + off, len, block + n, (int)sizeof(block) - n);
+            if (sl < 0 || n + sl + (u->params_len - off - len) > (int)sizeof(block))
+                return 0;
+            memcpy(block + n + sl, u->params + off + len, (size_t)(u->params_len - off - len));
+            u->params_len = n + sl + (u->params_len - off - len);
+            memcpy(u->params, block, (size_t)u->params_len);
+        }
         return 1;
+    }
     /* the clock tick is a field of the video: 4004 / 240000 for 29.97 pictures a second, else 1000 / (2000 times the pictures a second) */
     double fps = mp4_duration(m) > 0 && mp4_video_count(m) > 1 ? mp4_video_count(m) / (double)mp4_duration(m) : 30000.0 / 1001.0;
     if (fps < 1)
@@ -108,6 +150,11 @@ int unit_make(UnitMaker *u, int i, uint8_t *out, int out_cap, int *group_start)
         return -1;
     PsSynth sy;
     const PsSynth *syp = NULL;
+    sy.timing = 0;
+    sy.tick = u->tick;
+    sy.cpb_removal_delay = sy.dpb_output_delay = 0;
+    if (!u->synth && u->to_main)
+        syp = &sy; /* (the timing is in the stream: only the profile of its SPS) */
     if (u->synth) {
         /* in ticks: the decoding time since the key frame this unit belongs to, and the time from its decoding to its showing; the decoding time is the one the program stream gives: one picture
          * (3003 ticks of 90 kHz) earlier than the container's */
@@ -117,7 +164,7 @@ int unit_make(UnitMaker *u, int i, uint8_t *out, int out_cap, int *group_start)
         int kk, ki = mp4_video_at(u->m, dts);
         mp4_video_times(u->m, ki, &kd, &kp, &kk);
         long cpb = lround((dts - kd) / u->tick_s), dpb = lround((pts - d) / u->tick_s);
-        sy.tick = u->tick;
+        sy.timing = 1;
         sy.cpb_removal_delay = (unsigned)(cpb < 0 ? 0 : cpb);
         sy.dpb_output_delay = (unsigned)(dpb < 0 ? 0 : dpb > 127 ? 127 : dpb);
         syp = &sy;

@@ -131,7 +131,7 @@ int mpegps_annexb(const uint8_t *s, int len, int nal_size, const uint8_t *params
             l = (l << 8) | s[pos + i];
         pos += nal_size;
         int t = s[pos] & 0x1F;
-        if (sy && !sei_done && (t == 1 || t == 5)) { /* the messages of the PSP's own streams, in front of the first slice */
+        if (sy && sy->timing && !sei_done && (t == 1 || t == 5)) { /* the messages of the PSP's own streams, in front of the first slice */
             uint8_t m[64];
             int ml;
             if (idr) {
@@ -146,11 +146,17 @@ int mpegps_annexb(const uint8_t *s, int len, int nal_size, const uint8_t *params
             }
             sei_done = 1;
         }
-        if (t == 9 || (sy && t == 6)) {
+        if (t == 9 || (sy && sy->timing && t == 6)) {
             /* (a delimiter is written first, and a stream that is given the PSP's messages does not keep its own) */
         } else if (sy && t == 7) {
             uint8_t sps[SPS_BUF];
-            int sl = h264_sps_rewrite(s + pos, l, sy->tick, sps, sizeof(sps));
+            int sl = sy->timing ? h264_sps_rewrite(s + pos, l, sy->tick, sps, sizeof(sps)) : sy->tick.to_main ? h264_sps_relabel(s + pos, l, sps, sizeof(sps)) : -2;
+            if (sl == -2) { /* (nothing to change in it) */
+                if ((n = put_nal(out, n, cap, 4, s + pos, l)) < 0)
+                    return -1;
+                pos += l;
+                continue;
+            }
             if (sl < 0 || (n = put_nal(out, n, cap, 4, sps, sl)) < 0)
                 return -1;
         } else {

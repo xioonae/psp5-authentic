@@ -15,6 +15,7 @@ typedef struct {
     int params_len;
     int inband; /* the parameter sets are in the samples of the video (the first one has them) */
     int synth;  /* the stream is given the timing of the PSP's own */
+    int to_main; /* ... and its Baseline SPS is made a Main one */
     H264Tick tick;
     double tick_s;
 } UnitMaker;

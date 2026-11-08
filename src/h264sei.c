@@ -273,12 +273,51 @@ static void read_old_vui(BR *r, OldVui *v)
     }
 }
 
+int h264_sps_relabel(const uint8_t *nal, int len, uint8_t *out, int cap)
+{
+    uint8_t rbsp[SPS_MAX];
+    if (len < 5 || len > SPS_MAX || (nal[0] & 0x1F) != 7 || cap < 1)
+        return -1;
+    int n = unescape(nal + 1, len - 1, rbsp);
+    if (rbsp[0] == 66) {
+        rbsp[0] = 77;
+        rbsp[1] = 0x40;
+        if (rbsp[2] < 21)
+            rbsp[2] = 21;
+    }
+    out[0] = nal[0];
+    int e = escape(rbsp, n, out + 1, cap - 1);
+    return e < 0 ? -1 : e + 1;
+}
+
+int h264_pps_info(const uint8_t *nal, int len, int *cabac)
+{
+    uint8_t rbsp[64];
+    *cabac = 0;
+    if (len < 4 || len > (int)sizeof(rbsp) + 1 || (nal[0] & 0x1F) != 8)
+        return 1;
+    int n = unescape(nal + 1, len - 1, rbsp);
+    BR r = { rbsp, n * 8, 0, 0 };
+    rd_ue(&r);
+    rd_ue(&r);
+    *cabac = (int)rd(&r, 1);
+    rd(&r, 1);
+    unsigned groups = rd_ue(&r);
+    return r.err || groups != 0;
+}
+
 int h264_sps_rewrite(const uint8_t *nal, int len, H264Tick tick, uint8_t *out, int cap)
 {
     uint8_t rbsp[SPS_MAX], tmp[SPS_MAX + 64];
     if (len < 5 || len > SPS_MAX || (nal[0] & 0x1F) != 7 || tick.num_units == 0 || tick.time_scale == 0)
         return -1;
     int n = unescape(nal + 1, len - 1, rbsp);
+    if (tick.to_main && n >= 3 && rbsp[0] == 66) { /* Baseline -> Main */
+        rbsp[0] = 77;
+        rbsp[1] = 0x40; /* constraint_set1_flag, as the PSP's own streams */
+        if (rbsp[2] < 21)
+            rbsp[2] = 21;
+    }
     BR r = { rbsp, n * 8, 0, 0 };
     int vui = sps_vui_pos(&r);
     if (vui < 0)
