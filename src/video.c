@@ -887,12 +887,20 @@ Video *video_open(const char *path)
                     buf[n] = 0;
                     v->um.no_synth = strstr(buf, "synth=0") != NULL;
                     v->um.no_main = strstr(buf, "main=0") != NULL;
+                    v->um.force = strstr(buf, "force=1") != NULL;
                 }
             }
         }
         if (!unit_init(&v->um, v->mp4, v->sample, v->au_cap) || !v->um.params_len) {
             { crumb("open-fail", __LINE__, 0); goto fail; }
         }
+#ifndef PSP5_TEST /* (PPSSPP takes every stream: its pictures are what the tests and the README show) */
+        if (v->um.unsupported) { /* refused before the decoder sees it: a stream it cannot take gives its fatal error and breaks it for every video after */
+            crumb4("stream", v->um.nref, v->um.wmb * 1000 + v->um.hmb, v->um.cabac * 100 + v->um.weighted * 10 + v->um.to_main, v->um.nref0);
+            crumb4("unsupported", v->um.unsupported, v->um.profile, v->um.cabac, 0);
+            goto fail;
+        }
+#endif
         v->audio_ok = mp4_has_audio(v->mp4);
     }
     VLOG("open %s: %dx%d, %.2f s, kind %d\n", path, v->w, v->h, v->duration, v->kind);

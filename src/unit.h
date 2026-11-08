@@ -15,7 +15,9 @@ typedef struct {
     int params_len;
     int inband; /* the parameter sets are in the samples of the video (the first one has them) */
     int synth;  /* the stream is given the timing of the PSP's own */
-    int no_synth, no_main; /* test switches (PSP5/video-opts.txt): leave the timing out / leave a Baseline SPS as it is */
+    int no_synth, no_main, force; /* test switches (PSP5/video-opts.txt): leave the timing out / leave a Baseline SPS as it is / try a stream that is known not to decode */
+    int profile;
+    int unsupported; /* 0, or why the PSP's decoder cannot take the stream: 1 = CAVLC (Baseline entropy coding), 2 = a High profile */
     int nref, wmb, hmb, poc, cabac, nref0, weighted; /* what the SPS and the PPS that are given to the decoder say (0 when the stream carries them in its samples) */
     int to_main; /* ... and its Baseline SPS is made a Main one */
     H264Tick tick;

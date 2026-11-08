@@ -29,10 +29,11 @@ static int find_sps(const uint8_t *p, int n, int *off, int *len)
 
 int unit_init(UnitMaker *u, Mp4 *m, uint8_t *sample, int cap)
 {
-    int no_synth = u->no_synth, no_main = u->no_main; /* (set by the caller before) */
+    int no_synth = u->no_synth, no_main = u->no_main, force = u->force; /* (set by the caller before) */
     memset(u, 0, sizeof(*u));
     u->no_synth = no_synth;
     u->no_main = no_main;
+    u->force = force;
     u->m = m;
     u->sample = sample;
     u->cap = cap;
@@ -68,7 +69,7 @@ int unit_init(UnitMaker *u, Mp4 *m, uint8_t *sample, int cap)
     if (!sps)
         return u->params_len > 0 || u->inband; /* no SPS found: left as it is */
     u->synth = !h264_sps_has_hrd(sps, sps_len) && !u->no_synth;
-    { int pr; h264_sps_info(sps, sps_len, &pr, &u->nref, &u->wmb, &u->hmb, &u->poc); }
+    h264_sps_info(sps, sps_len, &u->profile, &u->nref, &u->wmb, &u->hmb, &u->poc);
     /* the PPS: slice groups, the entropy mode, the reference pictures (the one of the header's block, or else the first sample's) */
     int fmo = 1, cabac = 0, found = 0;
     for (int i = 0; i + 4 < u->params_len && !found; i++)
@@ -96,6 +97,14 @@ int unit_init(UnitMaker *u, Mp4 *m, uint8_t *sample, int cap)
         }
     }
     u->cabac = cabac;
+    /* what the PSP's decoder (the one of its sceMpeg library) is known not to take: it answers its fatal error, after which no video decodes until psp5 is started again. CAVLC: the maintainer's tests
+     * (Baseline with one reference frame, relabelled Main) gave the fatal error, CABAC streams decoded. A High profile: the PSP's own player says "corrupted". */
+    if (!u->force) {
+        if (found && !cabac)
+            u->unsupported = 1;
+        else if (u->profile >= 100)
+            u->unsupported = 2;
+    }
     /* a Baseline stream that has no slice groups is made a Main one (see h264_sps_rewrite) */
     if (sps_len > 1 && (sps[0] & 0x1F) == 7 && sps[1] == 66) {
         u->to_main = found && !fmo && !u->no_main;
