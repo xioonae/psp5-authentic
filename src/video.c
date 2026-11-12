@@ -3,7 +3,6 @@
 #include <psputility.h>
 #include <pspaudio.h>
 #include <pspmpeg.h>
-#include <pspaudiocodec.h>
 #include <malloc.h>
 #include <math.h>
 #include <stdio.h>
@@ -12,6 +11,8 @@
 #include "video.h"
 #include "mp4.h"
 #include "mpegps.h"
+#include "aac.h"
+#include "h264dec.h"
 #include "unit.h"
 #include "music.h"
 #include "system.h"
@@ -182,14 +183,8 @@ static void crumb_keep(void)
         sceIoRemove(path);
 }
 
-/* The PSP's own AAC decoder (sceAudiocodec, codec 0x1003) crashed a real PSP on its first frame: the crash file of the first test on one ended with "first-sound", written just before that call, and the
- * picture decoder had not been asked for anything yet. PPSSPP accepts the call, and what a PSP wants in the parameter block cannot be found out without crashing one, so an MP4 is played without
- * sound until the sound is made another way. A build with -DVIDEO_HW_AAC (PPSSPP tests only) still uses the decoder. */
-#ifdef VIDEO_HW_AAC
-#define HW_AAC 1
-#else
-#define HW_AAC 0
-#endif
+/* The PSP's own AAC decoder (sceAudiocodec, codec 0x1003) crashed a real PSP on its first frame (the crash file of an early test ended with "first-sound", written just before that call), and what
+ * its parameter block wants cannot be found out without crashing more of them: the sound of an MP4 is made by a decoder of psp5's own (aac.c, AAC-LC in software, checked against ffmpeg). */
 
 #define PKT 2048
 #define RING_PACKETS 0x100            /* 512 KB of program stream in the ring buffer */
@@ -198,7 +193,6 @@ static void crumb_keep(void)
 #define PTS0 90000                    /* the first time stamp of a PSMF (what the PSP's library expects of it) */
 #define PCM_FRAMES 32768              /* the queue of sound: 0.74 seconds at 44.1 kHz (a power of two) */
 #define BLOCK 1024                    /* sound frames to the sound output at a time */
-#define AAC_FRAME_BYTES 4096          /* 1024 stereo frames of 16 bits */
 #define MAX_AU (320 * 1024)           /* the biggest video sample that is read (the PSP's own limit for a picture is far below that) */
 
 enum { VK_PMF, VK_MP4 };
@@ -224,6 +218,13 @@ struct Video {
     unsigned char *sample, *au[2]; /* the units the program stream writer holds (the one it writes and the one after it) */
     int au_cap, au_sel;
     UnitMaker um; /* makes the units of the MP4 (parameter sets, the PSP's timing) */
+    int opt_soft; /* test switch (video-opts.txt): 1 = soft=1 (the software decoder for every stream), 0 = soft=0 (never), -1 = as the stream needs */
+    int soft;     /* the pictures are made by h264dec.c: the stream is one the PSP's decoder cannot take (CAVLC, a High profile) */
+    H264Dec *dec;
+    int soft_up, pending;
+    double pend_ts;
+    unsigned soft_us, soft_late_n, soft_skip_n;
+    int quiet;    /* closed without a trace (refused before anything was done) */
     int vnext, anext;
     int src_eof;
     /* sceMpeg */
@@ -252,8 +253,7 @@ struct Video {
     volatile int head, tail; /* frames, counted up and masked */
     volatile unsigned played; /* frames the sound output has taken since the sound started */
     int src_reserved;
-    unsigned long *codec;
-    int codec_up; /* the AAC decoder has its memory of the PSP's (to be given back) */
+    AacDec *aac;
     unsigned char *aac_in;
     short *aac_out;
     double a_base;
@@ -292,17 +292,6 @@ static int load_modules(void)
     return ok;
 }
 
-/* the PSP's AAC decoder is a module of its own (the music codecs of music.c are others); an MP4's sound is without it when it cannot be loaded */
-static int load_aac_module(void)
-{
-    static int state; /* 0 = not tried, 1 = loaded, -1 = not */
-    if (state)
-        return state > 0;
-    int r = sceUtilityLoadModule(PSP_MODULE_AV_AAC);
-    state = r >= 0 || (unsigned)r == 0x80111102u ? 1 : -1;
-    return state > 0;
-}
-
 static unsigned be32(const unsigned char *p) { return ((unsigned)p[0] << 24) | ((unsigned)p[1] << 16) | ((unsigned)p[2] << 8) | p[3]; }
 static unsigned long long be48(const unsigned char *p) { return ((unsigned long long)be32(p) << 16) | ((unsigned)p[4] << 8) | p[5]; }
 static unsigned long long au_pts(const SceMpegAu *a) { return ((unsigned long long)a->iPtsMSB << 32) | a->iPts; }
@@ -310,6 +299,8 @@ static double au_sec(const SceMpegAu *a) { return ((double)au_pts(a) - PTS0) / 9
 /* a time stamp the PSP's library gives for a unit that has one: -1 (all ones) is none */
 static int ts_valid(unsigned msb, unsigned lo) { return msb == 0 && lo != 0xFFFFFFFFu; }
 static int pow2(int n) { int p = 1; while (p < n) p <<= 1; return p; }
+static int soft_start(Video *v);
+static float soft_pick_start(Video *v, float at);
 
 /* ---------------------------------------------------------------------- */
 /* what the ring buffer is fed with */
@@ -465,51 +456,30 @@ static void audio_stop(Video *v)
     v->pcm = NULL;
 }
 
-/* the AAC decoder of the PSP (sceAudiocodec, codec 0x1003) for an MP4 */
+/* the AAC decoder for an MP4 (aac.c): 0 when the sound is not one it can do (the video then plays without sound) */
 static int aac_open(Video *v)
 {
-    if (!load_aac_module())
+    int cfg_len, rate = 0, chans = 0;
+    const unsigned char *cfg = mp4_audio_config(v->mp4, &cfg_len);
+    v->aac = aac_new(cfg, cfg_len, &rate, &chans);
+    v->aac_in = malloc(8192);
+    v->aac_out = malloc((size_t)AAC_FRAME * 4);
+    if (!v->aac || !v->aac_in || !v->aac_out || rate != mp4_audio_rate(v->mp4))
         return 0;
-    /* whole cache lines each (the decoder's own processor writes into the structure, and the CPU must not write a stale line of it back over that) */
-    v->codec = memalign(64, 512);
-    v->aac_in = memalign(64, 8192 + 64);
-    v->aac_out = memalign(64, AAC_FRAME_BYTES + 64);
-    if (!v->codec || !v->aac_in || !v->aac_out)
-        return 0;
-    memset(v->codec, 0, 512);
-    memset(v->aac_in, 0, 8192 + 64);
-    memset(v->aac_out, 0, AAC_FRAME_BYTES + 64);
-    v->codec[10] = (unsigned long)mp4_audio_rate(v->mp4); /* the sample rate, at offset 0x28 */
-    sceKernelDcacheWritebackInvalidateAll();
-    if (sceAudiocodecCheckNeedMem(v->codec, PSP_CODEC_AAC) < 0)
-        return 0;
-    sceKernelDcacheWritebackInvalidateAll();
-    if (sceAudiocodecGetEDRAM(v->codec, PSP_CODEC_AAC) < 0)
-        return 0;
-    sceKernelDcacheWritebackInvalidateAll();
-    if (sceAudiocodecInit(v->codec, PSP_CODEC_AAC) < 0) {
-        sceAudiocodecReleaseEDRAM(v->codec);
-        return 0;
-    }
-    sceKernelDcacheWritebackInvalidateAll();
-    v->codec_up = 1;
     return 1;
 }
 
 static void aac_close(Video *v)
 {
-    if (v->codec && v->codec_up)
-        sceAudiocodecReleaseEDRAM(v->codec);
-    v->codec_up = 0;
-    free(v->codec);
+    aac_free(v->aac);
     free(v->aac_in);
     free(v->aac_out);
-    v->codec = NULL;
+    v->aac = NULL;
     v->aac_in = NULL;
     v->aac_out = NULL;
 }
 
-/* one AAC frame of the MP4: 1 when it gave sound */
+/* one AAC frame of the MP4: 1 when it was taken from the file (it gave sound, or it could not be read and the sound goes on with the next one) */
 static int decode_aac(Video *v)
 {
     if (v->anext >= mp4_audio_count(v->mp4)) {
@@ -517,33 +487,22 @@ static int decode_aac(Video *v)
         return 0;
     }
     int i = v->anext++;
-    int cfg_len;
-    const unsigned char *cfg = mp4_audio_config(v->mp4, &cfg_len);
     int size = mp4_audio_size(v->mp4, i);
-    if (size <= 0 || size > 8000 || mp4_audio_read(v->mp4, i, v->aac_in + 7, 8192 - 7) != size || !mpegps_adts(cfg, cfg_len, size, v->aac_in))
+    if (size <= 0 || size > 8192 || mp4_audio_read(v->mp4, i, v->aac_in, 8192) != size)
         return 1; /* a frame that cannot be read is skipped: the sound goes on with the next */
     if (!v->a_has_base) {
         v->a_base = mp4_audio_time(v->mp4, i);
         v->a_has_base = 1;
     }
-    v->codec[6] = (unsigned long)v->aac_in;
-    v->codec[7] = (unsigned long)(size + 7);
-    v->codec[8] = (unsigned long)v->aac_out;
-    v->codec[9] = AAC_FRAME_BYTES;
     if (!(v->stage & 4)) {
         v->stage |= 4;
         crumb("first-sound", size, 0);
     }
-    sceKernelDcacheWritebackInvalidateAll(); /* the structure, the frame and the place for the sound all go out to the memory the decoder reads, and nothing of them stays in the cache of the CPU */
-    int r = sceAudiocodecDecode(v->codec, PSP_CODEC_AAC);
-    sceKernelDcacheWritebackInvalidateAll();
-    if (r < 0) {
-        VLOG("aac decode %08x\n", r);
-        if (++v->dec_errors > 40)
+    if (!aac_decode(v->aac, v->aac_in, size, v->aac_out)) {
+        if (++v->dec_errors > 400)
             v->audio_ok = 0; /* it does not work: the video goes on without sound */
-        return 1;
     }
-    pcm_push(v, v->aac_out, 1024);
+    pcm_push(v, v->aac_out, AAC_FRAME);
     return 1;
 }
 
@@ -792,30 +751,19 @@ int video_poisoned(void) { return s_poisoned; }
 
 Video *video_open(const char *path)
 {
-    if (s_poisoned)
+    const char *dot0 = strrchr(path, '.');
+    int is_pmf = dot0 && (!strcasecmp(dot0, ".pmf") || !strcasecmp(dot0, ".psmf"));
+    if (s_poisoned && is_pmf)
         return NULL; /* (nothing is written: the file of the video that did it stays) */
     crumb_start();
     crumb("open", 0, 0);
-    if (!load_modules()) {
-        crumb("open-fail", __LINE__, 0);
-        crumb_keep(); /* (it failed, it did not crash) */
-        return NULL;
-    }
     Video *v = calloc(1, sizeof(*v));
     if (!v) {
         crumb("open-fail", __LINE__, 0);
         crumb_keep();
         return NULL;
     }
-    int mi = sceMpegInit();
-    VLOG("mpeg init %08x\n", mi);
-    if (mi < 0) {
-        crumb("open-fail", __LINE__, mi);
-        free(v);
-        crumb_keep();
-        return NULL;
-    }
-    v->lib_up = 1;
+    v->opt_soft = -1;
     const char *dot = strrchr(path, '.');
     int pmf = dot && (!strcasecmp(dot, ".pmf") || !strcasecmp(dot, ".psmf"));
     v->frame_dur = 1001.0 / 30000.0; /* (a PMF: the usual 29.97; an MP4 sets its own below) */
@@ -876,7 +824,7 @@ Video *video_open(const char *path)
             VLOG("no memory for the samples\n");
             { crumb("open-fail", __LINE__, 0); goto fail; }
         }
-        { /* test switches (PSP5/video-opts.txt: "synth=0" leaves the PSP's timing out, "main=0" leaves a Baseline SPS as it is) */
+        { /* test switches (PSP5/video-opts.txt: "synth=0" leaves the PSP's timing out, "main=0" leaves a Baseline SPS as it is, "soft=1" / "soft=0" the software decoder for every stream / for none) */
             char opt[96], buf[64];
             snprintf(opt, sizeof(opt), "%s/video-opts.txt", PSP5_DATA_DIR);
             SceUID fd = sceIoOpen(opt, PSP_O_RDONLY, 0);
@@ -888,14 +836,34 @@ Video *video_open(const char *path)
                     v->um.no_synth = strstr(buf, "synth=0") != NULL;
                     v->um.no_main = strstr(buf, "main=0") != NULL;
                     v->um.force = strstr(buf, "force=1") != NULL;
+                    v->opt_soft = strstr(buf, "soft=1") ? 1 : strstr(buf, "soft=0") ? 0 : -1;
                 }
             }
         }
         if (!unit_init(&v->um, v->mp4, v->sample, v->au_cap) || !v->um.params_len) {
             { crumb("open-fail", __LINE__, 0); goto fail; }
         }
-#ifndef PSP5_TEST /* (PPSSPP takes every stream: its pictures are what the tests and the README show) */
-        if (v->um.unsupported) { /* refused before the decoder sees it: a stream it cannot take gives its fatal error and breaks it for every video after */
+#ifdef PSP5_TEST /* (PPSSPP takes every stream: its pictures are what the tests and the README show; soft=1 tries the software decoder there) */
+        int soft = v->opt_soft == 1;
+#else
+        int soft = v->um.unsupported ? v->opt_soft != 0 : v->opt_soft == 1;
+#endif
+        if (soft) { /* the PSP's decoder cannot take the stream (CAVLC, High profile): h264dec.c makes the pictures */
+            unsigned char pp[1024];
+            int pl = mp4_param_sets(v->mp4, pp, sizeof(pp)), why = 0;
+            v->dec = pl > 0 ? h264d_new(pp, pl, mp4_nal_size(v->mp4), &why) : NULL;
+            if (!v->dec) {
+                crumb4("stream", v->um.nref, v->um.wmb * 1000 + v->um.hmb, v->um.cabac * 100 + v->um.weighted * 10 + v->um.to_main, v->um.nref0);
+                crumb4("soft-refused", why, v->um.unsupported, v->um.profile, v->um.cabac);
+                goto fail;
+            }
+            v->soft = 1;
+            v->w = h264d_width(v->dec);
+            v->h = h264d_height(v->dec);
+            crumb4("soft", v->w, v->h, h264d_nref(v->dec), v->um.unsupported);
+        }
+#ifndef PSP5_TEST
+        else if (v->um.unsupported) { /* (soft=0) refused before the decoder sees it: a stream it cannot take gives its fatal error and breaks it for every video after */
             crumb4("stream", v->um.nref, v->um.wmb * 1000 + v->um.hmb, v->um.cabac * 100 + v->um.weighted * 10 + v->um.to_main, v->um.nref0);
             crumb4("unsupported", v->um.unsupported, v->um.profile, v->um.cabac, 0);
             goto fail;
@@ -916,16 +884,33 @@ Video *video_open(const char *path)
     }
     if (v->w <= 0 || v->h <= 0 || v->w > FRAME_W || v->h > 512)
         { crumb("open-fail", __LINE__, 0); goto fail; }
+    if (!v->soft) { /* the PSP's decoder: its modules, its library (not touched by a video that is decoded in software) */
+        if (s_poisoned)
+            goto refuse;
+        if (!load_modules()) {
+            crumb("open-fail", __LINE__, 0);
+            goto fail;
+        }
+        int mi = sceMpegInit();
+        VLOG("mpeg init %08x\n", mi);
+        if (mi < 0) {
+            crumb("open-fail", __LINE__, mi);
+            goto fail;
+        }
+        v->lib_up = 1;
+    }
     /* the decoder writes whole blocks of 16 and the PSP's own library decides how far it goes: the buffer is always the biggest a video can need (512 by 512 of 16 bits), so nothing can be written past it */
     size_t frame_bytes = (size_t)FRAME_W * 512 * 2;
     v->frame = memalign(64, frame_bytes);
-    v->ring_size = sceMpegRingbufferQueryMemSize(RING_PACKETS);
-    v->mpeg_size = sceMpegQueryMemSize(0);
-    if (v->ring_size > 0 && v->mpeg_size > 0) {
-        v->ring_data = memalign(64, (size_t)v->ring_size);
-        v->mpeg_mem = memalign(64, (size_t)v->mpeg_size);
+    if (!v->soft) {
+        v->ring_size = sceMpegRingbufferQueryMemSize(RING_PACKETS);
+        v->mpeg_size = sceMpegQueryMemSize(0);
+        if (v->ring_size > 0 && v->mpeg_size > 0) {
+            v->ring_data = memalign(64, (size_t)v->ring_size);
+            v->mpeg_mem = memalign(64, (size_t)v->mpeg_size);
+        }
     }
-    if (!v->frame || !v->ring_data || !v->mpeg_mem) {
+    if (!v->frame || (!v->soft && (!v->ring_data || !v->mpeg_mem))) {
         VLOG("no memory for the picture and the ring buffer\n");
         { crumb("open-fail", __LINE__, 0); goto fail; }
     }
@@ -943,8 +928,8 @@ Video *video_open(const char *path)
     if (v->audio_ok) {
         int rate = v->kind == VK_MP4 ? mp4_audio_rate(v->mp4) : 44100;
         crumb("sound-open", rate, v->kind == VK_MP4);
-        if (v->kind == VK_MP4 && (!HW_AAC || !aac_open(v)))
-            v->audio_ok = 0; /* (an MP4 is silent: see HW_AAC) */
+        if (v->kind == VK_MP4 && !aac_open(v))
+            v->audio_ok = 0; /* (the sound is not one aac.c can decode: the video plays without it) */
         crumb("sound-out", rate, v->audio_ok);
         if (v->audio_ok && !audio_start(v, rate))
             v->audio_ok = 0;
@@ -952,6 +937,10 @@ Video *video_open(const char *path)
     v->has_sound = v->audio_ok;
     crumb("opened", v->has_sound, 0);
     return v;
+refuse:
+    v->quiet = 1; /* (the PSP's decoder is broken until psp5 is started again, and this stream needs it) */
+    video_close(v);
+    return NULL;
 fail:
     VLOG("open failed\n");
     v->failed = 1;
@@ -963,7 +952,8 @@ void video_close(Video *v)
 {
     if (!v)
         return;
-    crumb("closing", 0, 0);
+    if (!v->quiet)
+        crumb("closing", 0, 0);
     v->started = 0;
     audio_stop(v);
     session_destroy(v);
@@ -972,11 +962,18 @@ void video_close(Video *v)
     if (v->lib_up && TD_STEP(TD_FINISH))
         sceMpegFinish();
     aac_close(v);
-    crumb4("end", v->n_put, v->n_au, v->n_dec, v->err_total);
-    if (v->failed || v->err_total > 0)
-        crumb_keep(); /* it did not play right: the file stays (video-failed.txt) */
-    else
-        crumb_end(); /* it was closed the right way and played: nothing to leave behind */
+    h264d_free(v->dec);
+    if (v->soft && !v->quiet)
+        crumb4("soft-end", (int)v->soft_skip_n, (int)v->soft_late_n, (int)(v->soft_us / 1000), 0); /* pictures made without the loop filter, pictures that were late, milliseconds of decoding since the last jump */
+    if (v->quiet) {
+        crumb_end();
+    } else {
+        crumb4("end", v->n_put, v->n_au, v->n_dec, v->err_total);
+        if (v->failed || v->err_total > 0 || (v->soft && v->soft_late_n * 5 > (unsigned)v->n_dec + 5))
+            crumb_keep(); /* it did not play right (or a video in software was late with more than one picture in five: how fast the PSP is): the file stays (video-failed.txt) */
+        else
+            crumb_end(); /* it was closed the right way and played: nothing to leave behind */
+    }
     free(v->frame);
     free(v->ep);
     free(v->sample);
@@ -1002,6 +999,8 @@ int video_play(Video *v, float at)
         at = 0;
     if (v->duration > 0 && at > v->duration - 0.5f)
         at = v->duration > 1 ? v->duration - 1 : 0;
+    if (v->soft && at > 0)
+        at = soft_pick_start(v, at);
     /* stop what runs: the sound is emptied, the session of sceMpeg is made again */
     v->started = 0;
     v->clock_audio = 0;
@@ -1013,10 +1012,12 @@ int video_play(Video *v, float at)
         v->played = 0;
     }
     session_destroy(v);
+    v->soft_up = 0;
     v->src_eof = 0;
     v->have_au = 0;
     v->have_ts = 0;
-    v->have_pic = 0;
+    if (!v->soft)
+        v->have_pic = 0; /* (a picture made in software stays on the screen until the run up to the new place is done) */
     v->ended = 0;
     v->no_data = 0;
     v->audio_dry = 0;
@@ -1025,6 +1026,7 @@ int video_play(Video *v, float at)
     v->stage = 0;
     v->decoded = 0;
     v->n_put = v->n_au = v->n_dec = 0;
+    v->soft_us = v->soft_late_n = v->soft_skip_n = 0;
     v->n_seen = v->hb_lines = 0;
     v->hb = v->since = 0;
     v->a_has_base = 0;
@@ -1035,8 +1037,11 @@ int video_play(Video *v, float at)
     if (v->kind == VK_MP4) {
         v->vnext = mp4_video_at(v->mp4, at);
         v->anext = v->audio_ok ? mp4_audio_at(v->mp4, at) : 0;
+        if (v->aac)
+            aac_flush(v->aac); /* (the sound of the frame before is not the one that comes now) */
         v->au_sel = 0;
-        ps_init(&v->ps, v->vnext, mp4_video_count(v->mp4), mp4_size, mp4_pull, v);
+        if (!v->soft)
+            ps_init(&v->ps, v->vnext, mp4_video_count(v->mp4), mp4_size, mp4_pull, v);
     } else {
         unsigned off = 0;
         for (int i = 0; i < v->n_ep; i++) { /* the last entry point at or before the time */
@@ -1048,7 +1053,7 @@ int video_play(Video *v, float at)
             off = 0;
         fseek(v->fp, (long)(v->stream_off + (unsigned long)off * PKT), SEEK_SET);
     }
-    int ok = session_create(v);
+    int ok = v->soft ? soft_start(v) : session_create(v);
     VLOG("play at %.2f: session %d\n", at, ok);
     if (!ok)
         v->failed = 1; /* (the crash file is kept) */
@@ -1070,14 +1075,132 @@ float video_time(const Video *v)
     return (float)t;
 }
 
+/* ---------------------------------------------------------------------- */
+/* the pictures of a stream the PSP's decoder cannot take: h264dec.c (see h264dec.h) */
+
+#define SOFT_BUDGET_US 45000 /* the time one call of video_update decodes for at most: the screen and the controls are served between the calls */
+
+static unsigned long long now_us(void) { return sceKernelGetSystemTimeWide(); }
+
+/* Where a jump to `at` starts. A picture can only be decoded after the ones it is predicted from, so a jump starts at the sync sample before it and decodes up to `at`; with the 8 seconds between the sync
+ * samples of an ordinary video and a decoder that is not much faster than the video itself that is a long wait. When the sync sample after `at` is closer than the one before it and the run up from the
+ * one before is longer than two seconds, the jump goes to the one after: the time of the video is then that of the sync sample. */
+static float soft_pick_start(Video *v, float at)
+{
+    int k = mp4_video_at(v->mp4, at), n = mp4_video_count(v->mp4);
+    float d0, p0;
+    int key;
+    mp4_video_times(v->mp4, k, &d0, &p0, &key);
+    if (at - p0 <= 2.0f)
+        return at;
+    for (int j = k + 1; j < n && j < k + 1500; j++) {
+        float d, p;
+        mp4_video_times(v->mp4, j, &d, &p, &key);
+        if (key) {
+            if (p - at < at - p0)
+                return p;
+            break;
+        }
+    }
+    return at;
+}
+
+static int soft_start(Video *v)
+{
+    h264d_reset(v->dec);
+    v->pending = 0;
+    v->soft_up = 1;
+    return 1;
+}
+
+/* decodes the pictures that are due (their time is the clock's or before it) and gives the last of them to the screen; 1 when there is a new picture */
+static int soft_update(Video *v)
+{
+    int n = mp4_video_count(v->mp4), shown = 0;
+    unsigned long long t0 = now_us();
+    for (int guard = 0; guard < 12; guard++) {
+        if (v->vnext >= n) {
+            v->src_eof |= 1;
+            break;
+        }
+        float dts, pts_f;
+        int key;
+        mp4_video_times(v->mp4, v->vnext, &dts, &pts_f, &key);
+        double pts = pts_f, late = v->clock - pts;
+        if (pts > v->clock + 0.004)
+            break; /* not yet */
+        if (late > 2.0) { /* far behind (the decoder is slower than the video): on to the sync sample that is due, skipping what is between */
+            int k = mp4_video_at(v->mp4, (float)(v->clock + 0.3));
+            if (k > v->vnext) {
+                crumb4("soft-jump", v->vnext, k, (int)(late * 1000), 0);
+                v->vnext = k;
+                h264d_reset(v->dec);
+                v->pending = 0;
+                continue;
+            }
+        }
+        int i = v->vnext++;
+        int sz = mp4_video_read(v->mp4, i, v->sample, v->au_cap);
+        /* a picture that is late is made without the loop filter (what a later picture is predicted from is then not quite as it should be: about the cheapest way to catch up); so are the long run-ups of a jump */
+        int fast = late > 0.1 || v->skip_until - pts > 0.5;
+        v->soft_late_n += late > 0.1;
+        h264d_set_fast(v->dec, fast);
+        v->soft_skip_n += (unsigned)fast;
+        unsigned long long a = now_us();
+        int r = sz > 0 ? h264d_decode(v->dec, v->sample, sz) : -1;
+        unsigned took = (unsigned)(now_us() - a);
+        v->soft_us += took;
+        v->n_au++;
+        v->n_dec++;
+        v->n_put = (int)(v->soft_us / (unsigned)v->n_dec); /* (the log's first number of "alive" and "end" is then the average microseconds a picture took) */
+        if (v->n_dec == 1) {
+            crumbh("first-decode", (unsigned)r, (unsigned)sz, took, (unsigned)h264d_why(v->dec));
+            v->stage |= 2;
+        }
+        if (r < 0) {
+            v->err_total++;
+            if (v->dec_errors < 3)
+                crumb4("decode-error", h264d_why(v->dec), v->dec_errors, sz, i);
+            if (++v->dec_errors > 30) {
+                v->failed = 1;
+                break;
+            }
+            continue;
+        }
+        v->dec_errors = 0;
+        v->since = 0; /* (it goes on: the run up to a far place can take longer than the watchdog's eight seconds) */
+        v->last_ts = pts;
+        v->have_ts = 1;
+        if (r > 0) {
+            v->pending = 1;
+            v->pend_ts = pts;
+        }
+        if (now_us() - t0 > SOFT_BUDGET_US)
+            break;
+    }
+    if (v->pending) {
+        v->pending = 0;
+        if (v->pend_ts + 0.034 >= v->skip_until - 0.03) {
+            h264d_rgb565(v->dec, (uint16_t *)v->frame, FRAME_W);
+            sceKernelDcacheWritebackInvalidateRange(v->frame, (unsigned)(v->h * FRAME_W * 2));
+            v->have_pic = 1;
+            shown = 1;
+        }
+    }
+    if (v->duration > 0 && v->clock > v->duration + 0.5 && (v->src_eof & 1))
+        v->ended = 1;
+    return shown;
+}
+
 int video_update(Video *v, float dt)
 {
-    if (!v->mpeg_up || v->failed)
+    if (!(v->soft ? v->soft_up : v->mpeg_up) || v->failed)
         return 0;
     if (v->paused)
         return 0;
-    for (int i = 0; i < 3; i++)
-        feed(v);
+    if (!v->soft)
+        for (int i = 0; i < 3; i++)
+            feed(v);
     pump_audio(v);
     /* the clock: the sound that has been played, or the time that has gone when there is no sound */
     if (v->audio_ok && v->clock_audio && v->a_has_base && !((v->src_eof & 2) && pcm_count(v) == 0))
@@ -1098,6 +1221,8 @@ int video_update(Video *v, float dt)
         v->failed = 1;
         return 0;
     }
+    if (v->soft)
+        return soft_update(v);
     int shown = 0;
     for (int n = 0; n < 4; n++) {
         if (!v->have_au) {
