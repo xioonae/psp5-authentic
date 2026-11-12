@@ -8,7 +8,8 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Not ubuntu-latest: that became Ubuntu 26.04 in November 2026, which has no libgpgme.so.11, and the pspdev toolchain's psp-pacman (built on Ubuntu 24.04) needs it.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
