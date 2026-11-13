@@ -80,7 +80,7 @@ struct H264Dec {
     uint8_t scratch[48 * 48 * 2 + 64];
     int err;
     int why;
-    int fast; /* what the decoder leaves out or does in a cheaper way (h264d_set_fast; bits of H264_FAST_*), 0 = everything as the standard says */
+    int fast;
     int dirty_all[3], prev_id;
     uint8_t *rbsp;
     int rbsp_cap;

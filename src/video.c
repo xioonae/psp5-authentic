@@ -252,11 +252,6 @@ struct Video {
     float speed_min;
     unsigned long long ctl_t, lf_block;
     int opt_slow, opt_burn;
-    int opt_ladder;                /* video-opts.txt "ladder=0": the decoder is never made cheaper (only the speed goes down) */
-    int lvl, lvl_max;              /* the quality ladder (see soft_step): 0 = as the standard says, 1 = luma motion by the bilinear filter, 2 = and no loop filter */
-    unsigned long long lvl_t, lvl_lowered_t, lvl_wait; /* when it changed last, when it was last lowered, how long it stays up at least (microseconds) */
-    unsigned lvl_n[3];             /* pictures made at each level */
-    int late_ticks;                /* controller ticks (100 ms) in a row that the pictures were late */
     volatile unsigned t_io, t_conv, t_aud, underruns; /* microseconds spent reading, converting and decoding sound; times the sound ran dry (for the log) */
     int quiet;    /* closed without a trace (refused before anything was done) */
     int ge;       /* a picture made in software is given as planes and drawn by the graphics chip (video_yuv); 0: made into RGB by the CPU (test switch ge=0) */
@@ -965,7 +960,6 @@ Video *video_open(const char *path)
     v->opt_soft = -1;
     v->opt_ge = 1;
     v->opt_slow = 1;
-    v->opt_ladder = 1;
     v->speed = 1.0f;
     const char *dot = strrchr(path, '.');
     int pmf = dot && (!strcasecmp(dot, ".pmf") || !strcasecmp(dot, ".psmf"));
@@ -1049,7 +1043,6 @@ Video *video_open(const char *path)
                     v->opt_ge = strstr(buf, "ge=0") ? 0 : 1;
                     v->opt_pcm = strstr(buf, "pcm=1") != NULL;
                     v->opt_slow = strstr(buf, "slow=0") == NULL;
-                    v->opt_ladder = strstr(buf, "ladder=0") == NULL;
                     { const char *bp = strstr(buf, "burn="); v->opt_burn = bp ? atoi(bp + 5) : 0; }
                 }
             }
@@ -1225,7 +1218,7 @@ void video_close(Video *v)
         crumb_end();
     } else {
         crumb4("end", v->n_put, v->n_au, v->n_dec, v->err_total);
-        if (v->failed || v->err_total > 0 || (v->opt_hw && v->um.hw_ok) || (v->soft && (v->soft_late_n * 5 > (unsigned)v->n_dec + 5 || v->speed_min < 0.97f || v->lvl_max > 0)))
+        if (v->failed || v->err_total > 0 || (v->opt_hw && v->um.hw_ok) || (v->soft && (v->soft_late_n * 5 > (unsigned)v->n_dec + 5 || v->speed_min < 0.97f)))
             crumb_keep(); /* it did not play right (or a video in software was late with more than one picture in five, or had to slow down: how fast the PSP is; or the hardware decoder's Baseline mode was tried: its first tests): the file stays (video-failed.txt) */
         else
             crumb_end(); /* it was closed the right way and played: nothing to leave behind */
@@ -1318,11 +1311,6 @@ int video_play(Video *v, float at)
     v->speed_min = 1.0f;
     v->ctl_t = 0;
     v->lf_block = 0;
-    v->lvl = v->lvl_max = 0; /* (a jump starts at a key frame: nothing of an earlier picture is left in it) */
-    v->lvl_t = v->lvl_lowered_t = 0;
-    v->lvl_wait = 6000000ull;
-    v->lvl_n[0] = v->lvl_n[1] = v->lvl_n[2] = 0;
-    v->late_ticks = 0;
     v->clock = at;
     v->clock_ms = (int)(at * 1000.0);
     v->skip_until = at;
@@ -1435,42 +1423,23 @@ static int soft_step(Video *v)
     int key;
     mp4_video_times(v->mp4, v->vnext, &dts, &pts_f, &key);
     double pts = pts_f, clock = v->clock_ms / 1000.0, late = clock - pts;
-    /* What a PSP-1000 cannot do in time is made cheaper, one step at a time, before the video is slowed down (the steps are measured: size of the work with the pictures' difference to the standard's
-     * decoding on 90 pictures of a busy video): level 1, the quarter pixel positions of the luma motion by the bilinear filter (the work is a fifth less; the luma 37 dB, the chroma exact), level 2,
-     * and no loop filter (a third of what is left; luma 35 dB). Only when that is not enough the speed goes down (the sound is stretched, its pitch kept). Going back to the standard's decoding
-     * is tried at a key frame (nothing of the earlier pictures is left in it) after a quiet time that gets longer each time it had to be given up again. */
-    unsigned long long tn = now_us();
-    if (v->opt_slow) {
+    if (v->opt_slow) { /* the speed: when the pictures are late the video is played slower (the sound with it) until they are not, and a little faster again when they have caught up */
+        unsigned long long tn = now_us();
         if (!v->ctl_t)
             v->ctl_t = tn;
         if (tn - v->ctl_t >= 100000) {
             float dts2 = (float)(tn - v->ctl_t) / 1e6f, sp = v->speed;
             v->ctl_t = tn;
-            v->late_ticks = late > 0.04 ? v->late_ticks + 1 : 0;
-            if (late > 0.04) {
-                /* (not in the first second of a play, when everything is cold, and not before the pictures have been late for 0.3 s in a row: a moment is not a hard scene) */
-                if (v->opt_ladder && v->lvl < 2 && v->late_ticks >= 3 && tn - v->t_play0 > 1000000 && tn - v->lvl_t >= 400000) {
-                    if (v->lvl_lowered_t && tn - v->lvl_lowered_t < 15000000ull && v->lvl_wait < 120000000ull)
-                        v->lvl_wait *= 2; /* (it was lowered a moment ago and had to go up again: it waits longer next time) */
-                    v->lvl++;
-                    v->lvl_t = tn;
-                    if (v->lvl > v->lvl_max)
-                        v->lvl_max = v->lvl;
-                } else if (!v->opt_ladder || v->lvl >= 2) {
-                    sp -= 0.30f * (float)(late - 0.04) * dts2;
-                }
-            } else if (late < 0.02) {
+            if (late > 0.04)
+                sp -= 0.30f * (float)(late - 0.04) * dts2;
+            else if (late < 0.02)
                 sp += 0.03f * dts2;
-            }
             sp = sp < 0.7f ? 0.7f : sp > 1.0f ? 1.0f : sp;
             v->speed = sp;
+            if (sp < 0.995f)
+                v->lf_block = tn + 15000000ull; /* (the loop filter is not used again for 15 seconds after the speed was below one: with it a picture takes a third longer, and the speed would go down again) */
             if (sp < v->speed_min)
                 v->speed_min = sp;
-        }
-        if (v->opt_ladder && v->lvl > 0 && key && late < 0.02 && v->speed >= 0.999f && tn - v->lvl_t >= v->lvl_wait) {
-            v->lvl--; /* (this picture is a key frame: it starts again from nothing, so the standard's decoding is exact from here) */
-            v->lvl_t = tn;
-            v->lvl_lowered_t = tn;
         }
     }
     if (pts > clock + 0.004) {
@@ -1491,14 +1460,11 @@ static int soft_step(Video *v)
     unsigned long long t0 = now_us();
     int sz = mp4_video_read(v->mp4, i, v->sample, v->au_cap);
     v->t_io += (unsigned)(now_us() - t0);
-    /* a picture that is late, or one of the long run-ups of a jump, is made at the cheapest level (what a later picture is predicted from is then not quite as it should be) */
-    int lvl = v->opt_ladder ? v->lvl : 0, cheap = late > 0.1 || v->skip_until - pts > 0.5;
-    if (cheap || (!v->opt_ladder && v->opt_slow && v->speed < 0.995f))
-        lvl = 2;
+    /* a picture that is late is made without the loop filter (what a later picture is predicted from is then not quite as it should be: about the cheapest way to catch up); so are the long run-ups of a jump */
+    int fast = late > 0.1 || v->skip_until - pts > 0.5 || (v->opt_slow && (v->speed < 0.995f || now_us() < v->lf_block));
     v->soft_late_n += late > 0.1;
-    h264d_set_fast(v->dec, lvl >= 2 ? (H264_FAST_LUMA_BL | H264_FAST_NO_LF) : lvl == 1 ? H264_FAST_LUMA_BL : 0);
-    v->lvl_n[lvl]++;
-    v->soft_skip_n += lvl >= 2;
+    h264d_set_fast(v->dec, fast);
+    v->soft_skip_n += (unsigned)fast;
     unsigned long long a = now_us();
     int r = sz > 0 ? h264d_decode(v->dec, v->sample, sz) : -1;
 #ifdef PSP5_TEST
@@ -1618,7 +1584,6 @@ int video_update(Video *v, float dt)
         if (v->soft) {
             crumb4("soft-ms", (int)(v->t_io / 1000), (int)(v->t_conv / 1000), (int)(v->t_aud / 1000), (int)v->underruns); /* milliseconds reading the file, making the picture ready, decoding sound; times the sound ran dry */
             crumb4("soft-spd", (int)(v->speed * 1000), (int)(v->speed_min * 1000), (int)v->soft_late_n, (int)v->soft_skip_n); /* how fast the video plays now and at the slowest (1000 = as it is), pictures that were late, pictures made without the loop filter */
-            crumb4("soft-lvl", v->lvl, v->lvl_max, (int)v->lvl_n[1], (int)v->lvl_n[2]); /* the quality ladder: the level now, the highest so far, pictures made at level 1 and at level 2 (the others at level 0) */
             crumb4("soft-aud", v->aud_errors, aac_error_line(), (int)v->gap_late, (int)(v->gap_max / 1000)); /* sound frames that could not be decoded, the line of aac.c that said so, blocks of sound given to the output more than 34 ms after the one before, the longest time between two (23 ms is right) */
             if (v->hb_lines == 1) { /* the priorities the threads run at (once) */
                 SceKernelThreadInfo ti;

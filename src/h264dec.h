@@ -33,11 +33,6 @@ void h264d_copy_planes(const H264Dec *d, unsigned char *y, int ys, unsigned char
 /* the number of reference frames the SPS asks for, for the log */
 int h264d_nref(const H264Dec *d);
 /* the loop filter is left out of the pictures that follow (1) or put back (0): about a third of the time of a picture, and what a later picture is predicted from is then not quite as it should be */
-/* What the decoder does in a cheaper way, when it cannot keep up (the pictures differ from the standard's and the difference stays until the next key frame): bits of the argument */
-#define H264_FAST_NO_LF 1     /* no loop filter */
-#define H264_FAST_CHROMA 2    /* chroma motion in whole pixels */
-#define H264_FAST_LUMA_BL 4   /* luma motion by the bilinear filter of the quarter pixels (not the 6-tap filters) */
-#define H264_FAST_LUMA_INT 8  /* luma motion in whole pixels */
 void h264d_set_fast(H264Dec *d, int fast);
 
 #endif
