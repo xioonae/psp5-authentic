@@ -1276,7 +1276,7 @@ static void finish_picture(H264Dec *d)
     if (!d->pic_started)
         return;
     d->pic_started = 0;
-    if (!d->fast)
+    if (!(d->fast & H264_FAST_NO_LF))
         h264_deblock_picture(d);
     h264_extend_borders(d, d->cur);
     d->out = d->cur;

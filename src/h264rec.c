@@ -457,9 +457,38 @@ static void luma_qpel(const uint8_t *src, int ss, uint8_t *dst, int ds, int w, i
             dst[y * ds + x] = (uint8_t)((dst[y * ds + x] + vb[y * 16 + x] + 1) >> 1);
 }
 
+/* H264_FAST_LUMA_BL (h264d_set_fast): the quarter pixel positions by the bilinear filter of their four neighbours ((4 - fx) (4 - fy) A + ... + 8 >> 4), 8 to 17 instructions a pixel
+ * where the standard's 6-tap filters take 15 to 52. The result is not the standard's: the pictures that are predicted from it carry the difference on until the next key frame. */
+static void luma_bilinear(const uint8_t *src, int ss, uint8_t *dst, int ds, int w, int h, int fx, int fy)
+{
+    if (!fy) {
+        int ca = 4 - fx, cb = fx;
+        for (int j = 0; j < h; j++, src += ss, dst += ds)
+            for (int i = 0; i < w; i++)
+                dst[i] = (uint8_t)((ca * src[i] + cb * src[i + 1] + 2) >> 2);
+        return;
+    }
+    if (!fx) {
+        int ca = 4 - fy, cb = fy;
+        for (int j = 0; j < h; j++, src += ss, dst += ds)
+            for (int i = 0; i < w; i++)
+                dst[i] = (uint8_t)((ca * src[i] + cb * src[i + ss] + 2) >> 2);
+        return;
+    }
+    int ca = (4 - fx) * (4 - fy), cb = fx * (4 - fy), cc = (4 - fx) * fy, cd = fx * fy;
+    for (int j = 0; j < h; j++, src += ss, dst += ds)
+        for (int i = 0; i < w; i++)
+            dst[i] = (uint8_t)((ca * src[i] + cb * src[i + 1] + cc * src[i + ss] + cd * src[i + ss + 1] + 8) >> 4);
+}
+
 void h264_mc_luma(H264Dec *d, const H264Pic *ref, uint8_t *dst, int stride, int x, int y, int w, int h, int mvx, int mvy)
 {
     int xi = x + (mvx >> 2), yi = y + (mvy >> 2), fx = mvx & 3, fy = mvy & 3;
+    if (d->fast & H264_FAST_LUMA_INT) { /* the nearest whole pixel */
+        xi = x + ((mvx + 2) >> 2);
+        yi = y + ((mvy + 2) >> 2);
+        fx = fy = 0;
+    }
     int pw = d->mbw * 16, ph = d->mbh * 16, ss = d->stride[0];
     const uint8_t *plane = ref->p[0];
     const uint8_t *src;
@@ -471,12 +500,20 @@ void h264_mc_luma(H264Dec *d, const H264Pic *ref, uint8_t *dst, int stride, int 
         src = tmp + 2 * 24 + 2;
         ss = 24;
     }
-    luma_qpel(src, ss, dst, stride, w, h, fx, fy);
+    if ((d->fast & H264_FAST_LUMA_BL) && (fx | fy))
+        luma_bilinear(src, ss, dst, stride, w, h, fx, fy);
+    else
+        luma_qpel(src, ss, dst, stride, w, h, fx, fy);
 }
 
 void h264_mc_chroma(H264Dec *d, const H264Pic *ref, int plane, uint8_t *dst, int stride, int x, int y, int w, int h, int mvx, int mvy)
 {
     int xi = x + (mvx >> 3), yi = y + (mvy >> 3), fx = mvx & 7, fy = mvy & 7;
+    if (d->fast & H264_FAST_CHROMA) { /* the nearest whole pixel */
+        xi = x + ((mvx + 4) >> 3);
+        yi = y + ((mvy + 4) >> 3);
+        fx = fy = 0;
+    }
     int pw = d->mbw * 8, ph = d->mbh * 8, ss = d->stride[1];
     const uint8_t *src;
     if (xi >= -PAD_C && yi >= -PAD_C && xi + w + 1 <= pw + PAD_C && yi + h + 1 <= ph + PAD_C) {
