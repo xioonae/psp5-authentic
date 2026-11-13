@@ -16,10 +16,13 @@ typedef struct {
     int inband; /* the parameter sets are in the samples of the video (the first one has them) */
     int synth;  /* the stream is given the timing of the PSP's own */
     int no_synth, no_main, force; /* test switches (PSP5/video-opts.txt): leave the timing out / leave a Baseline SPS as it is / try a stream that is known not to decode */
+    int hw, hw_keep; /* the caller wants to try the hardware decoder in its Baseline mode for a CAVLC stream without B pictures (meboot.h); hw_keep: leave the SPS's profile as it is (else it is made Baseline) */
     int profile;
     int unsupported; /* 0, or why the PSP's decoder cannot take the stream: 1 = CAVLC (Baseline entropy coding), 2 = a High profile */
     int nref, wmb, hmb, poc, cabac, nref0, weighted; /* what the SPS and the PPS that are given to the decoder say (0 when the stream carries them in its samples) */
     int to_main; /* ... and its Baseline SPS is made a Main one */
+    int to_base; /* ... or (CAVLC, hardware Baseline mode) its Main or Baseline SPS is made a Baseline one */
+    int hw_ok;   /* the stream can go to the hardware decoder's Baseline mode: CAVLC, no slice groups, Main or Baseline profile, picture order type 2 (no B pictures) */
     H264Tick tick;
     double tick_s;
 } UnitMaker;

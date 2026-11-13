@@ -290,6 +290,27 @@ int h264_sps_relabel(const uint8_t *nal, int len, uint8_t *out, int cap)
     return e < 0 ? -1 : e + 1;
 }
 
+/* Main (77) or Baseline (66) -> Baseline: the SPS of both has the same fields */
+static void to_baseline(uint8_t *rbsp, int n)
+{
+    if (n >= 3 && (rbsp[0] == 66 || rbsp[0] == 77)) {
+        rbsp[0] = 66;
+        rbsp[1] = 0xC0; /* constraint_set0_flag and constraint_set1_flag, as x264 writes them for Baseline */
+    }
+}
+
+int h264_sps_to_base(const uint8_t *nal, int len, uint8_t *out, int cap)
+{
+    uint8_t rbsp[SPS_MAX];
+    if (len < 5 || len > SPS_MAX || (nal[0] & 0x1F) != 7 || cap < 1)
+        return -1;
+    int n = unescape(nal + 1, len - 1, rbsp);
+    to_baseline(rbsp, n);
+    out[0] = nal[0];
+    int e = escape(rbsp, n, out + 1, cap - 1);
+    return e < 0 ? -1 : e + 1;
+}
+
 int h264_pps_info(const uint8_t *nal, int len, int *cabac, int *nref0, int *weighted)
 {
     uint8_t rbsp[64];
@@ -357,6 +378,8 @@ int h264_sps_rewrite(const uint8_t *nal, int len, H264Tick tick, uint8_t *out, i
         if (rbsp[2] < 21)
             rbsp[2] = 21;
     }
+    if (tick.to_base)
+        to_baseline(rbsp, n);
     BR r = { rbsp, n * 8, 0, 0 };
     int vui = sps_vui_pos(&r);
     if (vui < 0)

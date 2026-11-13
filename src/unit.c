@@ -29,11 +29,13 @@ static int find_sps(const uint8_t *p, int n, int *off, int *len)
 
 int unit_init(UnitMaker *u, Mp4 *m, uint8_t *sample, int cap)
 {
-    int no_synth = u->no_synth, no_main = u->no_main, force = u->force; /* (set by the caller before) */
+    int no_synth = u->no_synth, no_main = u->no_main, force = u->force, hw = u->hw, hw_keep = u->hw_keep; /* (set by the caller before) */
     memset(u, 0, sizeof(*u));
     u->no_synth = no_synth;
     u->no_main = no_main;
     u->force = force;
+    u->hw = hw;
+    u->hw_keep = hw_keep;
     u->m = m;
     u->sample = sample;
     u->cap = cap;
@@ -99,23 +101,27 @@ int unit_init(UnitMaker *u, Mp4 *m, uint8_t *sample, int cap)
     u->cabac = cabac;
     /* what the PSP's decoder (the one of its sceMpeg library) is known not to take: it answers its fatal error, after which no video decodes until psp5 is started again. CAVLC: the maintainer's tests
      * (Baseline with one reference frame, relabelled Main) gave the fatal error, CABAC streams decoded. A High profile: the PSP's own player says "corrupted". */
+    /* a CAVLC stream the hardware decoder's Baseline mode may take (the maintainer's tests of its default mode: the fatal error): I and P pictures only (picture order type 2), no slice groups */
+    u->hw_ok = u->hw && found && !cabac && !fmo && (u->profile == 66 || u->profile == 77) && u->poc == 2;
     if (!u->force) {
-        if (found && !cabac)
+        if (found && !cabac && !u->hw_ok)
             u->unsupported = 1;
         else if (u->profile >= 100)
             u->unsupported = 2;
     }
+    u->to_base = u->hw_ok && !u->hw_keep;
+    u->tick.to_base = u->to_base;
     /* a Baseline stream that has no slice groups is made a Main one (see h264_sps_rewrite) */
-    if (sps_len > 1 && (sps[0] & 0x1F) == 7 && sps[1] == 66) {
+    if (sps_len > 1 && (sps[0] & 0x1F) == 7 && sps[1] == 66 && !u->hw_ok) {
         u->to_main = found && !fmo && !u->no_main;
         u->tick.to_main = u->to_main;
     }
     if (!u->synth) { /* the PSP's timing is in it already: only a Baseline SPS is relabelled, in the header's block and (by the converter) in the samples */
-        if (u->to_main && !u->inband && u->params_len > 0 && off >= 4) {
+        if ((u->to_main || u->to_base) && !u->inband && u->params_len > 0 && off >= 4) {
             uint8_t block[512];
             int n = off;
             memcpy(block, u->params, (size_t)n);
-            int sl = h264_sps_relabel(u->params + off, len, block + n, (int)sizeof(block) - n);
+            int sl = u->to_base ? h264_sps_to_base(u->params + off, len, block + n, (int)sizeof(block) - n) : h264_sps_relabel(u->params + off, len, block + n, (int)sizeof(block) - n);
             if (sl < 0 || n + sl + (u->params_len - off - len) > (int)sizeof(block))
                 return 0;
             memcpy(block + n + sl, u->params + off + len, (size_t)(u->params_len - off - len));
@@ -168,7 +174,7 @@ int unit_make(UnitMaker *u, int i, uint8_t *out, int out_cap, int *group_start)
     sy.timing = 0;
     sy.tick = u->tick;
     sy.cpb_removal_delay = sy.dpb_output_delay = 0;
-    if (!u->synth && u->to_main)
+    if (!u->synth && (u->to_main || u->to_base))
         syp = &sy; /* (the timing is in the stream: only the profile of its SPS) */
     if (u->synth) {
         /* in ticks: the decoding time since the key frame this unit belongs to, and the time from its decoding to its showing; the decoding time is the one the program stream gives: one picture
