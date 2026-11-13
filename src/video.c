@@ -992,9 +992,10 @@ static void hw_start(Video *v)
 {
     unsigned char sps[256], pps[256], base[256];
     int sl = 0, pl = 0;
+    int can = meboot_available(); /* (looks for the function: the numbers below are only known after it) */
     crumbh("hw-find", meboot_nid(), (unsigned)meboot_devkit(), meboot_mask(), (unsigned)meboot_module()); /* the NID of sceMeBootStart that was found (0: none), the devkit version, which NIDs of the table the library has (bit n: entry n), the module name that found it */
-    if (!meboot_available() || !hw_param_sets(v, sps, &sl, pps, &pl, (int)sizeof(sps))) {
-        crumb4("hw-no", meboot_available(), sl, pl, 0);
+    if (!can || !hw_param_sets(v, sps, &sl, pps, &pl, (int)sizeof(sps))) {
+        crumb4("hw-no", can, sl, pl, 0);
         return;
     }
     if (v->opt_hw != 3 && sl > 4 && sps[1] == 77) { /* a Main label on a stream that is Baseline in what it uses (the HandBrake PSP preset's files): the Engine's Baseline image is given a Baseline SPS */

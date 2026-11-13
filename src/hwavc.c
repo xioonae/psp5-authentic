@@ -21,7 +21,8 @@ extern int sceMpegBaseCscAvc(void *destination, int unknown, int width, void *cs
 #define DDR_ALIGN 0x400000
 #define DDR_SIZE 0x200000
 #define AU_OFFSET 0x10000
-#define ALREADY_LOADED 0x80111102u
+#define ALREADY_LOADED 0x80111102u    /* what sceUtilityLoadModule says of a module that is loaded */
+#define AV_ALREADY_LOADED 0x80110F02u /* ... and sceUtilityLoadAvModule (the same series as 0x80111101 / 02 / 03: 0x80110F01 bad id, 02 loaded, 03 not loaded; the first PSP-1000 run of this route gave it, psp5 had loaded the codecs with the other call) */
 #define VSH_PATH "flash0:/kd/mpeg_vsh.prx"
 
 static void (*s_log)(const char *, unsigned, unsigned, unsigned, unsigned);
@@ -46,7 +47,7 @@ int hwlib_up(void)
         return 0;
     int r = sceUtilityLoadAvModule(PSP_AV_MODULE_AVCODEC);
     L("hwl-av", (unsigned)r, 0, 0, 0);
-    if (r < 0 && (unsigned)r != ALREADY_LOADED)
+    if (r < 0 && (unsigned)r != ALREADY_LOADED && (unsigned)r != AV_ALREADY_LOADED)
         return -1;
     s_av_owned = r >= 0; /* (another answer: somebody else holds it, it is not ours to unload) */
     s_vsh = kuKernelLoadModule(VSH_PATH, 0, NULL);
