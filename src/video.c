@@ -16,6 +16,12 @@
 #include "h264dec.h"
 #include "unit.h"
 #include "meboot.h"
+
+/* A PPSSPP test build (PSP5_TEST) lets PPSSPP's own decoder take every stream (its pictures are what the tests and the README show). With -DPSP5_VIDEO_REAL the test build decides as a PSP does
+ * (which stream goes to the software decoder, which is refused), so that code runs in the tests too. */
+#if defined(PSP5_TEST) && !defined(PSP5_VIDEO_REAL)
+#define PSP5_ANY_STREAM 1
+#endif
 #include "music.h"
 #include "system.h"
 
@@ -1015,6 +1021,7 @@ Video *video_open(const char *path)
             VLOG("no memory for the samples\n");
             { crumb("open-fail", __LINE__, 0); goto fail; }
         }
+        int opts_n = -1;
         { /* test switches (PSP5/video-opts.txt: "synth=0" leaves the PSP's timing out, "main=0" leaves a Baseline SPS as it is, "soft=1" / "soft=0" the software decoder for every stream / for none) */
             char opt[96], buf[128];
             snprintf(opt, sizeof(opt), "%s/video-opts.txt", PSP5_DATA_DIR);
@@ -1022,6 +1029,7 @@ Video *video_open(const char *path)
             if (fd >= 0) {
                 int n = sceIoRead(fd, buf, sizeof(buf) - 1);
                 sceIoClose(fd);
+                opts_n = n;
                 if (n > 0) {
                     buf[n] = 0;
                     v->um.no_synth = strstr(buf, "synth=0") != NULL;
@@ -1042,10 +1050,13 @@ Video *video_open(const char *path)
         if (!unit_init(&v->um, v->mp4, v->sample, v->au_cap) || !v->um.params_len) {
             { crumb("open-fail", __LINE__, 0); goto fail; }
         }
+        crumb4("opts", opts_n, v->opt_soft, v->opt_hw, v->opt_ge); /* bytes read from PSP5/video-opts.txt (-1: no such file), soft= (-1 = not given), hw=, ge= */
+        if (v->opt_hw && !v->um.hw_ok)
+            crumb4("hw-not-taken", v->um.profile, v->um.poc, v->um.cabac, v->um.nref); /* hw=1 was asked for, but the stream is not one the Baseline mode is tried with: its profile, picture order type, CABAC, reference frames */
         /* a CAVLC stream without B pictures goes to the hardware decoder in its Baseline mode when hw=1 / hw=3 says so and the function that starts the Engine with it can be reached; else (and when it
          * does not work, see hw_to_soft) the software decoder takes it, as it always did */
         if (v->um.hw_ok) {
-#ifdef PSP5_TEST
+#ifdef PSP5_ANY_STREAM
             int can = 1; /* (PPSSPP has no ARK: meboot.c pretends, and its decoder takes the stream: what is tested is the rest) */
 #else
             int can = meboot_available();
@@ -1056,14 +1067,16 @@ Video *video_open(const char *path)
                 v->um.unsupported = 1;
             crumb4("hw-try", v->hw, can, s_poisoned, v->opt_hw);
         }
-#ifdef PSP5_TEST /* (PPSSPP takes every stream: its pictures are what the tests and the README show; soft=1 tries the software decoder there) */
+#ifdef PSP5_ANY_STREAM /* (PPSSPP takes every stream: its pictures are what the tests and the README show; soft=1 tries the software decoder there) */
         int soft = v->opt_soft == 1;
 #else
         int soft = v->um.unsupported ? v->opt_soft != 0 : v->opt_soft == 1;
 #endif
-        if (soft && !soft_prepare(v)) /* the PSP's decoder cannot take the stream (CAVLC, High profile): h264dec.c makes the pictures */
-            goto fail;
-#ifndef PSP5_TEST
+        if (soft) { /* the PSP's decoder cannot take the stream (CAVLC, High profile): h264dec.c makes the pictures */
+            if (!soft_prepare(v))
+                goto fail;
+        }
+#ifndef PSP5_ANY_STREAM
         else if (v->um.unsupported) { /* (soft=0) refused before the decoder sees it: a stream it cannot take gives its fatal error and breaks it for every video after */
             crumb4("stream", v->um.nref, v->um.wmb * 1000 + v->um.hmb, v->um.cabac * 100 + v->um.weighted * 10 + v->um.to_main, v->um.nref0);
             crumb4("unsupported", v->um.unsupported, v->um.profile, v->um.cabac, 0);

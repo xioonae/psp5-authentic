@@ -42,7 +42,7 @@ unsigned meboot_nid(void) { return s_nid; }
 int meboot_start(int type)
 {
     resolve();
-#ifdef PSP5_TEST /* (PPSSPP has no ARK and no Engine to start: the rest of the route is what its tests are for) */
+#if defined(PSP5_TEST) && !defined(PSP5_VIDEO_REAL) /* (PPSSPP has no ARK and no Engine to start: the rest of the route is what its tests are for) */
     if (!s_func && type >= 0) {
         s_cur = type;
         return 0;
