@@ -644,16 +644,20 @@ static int residual_block(Br *b, int nc, int max_coeff, int *lv)
         return 0;
     int level[16], run[16];
     int suffix_len = (total > 10 && t1 < 3) ? 1 : 0;
-    for (int i = 0; i < total; i++) {
-        if (i < t1) {
-            level[i] = 1 - 2 * get1(b);
-            continue;
-        }
-        int prefix = 0;
-        while (!get1(b)) {
-            if (++prefix > 25 || b->pos > b->end)
-                return -1;
-        }
+    if (t1) { /* the signs of the trailing ones, in one read */
+        uint32_t bits = peek32(b) >> (32 - t1);
+        b->pos += (uint32_t)t1;
+        for (int i = 0; i < t1; i++)
+            level[i] = 1 - 2 * (int)((bits >> (t1 - 1 - i)) & 1);
+    }
+    for (int i = t1; i < total; i++) {
+        uint32_t w = peek32(b);
+        if (!w || b->pos > b->end)
+            return -1;
+        int prefix = __builtin_clz(w); /* level_prefix: the zeros before the first 1 */
+        b->pos += (uint32_t)prefix + 1;
+        if (prefix > 25)
+            return -1;
         int code = (prefix < 15 ? prefix : 15) << suffix_len;
         if (suffix_len > 0 || prefix >= 14) {
             int size = (prefix == 14 && suffix_len == 0) ? 4 : prefix >= 15 ? prefix - 3 : suffix_len;

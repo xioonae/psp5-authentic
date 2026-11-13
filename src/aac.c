@@ -10,6 +10,8 @@
 
 #define MAXW 8   /* windows of a frame (short blocks) */
 #define MAXB 64  /* scale factor bands */
+static int g_err_line; /* the line of aac.c that found the last frame damaged or not supported (for the log) */
+#define BAD() (g_err_line = __LINE__, 0)
 #define ZERO_HCB 0
 #define ESC_HCB 11
 #define NOISE_HCB 13
@@ -63,10 +65,11 @@ typedef struct {
     unsigned first[20];
     unsigned short count[20], offset[20];
     unsigned short sym[300];
+    unsigned short lut[512]; /* by the next 9 bits: the symbol and, shifted up 9 places, the length of its code, when it is not longer than 9 bits (0: take the slow way) */
 } Huff; /* the codes of the standard are canonical: a code of length l is first[l] + its place among the codes of that length */
 
 static Huff g_huff[12]; /* spectrum books 1..11 at 0..10, the scale factors at 11 */
-static float g_pow43[8192];
+static float g_pow43[8192 + 16]; /* (a pulse adds up to 15 to a value of up to 8191) */
 static float g_win_long[2][1024], g_win_short[2][128]; /* rising halves: sine and Kaiser-Bessel derived */
 static int g_ready;
 
@@ -103,10 +106,23 @@ static void huff_build(Huff *h, const unsigned char *len, const unsigned *code, 
         h->count[l] = (unsigned short)(at - h->offset[l]);
         h->first[l] = h->count[l] ? code[h->sym[h->offset[l]]] : 0;
     }
+    for (int i = 0; i < n; i++) {
+        int l = len[i];
+        if (l > 9)
+            continue;
+        unsigned lo = code[i] << (9 - l);
+        for (unsigned k = 0; k < (1u << (9 - l)); k++)
+            h->lut[lo + k] = (unsigned short)(i | (l << 9));
+    }
 }
 
 static int huff_get(const Huff *h, Bits *b)
 {
+    unsigned e = h->lut[peek(b, 9)];
+    if (e) {
+        b->pos += e >> 9;
+        return (int)(e & 511);
+    }
     unsigned v = peek(b, h->maxlen);
     for (int l = 1; l <= h->maxlen; l++) {
         unsigned code = v >> (h->maxlen - l);
@@ -140,26 +156,30 @@ static void fft_init(Fft *f, int n)
     }
 }
 
-/* complex FFT in place; z holds n pairs (re, im) */
+/* complex FFT in place; z holds n pairs (re, im) in bit reversed order (imdct() writes them so); the first two stages (twiddle factors 1 and -i) are done together */
 static void fft_run(const Fft *f, float *z)
 {
     int n = f->n;
-    for (int i = 0; i < n; i++) {
-        int r = f->rev[i];
-        if (r > i) {
-            float t0 = z[2 * i], t1 = z[2 * i + 1];
-            z[2 * i] = z[2 * r];
-            z[2 * i + 1] = z[2 * r + 1];
-            z[2 * r] = t0;
-            z[2 * r + 1] = t1;
-        }
+    for (int i = 0; i < n; i += 4) {
+        float *a = z + 2 * i;
+        float s0r = a[0] + a[2], s0i = a[1] + a[3], d0r = a[0] - a[2], d0i = a[1] - a[3];
+        float s1r = a[4] + a[6], s1i = a[5] + a[7], d1r = a[4] - a[6], d1i = a[5] - a[7];
+        a[0] = s0r + s1r;
+        a[1] = s0i + s1i;
+        a[4] = s0r - s1r;
+        a[5] = s0i - s1i;
+        a[2] = d0r + d1i;
+        a[3] = d0i - d1r;
+        a[6] = d0r - d1i;
+        a[7] = d0i + d1r;
     }
-    for (int len = 2; len <= n; len <<= 1) {
-        int half = len >> 1, step = n / len;
+    for (int len = 8; len <= n; len <<= 1) {
+        int half = len >> 1, step = 2 * (n / len);
         for (int i = 0; i < n; i += len) {
-            for (int j = 0; j < half; j++) {
-                float wr = f->tw[2 * j * step], wi = f->tw[2 * j * step + 1];
-                float *a = z + 2 * (i + j), *b = z + 2 * (i + j + half);
+            const float *w = f->tw;
+            float *a = z + 2 * i, *b = a + 2 * half;
+            for (int j = 0; j < half; j++, w += step, a += 2, b += 2) {
+                float wr = w[0], wi = w[1];
                 float tr = b[0] * wr - b[1] * wi, ti = b[0] * wi + b[1] * wr;
                 b[0] = a[0] - tr;
                 b[1] = a[1] - ti;
@@ -207,7 +227,7 @@ static void tables_init(void)
     static const int N[12] = { 81, 81, 81, 81, 81, 81, 64, 64, 169, 169, 289, 121 };
     for (int i = 0; i < 12; i++)
         huff_build(&g_huff[i], LEN[i], CODE[i], N[i]);
-    for (int i = 0; i < 8192; i++)
+    for (int i = 0; i < 8192 + 16; i++)
         g_pow43[i] = (float)pow((double)i, 4.0 / 3.0);
     for (int n = 0; n < 1024; n++) {
         g_win_long[0][n] = (float)sin(M_PI * (n + 0.5) / 2048.0);
@@ -339,10 +359,12 @@ AacDec *aac_new(const unsigned char *cfg, int cfg_len, int *rate, int *channels)
 
 void aac_free(AacDec *d) { free(d); }
 
+int aac_error_line(void) { return g_err_line; }
+
 static int read_ics_info(AacDec *d, Bits *b, Ics *ics)
 {
     if (get1(b))
-        return 0;
+        return BAD();
     ics->seq = (int)getb(b, 2);
     ics->shape = get1(b);
     if (ics->seq == EIGHT_SHORT) {
@@ -364,7 +386,7 @@ static int read_ics_info(AacDec *d, Bits *b, Ics *ics)
     ics->glen[0] = 1;
     ics->n_win = 1;
     if (get1(b)) /* predictor_data_present: the Main profile's tool */
-        return 0;
+        return BAD();
     return ics->max_sfb <= d->swb.nlong;
 }
 
@@ -377,16 +399,16 @@ static int read_section_data(Bits *b, Chan *c)
         while (k < ics->max_sfb) {
             int cb = (int)getb(b, 4);
             if (cb == 12)
-                return 0;
+                return BAD();
             int len = 0, inc;
             while ((inc = (int)getb(b, bits)) == esc) {
                 len += esc;
                 if (b->pos > b->end)
-                    return 0;
+                    return BAD();
             }
             len += inc;
             if (len == 0 || k + len > ics->max_sfb)
-                return 0;
+                return BAD();
             for (int i = 0; i < len; i++)
                 c->cb[g][k + i] = (unsigned char)cb;
             k += len;
@@ -423,11 +445,11 @@ static int read_scalefactors(Bits *b, Chan *c, int global_gain)
             } else {
                 sf += huff_get(h, b) - 60;
                 if (sf < 0 || sf > 255)
-                    return 0;
+                    return BAD();
                 c->sf[g][s] = (short)sf;
             }
             if (b->pos > b->end)
-                return 0;
+                return BAD();
         }
     }
     return 1;
@@ -446,7 +468,7 @@ static int read_tns(const AacDec *d, Bits *b, Chan *c)
         for (int f = 0; f < c->n_filt[w]; f++) {
             int length = (int)getb(b, lng ? 6 : 4), order = (int)getb(b, lng ? 5 : 3);
             if (order > max_order)
-                return 0;
+                return BAD();
             c->tns[w][f].length = length;
             c->tns[w][f].order = order;
             c->tns[w][f].dir = 0;
@@ -507,7 +529,7 @@ static int read_band(Bits *b, int cb, short *q, int width)
             for (int k = 0; k < 4; k++)
                 q[i + k] = (short)v[k];
             if (b->pos > b->end)
-                return 0;
+                return BAD();
         }
         return 1;
     }
@@ -523,9 +545,9 @@ static int read_band(Bits *b, int cb, short *q, int width)
             int sx = x && get1(b), sy = y && get1(b);
             if (cb == ESC_HCB) {
                 if (x == 16 && (x = read_escape(b)) < 0)
-                    return 0;
+                    return BAD();
                 if (y == 16 && (y = read_escape(b)) < 0)
-                    return 0;
+                    return BAD();
             }
             if (sx) x = -x;
             if (sy) y = -y;
@@ -533,7 +555,7 @@ static int read_band(Bits *b, int cb, short *q, int width)
         q[i] = (short)x;
         q[i + 1] = (short)y;
         if (b->pos > b->end)
-            return 0;
+            return BAD();
     }
     return 1;
 }
@@ -551,7 +573,7 @@ static int read_spectrum(const AacDec *d, Bits *b, Chan *c)
                 continue;
             for (int w = 0; w < ics->glen[g]; w++)
                 if (!read_band(b, cb, c->q + (win0 + w) * 128 + swb[s], width))
-                    return 0;
+                    return BAD();
         }
         win0 += ics->glen[g];
     }
@@ -658,9 +680,9 @@ static int read_ics(AacDec *d, Bits *b, Chan *c, int common, const Ics *shared)
     if (common)
         c->ics = *shared;
     else if (!read_ics_info(d, b, &c->ics))
-        return 0;
+        return BAD();
     if (!read_section_data(b, c) || !read_scalefactors(b, c, gain))
-        return 0;
+        return BAD();
     c->pulse_present = get1(b);
     if (c->pulse_present) {
         c->n_pulse = (int)getb(b, 2) + 1;
@@ -670,14 +692,14 @@ static int read_ics(AacDec *d, Bits *b, Chan *c, int common, const Ics *shared)
             c->pulse_amp[i] = (int)getb(b, 4);
         }
         if (c->ics.seq == EIGHT_SHORT)
-            return 0;
+            return BAD();
     }
     memset(c->n_filt, 0, sizeof(c->n_filt));
     c->tns_present = get1(b);
     if (c->tns_present && !read_tns(d, b, c))
-        return 0;
+        return BAD();
     if (get1(b)) /* gain control: the scalable profile's tool */
-        return 0;
+        return BAD();
     return read_spectrum(d, b, c) && b->pos <= b->end;
 }
 
@@ -722,10 +744,12 @@ static void imdct(const float *x, float *y, int m, float *work)
     int sel = m == 1024 ? 0 : 1;
     const float *tw = g_tw_pre[sel];
     int h = m / 2;
+    const unsigned short *rev = g_fft[sel].rev;
     for (int j = 0; j < h; j++) {
         float re = x[2 * j], im = x[m - 1 - 2 * j];
-        work[2 * j] = re * tw[2 * j] - im * tw[2 * j + 1];
-        work[2 * j + 1] = re * tw[2 * j + 1] + im * tw[2 * j];
+        int r = rev[j];
+        work[2 * r] = re * tw[2 * j] - im * tw[2 * j + 1];
+        work[2 * r + 1] = re * tw[2 * j + 1] + im * tw[2 * j];
     }
     fft_run(&g_fft[sel], work);
     float scale = 1.0f / (float)m;
@@ -816,7 +840,7 @@ int aac_decode(AacDec *d, const unsigned char *frame, int len, short *pcm)
     int ok = 1, got = 0, nch = 0;
     memset(pcm, 0, (size_t)AAC_FRAME * 4);
     if (len <= 0 || len > 8192)
-        return 0;
+        return BAD();
     memcpy(buf, frame, (size_t)len);
     memset(buf + len, 0, 16);
     Bits b = { buf, 0, (unsigned)len * 8 };
@@ -830,7 +854,7 @@ int aac_decode(AacDec *d, const unsigned char *frame, int len, short *pcm)
         if (id == 0 || id == 3) { /* single channel or LFE */
             getb(&b, 4);
             if (got) { /* a second one: not in a stream of one or two channels */
-                ok = 0;
+                ok = BAD();
                 break;
             }
             ok = read_ics(d, &b, &ch[0], 0, NULL);
@@ -854,7 +878,7 @@ int aac_decode(AacDec *d, const unsigned char *frame, int len, short *pcm)
                 if (ok) {
                     ms_present = (int)getb(&b, 2);
                     if (ms_present == 3)
-                        ok = 0;
+                        ok = BAD();
                     else if (ms_present == 1) {
                         for (int g = 0; g < shared.n_groups; g++)
                             for (int s = 0; s < shared.max_sfb; s++)
@@ -908,14 +932,14 @@ int aac_decode(AacDec *d, const unsigned char *frame, int len, short *pcm)
             b.pos = (b.pos + 7) & ~7u;
             b.pos += getb(&b, 8) * 8;
         } else { /* a coupling channel element, or nonsense */
-            ok = 0;
+            ok = BAD();
         }
         if (b.pos > b.end)
-            ok = 0;
+            ok = BAD();
     }
     (void)nch;
     if (!have[0])
-        return 0;
+        return BAD();
     for (int i = 0; i < AAC_FRAME; i++) {
         pcm[2 * i] = clip16(out[0][i]);
         pcm[2 * i + 1] = clip16(have[1] ? out[1][i] : out[0][i]);

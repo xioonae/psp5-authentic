@@ -14,6 +14,8 @@ typedef struct AacDec AacDec;
 /* the decoder for a stream whose AudioSpecificConfig is cfg; NULL when it is not one this decoder can do. *rate and *channels are what the config says. */
 AacDec *aac_new(const unsigned char *cfg, int cfg_len, int *rate, int *channels);
 void aac_free(AacDec *d);
+/* the line of aac.c where the last frame that was not decoded was found damaged or not supported (0: none yet): for the log */
+int aac_error_line(void);
 /* forgets the overlap of the frame before (after a jump in the stream) */
 void aac_flush(AacDec *d);
 

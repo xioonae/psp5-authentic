@@ -232,6 +232,15 @@ struct Video {
     volatile int front, rdy;
     volatile int clock_ms;         /* the clock, for the thread */
     int aud_errors;
+    volatile unsigned gap_max, gap_late, blocks; /* the sound thread: the longest time between two blocks of sound given to the output (a block is 23 ms), how many were later than 34 ms, how many were given */
+    unsigned char *dump;           /* test switch pcm=1: the first seconds of the sound as it was given to the output, written to PSP5/video-pcm.raw when the video is closed */
+    unsigned dump_n, dump_cap;
+    int opt_pcm;
+    unsigned long long t_play0;
+    volatile float speed;          /* how fast a video in software plays: 1 = as it is; below that, the sound is played slower (resampled) and the clock goes slower with it, when the decoder cannot keep up */
+    float speed_min;
+    unsigned long long ctl_t;
+    int opt_slow, opt_burn;
     volatile unsigned t_io, t_conv, t_aud, underruns; /* microseconds spent reading, converting and decoding sound; times the sound ran dry (for the log) */
     int quiet;    /* closed without a trace (refused before anything was done) */
     int ge;       /* a picture made in software is given as planes and drawn by the graphics chip (video_yuv); 0: made into RGB by the CPU (test switch ge=0) */
@@ -316,6 +325,16 @@ static unsigned long long now_us(void) { return sceKernelGetSystemTimeWide(); }
 /* the memory of the planes of one picture for the graphics chip: Y rows of 512, U and V rows of 256, each plane a multiple of 64 bytes */
 static size_t ysz_of(int h) { return ((size_t)512 * (size_t)h + 63) & ~(size_t)63; }
 static size_t csz_of(int h) { return ((size_t)256 * (size_t)((h + 1) / 2) + 63) & ~(size_t)63; }
+/* the processor time a thread has used, in milliseconds (for the log) */
+static unsigned thread_ms(SceUID th)
+{
+    SceKernelThreadRunStatus st;
+    memset(&st, 0, sizeof(st));
+    st.size = sizeof(st);
+    if (th <= 0 || sceKernelReferThreadRunStatus(th, &st) < 0)
+        return 0;
+    return (unsigned)((((unsigned long long)st.runClocks.hi << 32) | st.runClocks.low) / 1000);
+}
 static int soft_start(Video *v);
 static void soft_stop(Video *v);
 static float soft_pick_start(Video *v, float at);
@@ -403,17 +422,23 @@ static void pcm_push(Video *v, const short *frames, int n)
 static int audio_thread(SceSize args, void *argp)
 {
     Video *v = *(Video **)argp;
-    short *block = memalign(64, BLOCK * 4);
-    int starving = 0;
+    short *block = memalign(64, BLOCK * 8);
+    int starving = 0, flip = 0;
+    float pos = 0; /* where in the queue the next output frame is made from, in frames after the tail (below one) */
+    unsigned long long tprev = 0;
     while (!v->quit && block) {
         if (v->reset) {
             v->tail = v->head;
             v->played = 0;
+            pos = 0;
             __sync_synchronize();
             v->reset = 0;
             continue;
         }
-        if (v->paused || !v->started || pcm_count(v) < BLOCK) {
+        float sp = v->speed;
+        int need = sp >= 0.9995f ? BLOCK : (int)((float)BLOCK * sp) + 3; /* frames the queue has to hold for a block */
+        if (v->paused || !v->started || pcm_count(v) < need) {
+            tprev = 0; /* (a wait is not a gap between two blocks) */
             if (v->started && !v->paused && !(v->src_eof & 2) && !starving) {
                 starving = 1;
                 v->underruns++; /* the sound ran dry (not at its end) */
@@ -422,14 +447,46 @@ static int audio_thread(SceSize args, void *argp)
             continue;
         }
         starving = 0;
-        for (int i = 0; i < BLOCK; i++) {
-            int at = (v->tail + i) & (PCM_FRAMES - 1);
-            block[i * 2] = v->pcm[at * 2];
-            block[i * 2 + 1] = v->pcm[at * 2 + 1];
+        short *blk = block + (flip ? BLOCK * 2 : 0); /* two blocks in turn: the one just given to the output is not written over */
+        flip ^= 1;
+        int used = BLOCK;
+        if (sp >= 0.9995f) {
+            for (int i = 0; i < BLOCK; i++) {
+                int at = (v->tail + i) & (PCM_FRAMES - 1);
+                blk[i * 2] = v->pcm[at * 2];
+                blk[i * 2 + 1] = v->pcm[at * 2 + 1];
+            }
+            pos = 0;
+        } else { /* the video is slowed down: the sound is played slower with it (each output frame is made from two frames of the queue) */
+            for (int i = 0; i < BLOCK; i++) {
+                int ix = (int)pos;
+                float fr = pos - (float)ix;
+                int a = (v->tail + ix) & (PCM_FRAMES - 1), b2 = (v->tail + ix + 1) & (PCM_FRAMES - 1);
+                int l0 = v->pcm[a * 2], l1 = v->pcm[b2 * 2], r0 = v->pcm[a * 2 + 1], r1 = v->pcm[b2 * 2 + 1];
+                blk[i * 2] = (short)(l0 + (int)((float)(l1 - l0) * fr));
+                blk[i * 2 + 1] = (short)(r0 + (int)((float)(r1 - r0) * fr));
+                pos += sp;
+            }
+            used = (int)pos;
+            pos -= (float)used;
         }
-        v->tail += BLOCK;
-        sceAudioSRCOutputBlocking(PSP_AUDIO_VOLUME_MAX, block);
-        v->played += BLOCK;
+        v->tail += used;
+        if (v->dump && v->dump_n + BLOCK * 4 <= v->dump_cap) {
+            memcpy(v->dump + v->dump_n, blk, BLOCK * 4);
+            v->dump_n += BLOCK * 4;
+        }
+        sceAudioSRCOutputBlocking(PSP_AUDIO_VOLUME_MAX, blk);
+        unsigned long long tn = now_us();
+        if (tprev) {
+            unsigned gap = (unsigned)(tn - tprev);
+            if (gap > v->gap_max)
+                v->gap_max = gap;
+            if (gap > 34000)
+                v->gap_late++;
+        }
+        tprev = tn;
+        v->blocks++;
+        v->played += (unsigned)used;
     }
     free(block);
     return 0;
@@ -455,7 +512,7 @@ static int audio_start(Video *v, int rate)
     v->pcm = memalign(64, (size_t)PCM_FRAMES * 4);
     if (!v->pcm)
         return 0;
-    v->athread = sceKernelCreateThread("psp5_vsound", audio_thread, 0x1E, 0x4000, 0, NULL);
+    v->athread = sceKernelCreateThread("psp5_vsound", audio_thread, 0x14, 0x4000, 0, NULL); /* (as high as the music player's: it only has to copy a block every 23 ms, and a late block is a crackle) */
     if (v->athread < 0)
         return 0;
     Video *self = v;
@@ -791,6 +848,8 @@ Video *video_open(const char *path)
     }
     v->opt_soft = -1;
     v->opt_ge = 1;
+    v->opt_slow = 1;
+    v->speed = 1.0f;
     const char *dot = strrchr(path, '.');
     int pmf = dot && (!strcasecmp(dot, ".pmf") || !strcasecmp(dot, ".psmf"));
     v->frame_dur = 1001.0 / 30000.0; /* (a PMF: the usual 29.97; an MP4 sets its own below) */
@@ -865,6 +924,9 @@ Video *video_open(const char *path)
                     v->um.force = strstr(buf, "force=1") != NULL;
                     v->opt_soft = strstr(buf, "soft=1") ? 1 : strstr(buf, "soft=0") ? 0 : -1;
                     v->opt_ge = strstr(buf, "ge=0") ? 0 : 1;
+                    v->opt_pcm = strstr(buf, "pcm=1") != NULL;
+                    v->opt_slow = strstr(buf, "slow=0") == NULL;
+                    { const char *bp = strstr(buf, "burn="); v->opt_burn = bp ? atoi(bp + 5) : 0; }
                 }
             }
         }
@@ -994,6 +1056,10 @@ Video *video_open(const char *path)
         if (v->audio_ok && !audio_start(v, rate))
             v->audio_ok = 0;
     }
+    if (v->audio_ok && v->opt_pcm) { /* test switch: keep the first 8 seconds of the sound */
+        v->dump_cap = (unsigned)v->rate * 4 * 8;
+        v->dump = malloc(v->dump_cap);
+    }
     v->has_sound = v->audio_ok;
     crumb("opened", v->has_sound, 0);
     return v;
@@ -1035,6 +1101,16 @@ void video_close(Video *v)
         else
             crumb_end(); /* it was closed the right way and played: nothing to leave behind */
     }
+    if (v->dump && v->dump_n) {
+        char path[96];
+        snprintf(path, sizeof(path), "%s/video-pcm.raw", PSP5_DATA_DIR);
+        SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+        if (fd >= 0) {
+            sceIoWrite(fd, v->dump, v->dump_n);
+            sceIoClose(fd);
+        }
+    }
+    free(v->dump);
     free(v->ybuf[0]);
     free(v->ybuf[1]);
     free(v->ybuf[2]);
@@ -1060,6 +1136,7 @@ int video_has_sound(const Video *v) { return v->has_sound; }
 int video_ended(const Video *v) { return v->ended; }
 int video_failed(const Video *v) { return v->failed; }
 const Texture *video_picture(const Video *v) { return v->have_pic && !v->ge ? &v->pic : NULL; }
+int video_soft(const Video *v) { return v->soft && v->soft_up; }
 const VideoYuv *video_yuv(const Video *v) { return v->have_pic && v->ge ? &v->yuv[v->front] : NULL; }
 
 int video_play(Video *v, float at)
@@ -1100,12 +1177,17 @@ int video_play(Video *v, float at)
     v->n_put = v->n_au = v->n_dec = 0;
     v->soft_us = v->soft_late_n = v->soft_skip_n = 0;
     v->t_io = v->t_conv = v->t_aud = v->underruns = 0;
+    v->gap_max = v->gap_late = v->blocks = 0;
     v->aud_errors = 0;
     v->n_seen = v->hb_lines = 0;
     v->hb = v->since = 0;
     v->a_has_base = 0;
     v->atrac_first = 1;
     v->idle = 0;
+    v->t_play0 = now_us();
+    v->speed = 1.0f;
+    v->speed_min = 1.0f;
+    v->ctl_t = 0;
     v->clock = at;
     v->clock_ms = (int)(at * 1000.0);
     v->skip_until = at;
@@ -1216,12 +1298,29 @@ static int soft_step(Video *v)
     int key;
     mp4_video_times(v->mp4, v->vnext, &dts, &pts_f, &key);
     double pts = pts_f, clock = v->clock_ms / 1000.0, late = clock - pts;
+    if (v->opt_slow) { /* the speed: when the pictures are late the video is played slower (the sound with it) until they are not, and a little faster again when they have caught up */
+        unsigned long long tn = now_us();
+        if (!v->ctl_t)
+            v->ctl_t = tn;
+        if (tn - v->ctl_t >= 100000) {
+            float dts2 = (float)(tn - v->ctl_t) / 1e6f, sp = v->speed;
+            v->ctl_t = tn;
+            if (late > 0.04)
+                sp -= 0.30f * (float)(late - 0.04) * dts2;
+            else if (late < 0.02)
+                sp += 0.02f * dts2;
+            sp = sp < 0.6f ? 0.6f : sp > 1.0f ? 1.0f : sp;
+            v->speed = sp;
+            if (sp < v->speed_min)
+                v->speed_min = sp;
+        }
+    }
     if (pts > clock + 0.004) {
         soft_publish(v); /* (caught up: what was made last goes to the screen) */
         return 0;
     }
-    if (late > 2.0) { /* far behind (the decoder is slower than the video): on to the sync sample that is due, skipping what is between */
-        int k = mp4_video_at(v->mp4, (float)(clock + 0.3));
+    if (late > 1.0) { /* far behind (the decoder is slower than the video): on to a sync sample that is due, or comes within a second (the picture stands still till then), skipping what is between */
+        int k = mp4_video_at(v->mp4, (float)(clock + 1.0));
         if (k > v->vnext) {
             crumb4("soft-jump", v->vnext, k, (int)(late * 1000), 0);
             v->vnext = k;
@@ -1241,6 +1340,12 @@ static int soft_step(Video *v)
     v->soft_skip_n += (unsigned)fast;
     unsigned long long a = now_us();
     int r = sz > 0 ? h264d_decode(v->dec, v->sample, sz) : -1;
+#ifdef PSP5_TEST
+    if (v->opt_burn > 0) { /* test switch burn=N: N more milliseconds of work for every picture (a slower processor) */
+        unsigned long long until = now_us() + (unsigned long long)v->opt_burn * 1000;
+        while (now_us() < until) {}
+    }
+#endif
     unsigned took = (unsigned)(now_us() - a);
     v->soft_us += took;
     v->n_au++;
@@ -1339,7 +1444,7 @@ int video_update(Video *v, float dt)
     if (v->audio_ok && v->clock_audio && v->a_has_base && !((v->src_eof & 2) && pcm_count(v) == 0))
         v->clock = v->a_base + (double)v->played / v->rate;
     else if (!v->audio_ok || v->idle > 1.0f || (v->started && (v->src_eof & 2))) /* (no sound, none came, or it has all been played: the time goes by itself) */
-        v->clock += dt; /* (no sound, or none came in a second: the picture does not wait for it) */
+        v->clock += (v->soft ? dt * v->speed : dt); /* (no sound, or none came in a second: the picture does not wait for it) */
     else
         v->idle += dt;
     v->clock_ms = (int)(v->clock * 1000.0);
@@ -1349,8 +1454,24 @@ int video_update(Video *v, float dt)
         v->hb = 0;
         v->hb_lines++;
         crumb4("alive", v->n_put, v->n_au, v->n_dec, (int)(v->clock * 1000));
-        if (v->soft)
-            crumb4("soft-ms", (int)(v->t_io / 1000), (int)(v->t_conv / 1000), (int)(v->t_aud / 1000), (int)v->underruns); /* milliseconds reading the file, making RGB, decoding sound; times the sound ran dry */
+        if (v->soft) {
+            crumb4("soft-ms", (int)(v->t_io / 1000), (int)(v->t_conv / 1000), (int)(v->t_aud / 1000), (int)v->underruns); /* milliseconds reading the file, making the picture ready, decoding sound; times the sound ran dry */
+            crumb4("soft-spd", (int)(v->speed * 1000), (int)(v->speed_min * 1000), (int)v->soft_late_n, (int)v->soft_skip_n); /* how fast the video plays now and at the slowest (1000 = as it is), pictures that were late, pictures made without the loop filter */
+            crumb4("soft-aud", v->aud_errors, aac_error_line(), (int)v->gap_late, (int)(v->gap_max / 1000)); /* sound frames that could not be decoded, the line of aac.c that said so, blocks of sound given to the output more than 34 ms after the one before, the longest time between two (23 ms is right) */
+            if (v->hb_lines == 1) { /* the priorities the threads run at (once) */
+                SceKernelThreadInfo ti;
+                int pr[3] = { 0, 0, 0 };
+                SceUID th[3] = { sceKernelGetThreadId(), v->wthread, v->athread };
+                for (int i = 0; i < 3; i++) {
+                    memset(&ti, 0, sizeof(ti));
+                    ti.size = sizeof(ti);
+                    if (th[i] > 0 && sceKernelReferThreadStatus(th[i], &ti) == 0)
+                        pr[i] = ti.currentPriority;
+                }
+                crumb4("soft-prio", pr[0], pr[1], pr[2], 0); /* the screen's thread, the decoder's, the sound's (the lower the number the sooner it runs) */
+            }
+            crumb4("soft-cpu", (int)thread_ms(sceKernelGetThreadId()), (int)thread_ms(v->wthread), (int)thread_ms(v->athread), (int)((now_us() - v->t_play0) / 1000)); /* processor time of the screen's thread, the decoder's and the sound's, and the time since the video was started: all in milliseconds */
+        }
     }
     if (!v->have_pic && (v->since += dt) > 8.0f) {
         crumb4("no-picture", v->n_put, v->n_au, v->n_dec, v->src_eof);

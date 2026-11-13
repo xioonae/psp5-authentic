@@ -38,6 +38,8 @@ typedef struct {
     int w, h, ystride, cstride;
 } VideoYuv;
 const VideoYuv *video_yuv(const Video *v);
+/* 1 when the pictures of this video are made by psp5's own decoder (on a thread of its own): the screen then needs to be drawn only every second vertical blank, the picture does not change faster than that */
+int video_soft(const Video *v);
 float video_time(const Video *v);              /* where the video is, in seconds */
 int video_ended(const Video *v);
 int video_failed(const Video *v); /* the decoder gave up: the video cannot go on */

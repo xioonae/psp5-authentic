@@ -1,5 +1,6 @@
 /* psp5 authentic – the video player (see videoplay.h) */
 #include <pspkernel.h>
+#include <pspdisplay.h>
 #include <pspctrl.h>
 #include <psppower.h>
 #include <math.h>
@@ -187,6 +188,9 @@ static void nudge(VideoPlayer *v, int dir)
 
 int videoplay_update(VideoPlayer *v, u32 pressed, u32 held, int lx, int ly, float dt)
 {
+    /* A video that is decoded in software needs all the processor there is: the loop that draws the screen (about two milliseconds a turn) runs at half the speed, a picture is drawn every second vertical blank. */
+    if (v->vid && !v->failed && video_soft(v->vid))
+        sceDisplayWaitVblankStart();
     v->time += dt;
     if (v->overlay > 0)
         v->overlay -= dt;
