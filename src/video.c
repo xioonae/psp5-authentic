@@ -1066,6 +1066,7 @@ Video *video_open(const char *path)
             else
                 v->um.unsupported = 1;
             crumb4("hw-try", v->hw, can, s_poisoned, v->opt_hw);
+            crumbh("hw-find", meboot_nid(), (unsigned)meboot_devkit(), meboot_mask(), (unsigned)meboot_module()); /* the NID of sceMeBootStart that was found (0: none), the devkit version, which NIDs of the table the library has (bit n: entry n), the module name that found it */
         }
 #ifdef PSP5_ANY_STREAM /* (PPSSPP takes every stream: its pictures are what the tests and the README show; soft=1 tries the software decoder there) */
         int soft = v->opt_soft == 1;

@@ -16,6 +16,11 @@
 /* 1 when the function can be found (ARK on a 6.60 / 6.61 PSP), else 0; the NID it was found with (0 before the first call of meboot_start() / meboot_available()) */
 int meboot_available(void);
 unsigned meboot_nid(void);
+/* for the log: the devkit version of the system, which of the NIDs of the table (bit n = entry n) were found in the library (whatever the system's own is), and which module name found it (1 = the first,
+ * 0 = none) */
+int meboot_devkit(void);
+unsigned meboot_mask(void);
+int meboot_module(void);
 
 /* Starts the Engine with the firmware image `type`. 0 when it is done (or the Engine has that image already), -1 when the function cannot be found, else the (negative) answer of the kernel. */
 int meboot_start(int type);
