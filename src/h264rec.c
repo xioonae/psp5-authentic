@@ -27,7 +27,8 @@ const uint8_t h264_chroma_qp[52] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1
 /* ---------------------------------------------------------------------- */
 /* the transform */
 
-/* the inverse 4x4 transform of c (raster order, already scaled), added to the picture; c is cleared */
+/* the inverse 4x4 transform of c (raster order, already scaled), added to the picture; c is cleared. The rounding (+ 32) is added to the DC first: it reaches all 16 results with the weight 1, so the
+ * "+ 32" of each result is not needed (the same values), and the shift of every result is the only thing left of the rounding. */
 void h264_idct_add(uint8_t *dst, int stride, int16_t *c, int dc_only)
 {
     if (dc_only) {
@@ -41,25 +42,36 @@ void h264_idct_add(uint8_t *dst, int stride, int16_t *c, int dc_only)
         }
         return;
     }
-    int t[16];
-    for (int i = 0; i < 4; i++) {
-        int a = c[i * 4], b = c[i * 4 + 1], cc = c[i * 4 + 2], d = c[i * 4 + 3];
-        int e0 = a + cc, e1 = a - cc, e2 = (b >> 1) - d, e3 = b + (d >> 1);
-        t[i * 4] = e0 + e3;
-        t[i * 4 + 1] = e1 + e2;
-        t[i * 4 + 2] = e1 - e2;
-        t[i * 4 + 3] = e0 - e3;
-    }
-    for (int j = 0; j < 4; j++) {
-        int a = t[j], b = t[4 + j], cc = t[8 + j], d = t[12 + j];
-        int e0 = a + cc, e1 = a - cc, e2 = (b >> 1) - d, e3 = b + (d >> 1);
-        uint8_t *p = dst + j;
-        p[0] = clip1(p[0] + ((e0 + e3 + 32) >> 6));
-        p[stride] = clip1(p[stride] + ((e1 + e2 + 32) >> 6));
-        p[2 * stride] = clip1(p[2 * stride] + ((e1 - e2 + 32) >> 6));
-        p[3 * stride] = clip1(p[3 * stride] + ((e0 - e3 + 32) >> 6));
-    }
+    int t00, t01, t02, t03, t10, t11, t12, t13, t20, t21, t22, t23, t30, t31, t32, t33;
+#define ROW(i, o0, o1, o2, o3, bias) \
+    do { \
+        int a = c[(i) * 4] + (bias), b = c[(i) * 4 + 1], cc = c[(i) * 4 + 2], d = c[(i) * 4 + 3]; \
+        int e0 = a + cc, e1 = a - cc, e2 = (b >> 1) - d, e3 = b + (d >> 1); \
+        o0 = e0 + e3; \
+        o1 = e1 + e2; \
+        o2 = e1 - e2; \
+        o3 = e0 - e3; \
+    } while (0)
+    ROW(0, t00, t01, t02, t03, 32);
+    ROW(1, t10, t11, t12, t13, 0);
+    ROW(2, t20, t21, t22, t23, 0);
+    ROW(3, t30, t31, t32, t33, 0);
+#undef ROW
     memset(c, 0, 16 * sizeof(int16_t));
+#define COL(j, a, b, cc, d) \
+    do { \
+        int e0 = (a) + (cc), e1 = (a) - (cc), e2 = ((b) >> 1) - (d), e3 = (b) + ((d) >> 1); \
+        uint8_t *p = dst + (j); \
+        p[0] = clip1(p[0] + ((e0 + e3) >> 6)); \
+        p[stride] = clip1(p[stride] + ((e1 + e2) >> 6)); \
+        p[2 * stride] = clip1(p[2 * stride] + ((e1 - e2) >> 6)); \
+        p[3 * stride] = clip1(p[3 * stride] + ((e0 - e3) >> 6)); \
+    } while (0)
+    COL(0, t00, t10, t20, t30);
+    COL(1, t01, t11, t21, t31);
+    COL(2, t02, t12, t22, t32);
+    COL(3, t03, t13, t23, t33);
+#undef COL
 }
 
 static const uint8_t NORM0[6] = { 10, 11, 13, 14, 16, 18 };

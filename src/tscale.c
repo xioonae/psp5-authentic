@@ -47,22 +47,47 @@ void ts_hop(TScale *t, const short *in, double ha, short *out)
             t->ola[i * 2 + 1] = (float)p[i * 2 + 1] * down;
         }
     }
-    /* where the last piece would have gone on: the best start is the one whose beginning looks most like that (compared on every fourth frame, mono) */
+    /* where the last piece would have gone on: the best start is the one whose beginning looks most like that (compared on every fourth frame, mono). Coarse to fine: every eighth start (and every
+     * eighth frame) first, then the two starts four frames either side of the best one on every fourth frame: the same starts as every fourth one, a third of the comparisons. */
     const short *nat = in + (t->prev_start + TS_HOP - low) * 2;
+    int nm[TS_HOP / 4]; /* the mono samples of nat, every fourth frame */
+    for (int j = 0; j < TS_HOP / 4; j++)
+        nm[j] = mono(nat + 4 * j * 2);
     int best_d = 0;
     long long best = -1;
-    for (int d = -TS_DELTA; d <= TS_DELTA; d += 4) {
+    for (int d = -TS_DELTA; d <= TS_DELTA; d += 8) {
         const short *c = in + (nomf + d - low) * 2;
         long long sad = 0;
-        for (int j = 0; j < TS_HOP; j += 4) {
-            int diff = mono(nat + j * 2) - mono(c + j * 2);
+        for (int j = 0; j < TS_HOP / 4; j += 2) {
+            int diff = nm[j] - mono(c + 4 * j * 2);
             sad += diff < 0 ? -diff : diff;
         }
+        sad *= 2; /* (half the frames: the same scale as the finer comparison) */
         if (d == 0)
             sad -= sad >> 4; /* (a small preference for not moving) */
         if (best < 0 || sad < best) {
             best = sad;
             best_d = d;
+        }
+    }
+    {
+        int centre = best_d;
+        long long fine_best = -1;
+        for (int d = centre - 4; d <= centre + 4; d += 4) {
+            if (d < -TS_DELTA || d > TS_DELTA)
+                continue;
+            const short *c = in + (nomf + d - low) * 2;
+            long long sad = 0;
+            for (int j = 0; j < TS_HOP / 4; j++) {
+                int diff = nm[j] - mono(c + 4 * j * 2);
+                sad += diff < 0 ? -diff : diff;
+            }
+            if (d == 0)
+                sad -= sad >> 4;
+            if (fine_best < 0 || sad < fine_best) {
+                fine_best = sad;
+                best_d = d;
+            }
         }
     }
     long long start = nomf + best_d;

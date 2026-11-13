@@ -138,9 +138,9 @@ static int huff_get(const Huff *h, Bits *b)
 static void fft_init(Fft *f, int n)
 {
     f->n = n;
-    f->tw = malloc(sizeof(float) * (size_t)n);
+    f->tw = malloc(sizeof(float) * (size_t)(3 * n / 2 + 2)); /* w_n^k for k = 0 .. 3n/4 (the radix-4 passes use the cube of the twiddle factor) */
     f->rev = malloc(sizeof(unsigned short) * (size_t)n);
-    for (int k = 0; k < n / 2; k++) {
+    for (int k = 0; k <= 3 * n / 4; k++) {
         f->tw[2 * k] = (float)cos(2.0 * M_PI * k / n);
         f->tw[2 * k + 1] = (float)-sin(2.0 * M_PI * k / n);
     }
@@ -173,19 +173,44 @@ static void fft_run(const Fft *f, float *z)
         a[6] = d0r - d1i;
         a[7] = d0i + d1r;
     }
-    for (int len = 8; len <= n; len <<= 1) {
-        int half = len >> 1, step = 2 * (n / len);
-        for (int i = 0; i < n; i += len) {
-            const float *w = f->tw;
-            float *a = z + 2 * i, *b = a + 2 * half;
-            for (int j = 0; j < half; j++, w += step, a += 2, b += 2) {
-                float wr = w[0], wi = w[1];
-                float tr = b[0] * wr - b[1] * wi, ti = b[0] * wi + b[1] * wr;
-                b[0] = a[0] - tr;
-                b[1] = a[1] - ti;
-                a[0] += tr;
-                a[1] += ti;
+    /* radix-4 passes: four blocks of m points (each a finished transform) make one of 4m, two radix-2 stages at once: with W = w_{4m}^j, A = E0, B = E1 W^2, C = E2 W, D = E3 W^3 the results for the
+     * points j, j + m, j + 2m, j + 3m are (A+B) + (C+D), (A-B) - i (C-D), (A+B) - (C+D), (A-B) + i (C-D). Half the loads and stores of two radix-2 stages, three complex products for four points. */
+    int len = 4;
+    for (; len * 4 <= n; len *= 4) {
+        int m = len, q2 = 2 * (n / (4 * m)); /* the table index (floats) of w_{4m}^j grows by q2 with j */
+        for (int base = 0; base < n; base += 4 * m) {
+            float *e0 = z + 2 * base, *e1 = e0 + 2 * m, *e2 = e1 + 2 * m, *e3 = e2 + 2 * m;
+            const float *t1 = f->tw, *t2 = f->tw, *t3 = f->tw;
+            for (int j = 0; j < m; j++, t1 += q2, t2 += 2 * q2, t3 += 3 * q2, e0 += 2, e1 += 2, e2 += 2, e3 += 2) {
+                float ar = e0[0], ai = e0[1];
+                float w2r = t2[0], w2i = t2[1], w1r = t1[0], w1i = t1[1], w3r = t3[0], w3i = t3[1];
+                float br = e1[0] * w2r - e1[1] * w2i, bi = e1[0] * w2i + e1[1] * w2r;
+                float cr = e2[0] * w1r - e2[1] * w1i, ci = e2[0] * w1i + e2[1] * w1r;
+                float dr = e3[0] * w3r - e3[1] * w3i, di = e3[0] * w3i + e3[1] * w3r;
+                float s0r = ar + br, s0i = ai + bi, d0r = ar - br, d0i = ai - bi;
+                float s1r = cr + dr, s1i = ci + di, d1r = cr - dr, d1i = ci - di;
+                e0[0] = s0r + s1r;
+                e0[1] = s0i + s1i;
+                e2[0] = s0r - s1r;
+                e2[1] = s0i - s1i;
+                e1[0] = d0r + d1i;
+                e1[1] = d0i - d1r;
+                e3[0] = d0r - d1i;
+                e3[1] = d0i + d1r;
             }
+        }
+    }
+    if (len < n) { /* n is a power of two but not of four: one radix-2 stage is left (blocks of len = n / 2 make one of n) */
+        int half = len, step = 2 * (n / (2 * len));
+        float *a = z, *b = z + 2 * half;
+        const float *w = f->tw;
+        for (int j = 0; j < half; j++, w += step, a += 2, b += 2) {
+            float wr = w[0], wi = w[1];
+            float tr = b[0] * wr - b[1] * wi, ti = b[0] * wi + b[1] * wr;
+            b[0] = a[0] - tr;
+            b[1] = a[1] - ti;
+            a[0] += tr;
+            a[1] += ti;
         }
     }
 }

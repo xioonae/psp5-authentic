@@ -16,86 +16,173 @@ static inline int iabs(int v) { return v < 0 ? -v : v; }
 static inline int clip3(int lo, int hi, int v) { return v < lo ? lo : v > hi ? hi : v; }
 static inline uint8_t clip1(int v) { return (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v); }
 
-/* Four samples along an edge of luma (one segment, one strength); q is the first sample after the edge, xs the step across it, ys the one along it. The tests of the standard (|p0 - q0| < alpha ...)
- * are done as one unsigned comparison each. */
-static void seg_luma(uint8_t *q, int xs, int ys, int bs, int alpha, int beta, int tc0)
+/* The filters of one line across an edge (the standard's 8.7.2). P0 / Q0 are the addresses of the samples next to the edge, P1 .. P3 / Q1 .. Q3 the ones further away, by distance. The same text serves
+ * a vertical edge (the line is a row: the addresses are q - 3 .. q + 3) and a horizontal one (the line is a column: the addresses are in six rows), so the offsets are numbers the compiler knows and no
+ * address is worked out for a sample. The tests of the standard (|p0 - q0| < alpha ...) are one unsigned comparison each (a2 = 2 * alpha - 1, b2 = 2 * beta - 1). */
+
+/* luma, bS 1 to 3 */
+#define LN(P2, P1, P0, Q0, Q1, Q2) \
+    do { \
+        int p0 = *(P0), q0 = *(Q0); \
+        if ((unsigned)(p0 - q0 + alpha - 1) < a2) { \
+            int p1 = *(P1), q1 = *(Q1); \
+            if ((unsigned)(p1 - p0 + beta - 1) < b2 && (unsigned)(q1 - q0 + beta - 1) < b2) { \
+                int p2 = *(P2), q2 = *(Q2); \
+                int ap = (unsigned)(p2 - p0 + beta - 1) < b2, aq = (unsigned)(q2 - q0 + beta - 1) < b2; \
+                int tc = tc0 + ap + aq; \
+                int delta = clip3(-tc, tc, (((q0 - p0) * 4) + (p1 - q1) + 4) >> 3); \
+                if (tc0) { /* (with tc0 = 0 the two corrections are clipped to 0: p1 and q1 stay) */ \
+                    int avg = (p0 + q0 + 1) >> 1; \
+                    if (ap) \
+                        *(P1) = (uint8_t)(p1 + clip3(-tc0, tc0, (p2 + avg - (p1 << 1)) >> 1)); \
+                    if (aq) \
+                        *(Q1) = (uint8_t)(q1 + clip3(-tc0, tc0, (q2 + avg - (q1 << 1)) >> 1)); \
+                } \
+                *(P0) = clip1(p0 + delta); \
+                *(Q0) = clip1(q0 - delta); \
+            } \
+        } \
+    } while (0)
+
+/* luma, bS 4 (thr2 = 2 * ((alpha >> 2) + 2) - 1: the test |p0 - q0| < (alpha >> 2) + 2) */
+#define LS(P3, P2, P1, P0, Q0, Q1, Q2, Q3) \
+    do { \
+        int p0 = *(P0), q0 = *(Q0); \
+        if ((unsigned)(p0 - q0 + alpha - 1) < a2) { \
+            int p1 = *(P1), q1 = *(Q1); \
+            if ((unsigned)(p1 - p0 + beta - 1) < b2 && (unsigned)(q1 - q0 + beta - 1) < b2) { \
+                int p2 = *(P2), q2 = *(Q2); \
+                int small = (unsigned)(p0 - q0 + thr - 1) < thr2; \
+                if (small && (unsigned)(p2 - p0 + beta - 1) < b2) { \
+                    int p3 = *(P3); \
+                    *(P0) = (uint8_t)((p2 + 2 * p1 + 2 * p0 + 2 * q0 + q1 + 4) >> 3); \
+                    *(P1) = (uint8_t)((p2 + p1 + p0 + q0 + 2) >> 2); \
+                    *(P2) = (uint8_t)((2 * p3 + 3 * p2 + p1 + p0 + q0 + 4) >> 3); \
+                } else { \
+                    *(P0) = (uint8_t)((2 * p1 + p0 + q1 + 2) >> 2); \
+                } \
+                if (small && (unsigned)(q2 - q0 + beta - 1) < b2) { \
+                    int q3 = *(Q3); \
+                    *(Q0) = (uint8_t)((p1 + 2 * p0 + 2 * q0 + 2 * q1 + q2 + 4) >> 3); \
+                    *(Q1) = (uint8_t)((p0 + q0 + q1 + q2 + 2) >> 2); \
+                    *(Q2) = (uint8_t)((2 * q3 + 3 * q2 + q1 + q0 + p0 + 4) >> 3); \
+                } else { \
+                    *(Q0) = (uint8_t)((2 * q1 + q0 + p1 + 2) >> 2); \
+                } \
+            } \
+        } \
+    } while (0)
+
+/* chroma, bS 1 to 3 (tc is tc0 + 1) and bS 4 */
+#define CN(P1, P0, Q0, Q1) \
+    do { \
+        int p0 = *(P0), q0 = *(Q0); \
+        if ((unsigned)(p0 - q0 + alpha - 1) < a2) { \
+            int p1 = *(P1), q1 = *(Q1); \
+            if ((unsigned)(p1 - p0 + beta - 1) < b2 && (unsigned)(q1 - q0 + beta - 1) < b2) { \
+                int delta = clip3(-tc, tc, (((q0 - p0) * 4) + (p1 - q1) + 4) >> 3); \
+                *(P0) = clip1(p0 + delta); \
+                *(Q0) = clip1(q0 - delta); \
+            } \
+        } \
+    } while (0)
+#define CS(P1, P0, Q0, Q1) \
+    do { \
+        int p0 = *(P0), q0 = *(Q0); \
+        if ((unsigned)(p0 - q0 + alpha - 1) < a2) { \
+            int p1 = *(P1), q1 = *(Q1); \
+            if ((unsigned)(p1 - p0 + beta - 1) < b2 && (unsigned)(q1 - q0 + beta - 1) < b2) { \
+                *(P0) = (uint8_t)((2 * p1 + p0 + q1 + 2) >> 2); \
+                *(Q0) = (uint8_t)((2 * q1 + q0 + p1 + 2) >> 2); \
+            } \
+        } \
+    } while (0)
+
+/* a vertical edge of luma: 16 rows, q is the first sample right of the edge in the first row, st the distance of two rows; bs has the four strengths (of four rows each) */
+static __attribute__((noinline)) void edge_luma_v(uint8_t *q, int st, const int8_t *bs, int alpha, int beta, int ia)
 {
     unsigned a2 = (unsigned)(2 * alpha - 1), b2 = (unsigned)(2 * beta - 1);
-    for (int k = 0; k < 4; k++, q += ys) {
-        int p0 = q[-xs], q0 = q[0];
-        if ((unsigned)(p0 - q0 + alpha - 1) >= a2)
+    int thr = (alpha >> 2) + 2;
+    unsigned thr2 = (unsigned)(2 * thr - 1);
+    for (int s = 0; s < 4; s++, q += 4 * st) {
+        int b = bs[s];
+        if (!b)
             continue;
-        int p1 = q[-2 * xs], q1 = q[xs];
-        if ((unsigned)(p1 - p0 + beta - 1) >= b2 || (unsigned)(q1 - q0 + beta - 1) >= b2)
-            continue;
-        int p2 = q[-3 * xs], q2 = q[2 * xs];
-        int ap = iabs(p2 - p0), aq = iabs(q2 - q0);
-        if (bs < 4) {
-            int tc = tc0 + (ap < beta) + (aq < beta);
-            int delta = clip3(-tc, tc, (((q0 - p0) * 4) + (p1 - q1) + 4) >> 3);
-            if (ap < beta)
-                q[-2 * xs] = (uint8_t)(p1 + clip3(-tc0, tc0, (p2 + ((p0 + q0 + 1) >> 1) - (p1 << 1)) >> 1));
-            if (aq < beta)
-                q[xs] = (uint8_t)(q1 + clip3(-tc0, tc0, (q2 + ((p0 + q0 + 1) >> 1) - (q1 << 1)) >> 1));
-            q[-xs] = clip1(p0 + delta);
-            q[0] = clip1(q0 - delta);
+        uint8_t *r = q;
+        if (b < 4) {
+            int tc0 = TC0[ia][b - 1];
+            for (int k = 0; k < 4; k++, r += st)
+                LN(r - 3, r - 2, r - 1, r, r + 1, r + 2);
         } else {
-            int small = iabs(p0 - q0) < ((alpha >> 2) + 2);
-            if (ap < beta && small) {
-                int p3 = q[-4 * xs];
-                q[-xs] = (uint8_t)((p2 + 2 * p1 + 2 * p0 + 2 * q0 + q1 + 4) >> 3);
-                q[-2 * xs] = (uint8_t)((p2 + p1 + p0 + q0 + 2) >> 2);
-                q[-3 * xs] = (uint8_t)((2 * p3 + 3 * p2 + p1 + p0 + q0 + 4) >> 3);
-            } else {
-                q[-xs] = (uint8_t)((2 * p1 + p0 + q1 + 2) >> 2);
-            }
-            if (aq < beta && small) {
-                int q3 = q[3 * xs];
-                q[0] = (uint8_t)((p1 + 2 * p0 + 2 * q0 + 2 * q1 + q2 + 4) >> 3);
-                q[xs] = (uint8_t)((p0 + q0 + q1 + q2 + 2) >> 2);
-                q[2 * xs] = (uint8_t)((2 * q3 + 3 * q2 + q1 + q0 + p0 + 4) >> 3);
-            } else {
-                q[0] = (uint8_t)((2 * q1 + q0 + p1 + 2) >> 2);
-            }
+            for (int k = 0; k < 4; k++, r += st)
+                LS(r - 4, r - 3, r - 2, r - 1, r, r + 1, r + 2, r + 3);
         }
     }
 }
 
-static void edge_luma(uint8_t *q, int xs, int ys, const int8_t *bs, int alpha, int beta, int ia)
-{
-    for (int s = 0; s < 4; s++)
-        if (bs[s] > 0)
-            seg_luma(q + s * 4 * ys, xs, ys, bs[s], alpha, beta, bs[s] < 4 ? TC0[ia][bs[s] - 1] : 0);
-}
-
-/* two samples along an edge of chroma */
-static void seg_chroma(uint8_t *q, int xs, int ys, int bs, int alpha, int beta, int tc)
+/* a horizontal edge of luma: q is the first sample below the edge in the first column, st the distance of two rows */
+static __attribute__((noinline)) void edge_luma_h(uint8_t *q, int st, const int8_t *bs, int alpha, int beta, int ia)
 {
     unsigned a2 = (unsigned)(2 * alpha - 1), b2 = (unsigned)(2 * beta - 1);
-    for (int k = 0; k < 2; k++, q += ys) {
-        int p0 = q[-xs], q0 = q[0];
-        if ((unsigned)(p0 - q0 + alpha - 1) >= a2)
+    int thr = (alpha >> 2) + 2;
+    unsigned thr2 = (unsigned)(2 * thr - 1);
+    for (int s = 0; s < 4; s++, q += 4) {
+        int b = bs[s];
+        if (!b)
             continue;
-        int p1 = q[-2 * xs], q1 = q[xs];
-        if ((unsigned)(p1 - p0 + beta - 1) >= b2 || (unsigned)(q1 - q0 + beta - 1) >= b2)
-            continue;
-        if (bs < 4) {
-            int delta = clip3(-tc, tc, (((q0 - p0) * 4) + (p1 - q1) + 4) >> 3);
-            q[-xs] = clip1(p0 + delta);
-            q[0] = clip1(q0 - delta);
+        uint8_t *rm4 = q - 4 * st, *rm3 = q - 3 * st, *rm2 = q - 2 * st, *rm1 = q - st, *rp1 = q + st, *rp2 = q + 2 * st, *rp3 = q + 3 * st;
+        if (b < 4) {
+            int tc0 = TC0[ia][b - 1];
+            LN(rm3 + 0, rm2 + 0, rm1 + 0, q + 0, rp1 + 0, rp2 + 0);
+            LN(rm3 + 1, rm2 + 1, rm1 + 1, q + 1, rp1 + 1, rp2 + 1);
+            LN(rm3 + 2, rm2 + 2, rm1 + 2, q + 2, rp1 + 2, rp2 + 2);
+            LN(rm3 + 3, rm2 + 3, rm1 + 3, q + 3, rp1 + 3, rp2 + 3);
         } else {
-            q[-xs] = (uint8_t)((2 * p1 + p0 + q1 + 2) >> 2);
-            q[0] = (uint8_t)((2 * q1 + q0 + p1 + 2) >> 2);
+            LS(rm4 + 0, rm3 + 0, rm2 + 0, rm1 + 0, q + 0, rp1 + 0, rp2 + 0, rp3 + 0);
+            LS(rm4 + 1, rm3 + 1, rm2 + 1, rm1 + 1, q + 1, rp1 + 1, rp2 + 1, rp3 + 1);
+            LS(rm4 + 2, rm3 + 2, rm2 + 2, rm1 + 2, q + 2, rp1 + 2, rp2 + 2, rp3 + 2);
+            LS(rm4 + 3, rm3 + 3, rm2 + 3, rm1 + 3, q + 3, rp1 + 3, rp2 + 3, rp3 + 3);
         }
     }
 }
 
-/* 8 chroma samples along an edge; bs has the four strengths of the luma edge (two samples each) */
-static void edge_chroma(uint8_t *q, int xs, int ys, const int8_t *bs, int alpha, int beta, int ia)
+/* a vertical edge of chroma: 8 rows (two for every strength) */
+static __attribute__((noinline)) void edge_chroma_v(uint8_t *q, int st, const int8_t *bs, int alpha, int beta, int ia)
 {
-    for (int s = 0; s < 4; s++)
-        if (bs[s] > 0)
-            seg_chroma(q + s * 2 * ys, xs, ys, bs[s], alpha, beta, bs[s] < 4 ? TC0[ia][bs[s] - 1] + 1 : 0);
+    unsigned a2 = (unsigned)(2 * alpha - 1), b2 = (unsigned)(2 * beta - 1);
+    for (int s = 0; s < 4; s++, q += 2 * st) {
+        int b = bs[s];
+        if (!b)
+            continue;
+        if (b < 4) {
+            int tc = TC0[ia][b - 1] + 1;
+            CN(q - 2, q - 1, q, q + 1);
+            CN(q + st - 2, q + st - 1, q + st, q + st + 1);
+        } else {
+            CS(q - 2, q - 1, q, q + 1);
+            CS(q + st - 2, q + st - 1, q + st, q + st + 1);
+        }
+    }
+}
+
+/* a horizontal edge of chroma: 8 columns */
+static __attribute__((noinline)) void edge_chroma_h(uint8_t *q, int st, const int8_t *bs, int alpha, int beta, int ia)
+{
+    unsigned a2 = (unsigned)(2 * alpha - 1), b2 = (unsigned)(2 * beta - 1);
+    for (int s = 0; s < 4; s++, q += 2) {
+        int b = bs[s];
+        if (!b)
+            continue;
+        uint8_t *rm2 = q - 2 * st, *rm1 = q - st, *rp1 = q + st;
+        if (b < 4) {
+            int tc = TC0[ia][b - 1] + 1;
+            CN(rm2 + 0, rm1 + 0, q + 0, rp1 + 0);
+            CN(rm2 + 1, rm1 + 1, q + 1, rp1 + 1);
+        } else {
+            CS(rm2 + 0, rm1 + 0, q + 0, rp1 + 0);
+            CS(rm2 + 1, rm1 + 1, q + 1, rp1 + 1);
+        }
+    }
 }
 
 /* 0 or 1 by the motion of block pb of macroblock pm and block qb of macroblock qm (both inter, neither has coefficients): different pictures, or vectors a whole pixel apart */
@@ -137,8 +224,21 @@ void h264_deblock_picture(H264Dec *d)
             } else {
                 unsigned nzm = d->nzmask[mb];
                 int uni = d->uni[mb]; /* the whole macroblock has one motion: no edge inside has a difference of it */
+                /* with one motion on both sides, the four pieces of a macroblock edge have the same motion strength: it is worked out once */
+                int mvl = -1, mvt = -1;
+                if (uni) {
+                    if (left && d->kind[mb - 1] == KIND_INTER && d->uni[mb - 1])
+                        mvl = strength_motion(d, mb - 1, 3, mb, 0);
+                    if (top && d->kind[mb - mbw] == KIND_INTER && d->uni[mb - mbw])
+                        mvt = strength_motion(d, mb - mbw, 12, mb, 0);
+                }
                 for (int e = 0; e < 4; e++) {
                     unsigned vm, hm;
+                    if (e && !nzm && uni) { /* no coefficients and one motion: no strength inside */
+                        for (int s = 0; s < 4; s++)
+                            bsv[e][s] = bsh[e][s] = 0;
+                        continue;
+                    }
                     if (e) {
                         vm = ((nzm >> e) | (nzm >> (e - 1))) & 0x1111; /* bit 4 * s: the block or the one next to it has coefficients */
                         hm = ((nzm >> (4 * e)) | (nzm >> (4 * (e - 1)))) & 0xF;
@@ -156,7 +256,7 @@ void h264_deblock_picture(H264Dec *d)
                             else if ((vm >> (4 * s)) & 1 || (d->nzmask[mb - 1] >> (s * 4 + 3)) & 1)
                                 v = 2;
                             else
-                                v = strength_motion(d, mb - 1, s * 4 + 3, mb, s * 4);
+                                v = mvl >= 0 ? mvl : strength_motion(d, mb - 1, s * 4 + 3, mb, s * 4);
                             if (!top)
                                 h = 0;
                             else if (d->kind[mb - mbw] != KIND_INTER)
@@ -164,7 +264,7 @@ void h264_deblock_picture(H264Dec *d)
                             else if ((hm >> s) & 1 || (d->nzmask[mb - mbw] >> (12 + s)) & 1)
                                 h = 2;
                             else
-                                h = strength_motion(d, mb - mbw, 12 + s, mb, s);
+                                h = mvt >= 0 ? mvt : strength_motion(d, mb - mbw, 12 + s, mb, s);
                         } else {
                             v = (vm >> (4 * s)) & 1 ? 2 : uni ? 0 : strength_motion(d, mb, s * 4 + e - 1, mb, s * 4 + e);
                             h = (hm >> s) & 1 ? 2 : uni ? 0 : strength_motion(d, mb, (e - 1) * 4 + s, mb, e * 4 + s);
@@ -195,7 +295,10 @@ void h264_deblock_picture(H264Dec *d)
                     if (!alpha || !beta)
                         continue;
                     uint8_t *q = y + (dir ? (ptrdiff_t)e * 4 * sy : e * 4);
-                    edge_luma(q, dir ? sy : 1, dir ? 1 : sy, bs, alpha, beta, ia);
+                    if (dir)
+                        edge_luma_h(q, sy, bs, alpha, beta, ia);
+                    else
+                        edge_luma_v(q, sy, bs, alpha, beta, ia);
                     if (e == 0 || e == 2) {
                         int ce = e >> 1; /* chroma has two edges, at 0 and 4 */
                         int cqp_q = h264_chroma_qp[clip3(0, 51, qpq + pps->cqp_off)];
@@ -205,8 +308,13 @@ void h264_deblock_picture(H264Dec *d)
                         int ca = ALPHA[cia], cb = BETA[cib];
                         if (ca && cb) {
                             ptrdiff_t off = dir ? (ptrdiff_t)ce * 4 * sc : ce * 4;
-                            edge_chroma(u + off, dir ? sc : 1, dir ? 1 : sc, bs, ca, cb, cia);
-                            edge_chroma(v + off, dir ? sc : 1, dir ? 1 : sc, bs, ca, cb, cia);
+                            if (dir) {
+                                edge_chroma_h(u + off, sc, bs, ca, cb, cia);
+                                edge_chroma_h(v + off, sc, bs, ca, cb, cia);
+                            } else {
+                                edge_chroma_v(u + off, sc, bs, ca, cb, cia);
+                                edge_chroma_v(v + off, sc, bs, ca, cb, cia);
+                            }
                         }
                     }
                 }
