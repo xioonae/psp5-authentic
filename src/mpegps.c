@@ -150,7 +150,7 @@ int mpegps_annexb(const uint8_t *s, int len, int nal_size, const uint8_t *params
             /* (a delimiter is written first, and a stream that is given the PSP's messages does not keep its own) */
         } else if (sy && t == 7) {
             uint8_t sps[SPS_BUF];
-            int sl = sy->timing ? h264_sps_rewrite(s + pos, l, sy->tick, sps, sizeof(sps)) : sy->tick.to_base ? h264_sps_to_base(s + pos, l, sps, sizeof(sps)) : sy->tick.to_main ? h264_sps_relabel(s + pos, l, sps, sizeof(sps)) : -2;
+            int sl = sy->timing ? h264_sps_rewrite(s + pos, l, sy->tick, sps, sizeof(sps)) : sy->tick.to_main ? h264_sps_relabel(s + pos, l, sps, sizeof(sps)) : -2;
             if (sl == -2) { /* (nothing to change in it) */
                 if ((n = put_nal(out, n, cap, 4, s + pos, l)) < 0)
                     return -1;

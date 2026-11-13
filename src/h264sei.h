@@ -13,7 +13,6 @@
 typedef struct {
     unsigned num_units, time_scale;
     int to_main; /* an SPS of the Baseline profile is made one of the Main profile (see h264_sps_rewrite) */
-    int to_base; /* an SPS of the Main or Baseline profile is made one of the Baseline profile (profile 66, constraint flags 0xC0: for the hardware decoder's Baseline mode, see meboot.h) */
 } H264Tick;
 
 /* 1 when the SPS (a NAL unit with its header byte, no start code) announces HRD parameters: such a stream is made the way the PSP's own are and is left as it is. 0 when it does not (or
@@ -30,8 +29,8 @@ int h264_sps_rewrite(const uint8_t *nal, int len, H264Tick tick, uint8_t *out, i
  * Returns the length of the NAL unit written to out, -1 on an error. */
 int h264_sps_relabel(const uint8_t *nal, int len, uint8_t *out, int cap);
 
-/* The SPS with only its profile changed to Baseline (profile 66, constraint flags 0xC0; the level stays) as h264_sps_rewrite does it for tick.to_base: for a Main or Baseline SPS (the fields of both
- * are the same); anything else is copied as it is. Returns the length of the NAL unit written to out, -1 on an error. */
+/* The SPS with only its profile changed to Baseline (profile 66, constraint flags 0xC0; the level stays): for a Main or Baseline SPS (the fields of both are the same; the PSP's decoder in its
+ * Baseline mode, hwavc.h); anything else is copied as it is. Returns the length of the NAL unit written to out, -1 on an error. */
 int h264_sps_to_base(const uint8_t *nal, int len, uint8_t *out, int cap);
 
 /* 1 when the PPS (NAL unit with its header byte) uses slice groups (FMO: Baseline only) or cannot be read; *cabac gets the entropy coding mode (1 = CABAC, 0 = CAVLC), *nref0 the number of

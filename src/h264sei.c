@@ -378,8 +378,6 @@ int h264_sps_rewrite(const uint8_t *nal, int len, H264Tick tick, uint8_t *out, i
         if (rbsp[2] < 21)
             rbsp[2] = 21;
     }
-    if (tick.to_base)
-        to_baseline(rbsp, n);
     BR r = { rbsp, n * 8, 0, 0 };
     int vui = sps_vui_pos(&r);
     if (vui < 0)

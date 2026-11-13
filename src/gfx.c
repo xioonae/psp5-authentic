@@ -369,7 +369,7 @@ void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint)
     }
     bind(t);
     /* en bild utan alfakanal (bakgrunder) med full täckning behöver ingen blandning */
-    int opaque = t->psm == GU_PSM_5650 && (tint >> 24) == 255;
+    int opaque = (t->psm == GU_PSM_5650 || t->opaque) && (tint >> 24) == 255;
     if (opaque)
         sceGuDisable(GU_BLEND);
     sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2 * n, 0, v);

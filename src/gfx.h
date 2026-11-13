@@ -21,6 +21,7 @@ typedef struct {
     void *data;
     int swizzled; /* the pixels are in the order the GE reads fastest (tex_swizzle), not row after row: nothing may read or write them as rows any more */
     int vram;     /* the pixels are in video memory, which the GE reads much faster than main memory, and are not this texture's to free (the shapes of gfx_init) */
+    int opaque;   /* the picture is drawn without blending whatever its alpha says (a video picture from the PSP's own decoder, GU_PSM_8888, whose alpha is not known) */
 } Texture;
 
 enum { ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT };

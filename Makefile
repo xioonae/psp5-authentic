@@ -2,7 +2,7 @@
 TARGET = psp5
 OBJS = src/main.o src/scan.o src/sfo.o src/iso.o src/lzo.o src/folders.o src/playtime.o src/lastplayed.o src/launch.o \
        src/gfx.o src/image.o src/art.o src/loader.o src/ui.o \
-       src/arkcfg.o src/plugins.o src/system.o src/settings.o src/testrun.o src/sound.o src/lang.o src/config.o src/boot.o src/music.o src/umd.o src/theme.o src/osd.o src/files.o src/diacritic.o src/icons.o src/reccache.o src/info.o src/gameops.o src/gamesize.o src/storage.o src/popup.o src/saves.o src/home.o src/power.o src/ark4stub.o src/awake.o src/helper.o src/controls.o src/wifi.o src/netstub.o src/ftp.o src/netsock.o src/netlink.o src/ftpscreen.o src/datetime.o src/musicui.o src/media.o src/imageview.o src/videoplay.o src/video.o src/mp4.o src/mpegps.o src/h264sei.o src/unit.o src/aac.o src/tscale.o src/h264dec.o src/h264rec.o src/h264lf.o src/meboot.o src/videomem.o
+       src/arkcfg.o src/plugins.o src/system.o src/settings.o src/testrun.o src/sound.o src/lang.o src/config.o src/boot.o src/music.o src/umd.o src/theme.o src/osd.o src/files.o src/diacritic.o src/icons.o src/reccache.o src/info.o src/gameops.o src/gamesize.o src/storage.o src/popup.o src/saves.o src/home.o src/power.o src/ark4stub.o src/awake.o src/helper.o src/controls.o src/wifi.o src/netstub.o src/ftp.o src/netsock.o src/netlink.o src/ftpscreen.o src/datetime.o src/musicui.o src/media.o src/imageview.o src/videoplay.o src/video.o src/mp4.o src/mpegps.o src/h264sei.o src/unit.o src/aac.o src/tscale.o src/h264dec.o src/h264rec.o src/h264lf.o src/meboot.o src/hwavc.o src/mpegvsh.o src/videomem.o
 
 CFLAGS = -O2 -G0 -Wall -Wno-unused-parameter -Wno-stringop-truncation -Wno-format-truncation -Iplugin $(EXTRA) $(ARKFLAGS)
 ASFLAGS = $(CFLAGS)
@@ -17,7 +17,7 @@ ARKCTRL = -larkctrl
 endif
 
 LIBS = -lintrafont -lpng -ljpeg -lcisoread -llz4 -lz -lm \
-       -lpspmp3 -lpspatrac3 -lpspmpeg -lpspaudiocodec -lpspgu -lpspumd -lpsprtc -lpsppower -lpsputility -lpspusb -lpspusbstor -lpspaudio -lpspwlan -lpspreg \
+       -lpspmp3 -lpspatrac3 -lpspmpeg -lpspmpegbase -lpspaudiocodec -lpspgu -lpspumd -lpsprtc -lpsppower -lpsputility -lpspusb -lpspusbstor -lpspaudio -lpspwlan -lpspreg \
        -lpspsystemctrl_user $(ARKCTRL) -lpspkubridge
 
 BUILD_PRX = 1

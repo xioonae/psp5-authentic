@@ -16,6 +16,7 @@
 #include "h264dec.h"
 #include "unit.h"
 #include "meboot.h"
+#include "hwavc.h"
 
 /* A PPSSPP test build (PSP5_TEST) lets PPSSPP's own decoder take every stream (its pictures are what the tests and the README show). With -DPSP5_VIDEO_REAL the test build decides as a PSP does
  * (which stream goes to the software decoder, which is refused), so that code runs in the tests too. */
@@ -227,9 +228,12 @@ struct Video {
     int au_cap, au_sel;
     UnitMaker um; /* makes the units of the MP4 (parameter sets, the PSP's timing) */
     int opt_soft; /* test switch (video-opts.txt): 1 = soft=1 (the software decoder for every stream), 0 = soft=0 (never), -1 = as the stream needs */
-    int opt_hw;   /* test switch: 1 = hw=1 (a CAVLC stream without B pictures is tried on the hardware decoder in its Baseline mode, see meboot.h; the software decoder takes it when that does not work), 3 = hw=3 (the same, the SPS's profile left as it is) */
-    int hw;       /* this stream is decoded by the hardware decoder in its Baseline mode */
-    int opt_hwfail; /* test builds only (hwfail=1 / hwfail=2): the Engine cannot be started / the first picture is answered with the fatal error, to try the way back to the software decoder */
+    int opt_hw;   /* test switch: 1 = hw=1 (a CAVLC stream without B pictures is tried on the PSP's own decoder, see hwavc.h; the software decoder takes it when that does not work), 3 = hw=3 (the same, the SPS's profile left as it is) */
+    HwAvc *hwd;   /* the PSP's own decoder, when this stream is decoded by it: the pictures are RGBA (GU_PSM_8888) in fbuf, made by the worker thread like the ones of the software decoder */
+    unsigned char *hwbuf; /* a sample as that decoder takes it (aligned to 64 bytes) */
+    int hw_first, hw_b;   /* the next sample is given to it as a first one (mode 3, after a jump); the buffer the picture that is pending is in */
+    volatile int hw_err;  /* it did not take a sample: the screen's thread goes back to the software decoder */
+    int hw_pics;
     int soft;     /* the pictures are made by h264dec.c: the stream is one the PSP's decoder cannot take (CAVLC, a High profile) */
     H264Dec *dec;
     int soft_up, pending;
@@ -305,10 +309,6 @@ struct Video {
     float hb, since;                  /* the time to the next sign of life in the crash file, and the time this session has gone without a picture */
     int stage; /* what this session has done already, for the crash file (bits): 1 = fed, 2 = first picture asked for, 4 = first sound asked for, 8 = first put answered, 16 = first unit seen */
 };
-
-/* the Media Engine's memory for the decoder in its Baseline mode: 2 MB at a multiple of 4 MB, kept for as long as the program runs (the library may still address it when a video is closed) */
-static void *s_ddr;
-#define HW_MODE 4 /* the mode of the library for a stream of up to 480 x 272 in the Baseline firmware of the Engine (sceMpegQueryMemSize / sceMpegCreate) */
 
 /* the PSP's decoders are loaded once, the first time a video is opened */
 static int s_modules;
@@ -759,7 +759,7 @@ static int session_create(Video *v)
         return 0;
     }
     crumb("mpeg-create", v->mpeg_size, v->ring_size);
-    int cr = sceMpegCreate(&v->mpeg, v->mpeg_mem, v->mpeg_size, RING(v), FRAME_W, v->hw ? HW_MODE : 0, v->hw ? (SceInt32)(uintptr_t)s_ddr : 0);
+    int cr = sceMpegCreate(&v->mpeg, v->mpeg_mem, v->mpeg_size, RING(v), FRAME_W, 0, 0);
     VLOG("create %08x\n", cr);
     if (cr < 0) {
         crumbh("fail-create", (unsigned)cr, 0, 0, 0);
@@ -891,7 +891,7 @@ static int soft_prepare(Video *v)
 /* the three pictures for the thread of the software decoder (the first RGB one is the one the texture starts with): planes for the graphics chip, or RGB made by the CPU */
 static int soft_buffers(Video *v, size_t frame_bytes)
 {
-    v->ge = v->opt_ge;
+    v->ge = v->hwd ? 0 : v->opt_ge; /* (the hardware decoder gives RGB: no planes) */
     for (int k = 0; k < 3; k++) {
         if (v->ge) {
             size_t ysz = ysz_of(v->h), csz = csz_of(v->h);
@@ -922,25 +922,140 @@ static int soft_buffers(Video *v, size_t frame_bytes)
     return 1;
 }
 
-/* The hardware decoder did not take the stream, or could not be started (why: the answer of the library or of the kernel): the software decoder does, from where the clock is. 1 when it is ready (the
- * caller starts it with video_play(); while the video is being opened the pictures are made ready by video_open itself). */
-static int hw_to_soft(Video *v, int why)
+/* ---------------------------------------------------------------------- */
+/* the PSP's own decoder (hwavc.c, meboot.c) for a CAVLC stream; the software decoder is the way back */
+
+static void hw_log(const char *tag, unsigned a, unsigned b, unsigned c, unsigned d) { crumbh(tag, a, b, c, d); }
+
+/* The library of the games and the VSH's cannot be loaded at the same time: the one of the games (loaded for the first video that needs it) is given back before the VSH's is. 1 when it is not
+ * loaded (any more). */
+static int game_lib_unload(void)
 {
-    crumbh("hw-fallback", (unsigned)why, (unsigned)v->n_dec, (unsigned)v->err_total, (unsigned)v->soft);
-    if (v->soft)
+    if (s_modules <= 0)
         return 1;
-    session_destroy(v); /* (it does nothing when no session is up) */
-    v->hw = 0;
-    v->um.unsupported = 1;
-    if (!soft_prepare(v))
+    int r = sceUtilityUnloadModule(PSP_MODULE_AV_MPEGBASE);
+    crumbh("hw-unload-game", (unsigned)r, 0, 0, 0);
+    if (r < 0)
         return 0;
-    if (v->frame && !soft_buffers(v, (size_t)FRAME_W * 512 * 2)) /* (the frame is there when the video is open already) */
-        return 0;
-    if (v->frame) {
-        v->pic.w = v->w;
-        v->pic.h = v->h;
-    }
+    s_modules = 0; /* (the next video that needs the games' library loads it again) */
     return 1;
+}
+
+/* the SPS and the PPS of the MP4 as NAL units without start codes (the header byte first): their lengths, 0 when they are not there */
+static int hw_param_sets(Video *v, unsigned char *sps, int *sl, unsigned char *pps, int *pl, int cap)
+{
+    unsigned char pp[1024];
+    int n = mp4_param_sets(v->mp4, pp, sizeof(pp));
+    *sl = *pl = 0;
+    for (int i = 0; i + 3 < n;) {
+        if (pp[i] == 0 && pp[i + 1] == 0 && pp[i + 2] == 1) {
+            int st = i + 3, e = st;
+            while (e + 2 < n && !(pp[e] == 0 && pp[e + 1] == 0 && pp[e + 2] <= 1))
+                e++;
+            if (e + 2 >= n)
+                e = n;
+            int type = pp[st] & 0x1F, len = e - st;
+            if (len > 0 && len <= cap) {
+                if (type == 7 && !*sl) {
+                    memcpy(sps, pp + st, (size_t)len);
+                    *sl = len;
+                } else if (type == 8 && !*pl) {
+                    memcpy(pps, pp + st, (size_t)len);
+                    *pl = len;
+                }
+            }
+            i = e;
+        } else {
+            i++;
+        }
+    }
+    return *sl > 0 && *pl > 0;
+}
+
+/* gives the decoder, the Engine's image and the library back (what hw_start made, in the other order) */
+static void hw_stop(Video *v)
+{
+    if (v->hwd) {
+        hwavc_close(v->hwd);
+        v->hwd = NULL;
+    }
+    if (meboot_current() == MEBOOT_BASELINE) { /* the Engine is given back the image it has for everything else (a Main video, the music's codecs) */
+        int br = meboot_start(MEBOOT_MAIN);
+        crumbh("hw-boot-main", (unsigned)br, 0, 0, 0);
+    }
+    hwlib_down();
+}
+
+/* Tries the PSP's own decoder for the stream (the software decoder is ready already): the library, the Engine's Baseline image, the decoder, and the first sample as a test. v->hwd is set when it
+ * all worked; else nothing is left running and the software decoder goes on. */
+static void hw_start(Video *v)
+{
+    unsigned char sps[256], pps[256], base[256];
+    int sl = 0, pl = 0;
+    crumbh("hw-find", meboot_nid(), (unsigned)meboot_devkit(), meboot_mask(), (unsigned)meboot_module()); /* the NID of sceMeBootStart that was found (0: none), the devkit version, which NIDs of the table the library has (bit n: entry n), the module name that found it */
+    if (!meboot_available() || !hw_param_sets(v, sps, &sl, pps, &pl, (int)sizeof(sps))) {
+        crumb4("hw-no", meboot_available(), sl, pl, 0);
+        return;
+    }
+    if (v->opt_hw != 3 && sl > 4 && sps[1] == 77) { /* a Main label on a stream that is Baseline in what it uses (the HandBrake PSP preset's files): the Engine's Baseline image is given a Baseline SPS */
+        int n = h264_sps_to_base(sps, sl, base, (int)sizeof(base));
+        if (n > 0) {
+            memcpy(sps, base, (size_t)n);
+            sl = n;
+        }
+    }
+    hwavc_log(hw_log);
+    if (!game_lib_unload())
+        return;
+    if (hwlib_up() < 0)
+        return;
+    int br = meboot_start(MEBOOT_BASELINE);
+    crumbh("hw-boot", (unsigned)br, meboot_nid(), (unsigned)meboot_current(), 0);
+    if (br < 0) {
+        hwlib_down();
+        return;
+    }
+    HwAvc *h = hwavc_open(sps, sl, pps, pl, mp4_nal_size(v->mp4));
+    unsigned char *buf = h ? memalign(64, (size_t)(v->au_cap + 63) & ~63u) : NULL;
+    unsigned char *rgb = h ? memalign(64, (size_t)FRAME_W * 512 * 4) : NULL;
+    int ok = 0;
+    if (h && buf && rgb) { /* the first sample (a key frame) decoded as a test: every error of the library shows here, before a picture is wanted */
+        int size = mp4_video_read(v->mp4, 0, buf, v->au_cap), pics = 0, w = 0, hh = 0;
+        unsigned err = 0;
+        int r = size > 0 ? hwavc_decode(h, buf, size, 3, rgb, &pics, &w, &hh, &err) : -9;
+        crumb4("hw-probe", r, (int)err, pics, w * 1000 + hh);
+        ok = r == 0 && pics > 0 && w > 0 && hh > 0;
+    }
+    free(rgb);
+    if (!ok) {
+        free(buf);
+        v->hwd = h;
+        hw_stop(v); /* (closes h) */
+        return;
+    }
+    v->hwd = h;
+    v->hwbuf = buf;
+    v->hw_first = 1;
+    crumb("hw-on", 0, 0);
+}
+
+/* The decoder failed while the video played (the screen's thread calls this): the software decoder goes on from where the clock is. */
+static void hw_fallback(Video *v, int why)
+{
+    crumbh("hw-fallback", (unsigned)why, (unsigned)v->n_dec, (unsigned)v->err_total, 0);
+    soft_stop(v); /* (the thread first: it uses the decoder) */
+    hw_stop(v);
+    v->hw_err = 0;
+    v->have_pic = 0;
+    v->pic.psm = GU_PSM_5650;
+    v->pic.opaque = 0;
+    if (!soft_buffers(v, (size_t)FRAME_W * 512 * 2)) {
+        v->failed = 1;
+        return;
+    }
+    if (!v->ge)
+        v->pic.data = v->fbuf[0];
+    video_play(v, (float)v->clock);
 }
 
 Video *video_open(const char *path)
@@ -1037,9 +1152,6 @@ Video *video_open(const char *path)
                     v->um.force = strstr(buf, "force=1") != NULL;
                     v->opt_soft = strstr(buf, "soft=1") ? 1 : strstr(buf, "soft=0") ? 0 : -1;
                     v->opt_hw = strstr(buf, "hw=1") ? 1 : strstr(buf, "hw=3") ? 3 : 0;
-                    v->um.hw = v->opt_hw != 0;
-                    v->um.hw_keep = v->opt_hw == 3;
-                    v->opt_hwfail = strstr(buf, "hwfail=1") ? 1 : strstr(buf, "hwfail=2") ? 2 : 0;
                     v->opt_ge = strstr(buf, "ge=0") ? 0 : 1;
                     v->opt_pcm = strstr(buf, "pcm=1") != NULL;
                     v->opt_slow = strstr(buf, "slow=0") == NULL;
@@ -1053,29 +1165,16 @@ Video *video_open(const char *path)
         crumb4("opts", opts_n, v->opt_soft, v->opt_hw, v->opt_ge); /* bytes read from PSP5/video-opts.txt (-1: no such file), soft= (-1 = not given), hw=, ge= */
         if (v->opt_hw && !v->um.hw_ok)
             crumb4("hw-not-taken", v->um.profile, v->um.poc, v->um.cabac, v->um.nref); /* hw=1 was asked for, but the stream is not one the Baseline mode is tried with: its profile, picture order type, CABAC, reference frames */
-        /* a CAVLC stream without B pictures goes to the hardware decoder in its Baseline mode when hw=1 / hw=3 says so and the function that starts the Engine with it can be reached; else (and when it
-         * does not work, see hw_to_soft) the software decoder takes it, as it always did */
-        if (v->um.hw_ok) {
-#ifdef PSP5_ANY_STREAM
-            int can = 1; /* (PPSSPP has no ARK: meboot.c pretends, and its decoder takes the stream: what is tested is the rest) */
-#else
-            int can = meboot_available();
-#endif
-            if (v->opt_soft != 1 && can && !s_poisoned)
-                v->hw = 1;
-            else
-                v->um.unsupported = 1;
-            crumb4("hw-try", v->hw, can, s_poisoned, v->opt_hw);
-            crumbh("hw-find", meboot_nid(), (unsigned)meboot_devkit(), meboot_mask(), (unsigned)meboot_module()); /* the NID of sceMeBootStart that was found (0: none), the devkit version, which NIDs of the table the library has (bit n: entry n), the module name that found it */
-        }
 #ifdef PSP5_ANY_STREAM /* (PPSSPP takes every stream: its pictures are what the tests and the README show; soft=1 tries the software decoder there) */
         int soft = v->opt_soft == 1;
 #else
         int soft = v->um.unsupported ? v->opt_soft != 0 : v->opt_soft == 1;
 #endif
-        if (soft) { /* the PSP's decoder cannot take the stream (CAVLC, High profile): h264dec.c makes the pictures */
+        if (soft) { /* the PSP's decoder (the one of the games' library) cannot take the stream (CAVLC, High profile): h264dec.c makes the pictures, or, with hw=1, the PSP's own decoder in its other mode */
             if (!soft_prepare(v))
                 goto fail;
+            if (v->opt_hw && v->um.hw_ok && v->opt_soft != 1)
+                hw_start(v); /* (the software decoder is the way back when anything of it fails) */
         }
 #ifndef PSP5_ANY_STREAM
         else if (v->um.unsupported) { /* (soft=0) refused before the decoder sees it: a stream it cannot take gives its fatal error and breaks it for every video after */
@@ -1106,25 +1205,6 @@ Video *video_open(const char *path)
             crumb("open-fail", __LINE__, 0);
             goto fail;
         }
-        /* the Media Engine's firmware for the decoder's mode: its Baseline image for a CAVLC stream, its Main one (the one this program started the Engine with before the first Baseline video) for
-         * the others; never while the library is up */
-        if (v->hw) {
-            if (!s_ddr)
-                s_ddr = memalign(0x400000, 0x200000);
-            int br = s_ddr ? meboot_start(MEBOOT_BASELINE) : -2;
-#ifdef PSP5_TEST
-            if (v->opt_hwfail == 1)
-                br = -5;
-#endif
-            crumbh("hw-boot", (unsigned)br, meboot_nid(), (unsigned)meboot_current(), (unsigned)(uintptr_t)s_ddr);
-            if (br < 0) {
-                if (!hw_to_soft(v, br))
-                    goto fail;
-            }
-        } else if (meboot_current() == MEBOOT_BASELINE) {
-            int br = meboot_start(MEBOOT_MAIN);
-            crumbh("hw-boot-main", (unsigned)br, 0, 0, 0);
-        }
         if (!v->soft) {
             int mi = sceMpegInit();
             VLOG("mpeg init %08x\n", mi);
@@ -1136,11 +1216,11 @@ Video *video_open(const char *path)
         }
     }
     /* the decoder writes whole blocks of 16 and the PSP's own library decides how far it goes: the buffer is always the biggest a video can need (512 by 512 of 16 bits), so nothing can be written past it */
-    size_t frame_bytes = (size_t)FRAME_W * 512 * 2;
+    size_t frame_bytes = (size_t)FRAME_W * 512 * (v->hwd ? 4 : 2); /* (RGBA from the PSP's own decoder) */
     v->frame = memalign(64, frame_bytes);
     if (!v->soft) {
         v->ring_size = sceMpegRingbufferQueryMemSize(RING_PACKETS);
-        v->mpeg_size = sceMpegQueryMemSize(v->hw ? HW_MODE : 0);
+        v->mpeg_size = sceMpegQueryMemSize(0);
         if (v->ring_size > 0 && v->mpeg_size > 0) {
             v->ring_data = memalign(64, (size_t)v->ring_size);
             v->mpeg_mem = memalign(64, (size_t)v->mpeg_size);
@@ -1157,7 +1237,8 @@ Video *video_open(const char *path)
     v->pic.tw = FRAME_W;
     v->pic.th = pow2(v->h);
     v->pic.stride = FRAME_W;
-    v->pic.psm = GU_PSM_5650;
+    v->pic.psm = v->hwd ? GU_PSM_8888 : GU_PSM_5650;
+    v->pic.opaque = v->hwd != NULL; /* (the converter's alpha is not known: the picture is drawn without blending) */
     v->pic.data = v->frame;
     if (v->soft && !soft_buffers(v, frame_bytes)) {
         crumb("open-fail", __LINE__, 0);
@@ -1199,6 +1280,7 @@ void video_close(Video *v)
     if (!v->quiet)
         crumb("closing", 0, 0);
     soft_stop(v);
+    hw_stop(v);
     v->started = 0;
     audio_stop(v);
     session_destroy(v);
@@ -1206,10 +1288,6 @@ void video_close(Video *v)
     free(v->mpeg_mem);
     if (v->lib_up && TD_STEP(TD_FINISH))
         sceMpegFinish();
-    if (meboot_current() == MEBOOT_BASELINE) { /* the Engine is given back the image it has for everything else (a Main video, the music's codecs) */
-        int br = meboot_start(MEBOOT_MAIN);
-        crumbh("hw-boot-main", (unsigned)br, 0, 0, 0);
-    }
     aac_close(v);
     h264d_free(v->dec);
     if (v->soft && !v->quiet)
@@ -1233,6 +1311,7 @@ void video_close(Video *v)
         }
     }
     free(v->dump);
+    free(v->hwbuf);
     free(v->ybuf[0]);
     free(v->ybuf[1]);
     free(v->ybuf[2]);
@@ -1335,8 +1414,6 @@ int video_play(Video *v, float at)
     }
     int ok = v->soft ? soft_start(v) : session_create(v);
     VLOG("play at %.2f: session %d\n", at, ok);
-    if (!ok && v->hw && hw_to_soft(v, -3))
-        return video_play(v, at); /* (the hardware decoder would not start: the software one does the same) */
     if (!ok)
         v->failed = 1; /* (the crash file is kept) */
     return ok;
@@ -1394,6 +1471,11 @@ static void soft_publish(Video *v)
     v->pending = 0;
     if (v->pend_ts + 0.034 < v->skip_until - 0.03)
         return;
+    if (v->hwd) { /* the PSP's decoder made the picture in the buffer it was given (soft_step) */
+        v->last_pub = now_us();
+        v->rdy = v->hw_b;
+        return;
+    }
     int rd = v->rdy, fr = v->front, b = 0;
     while (b == rd || b == fr)
         b++;
@@ -1458,7 +1540,7 @@ static int soft_step(Video *v)
     }
     int i = v->vnext++;
     unsigned long long t0 = now_us();
-    int sz = mp4_video_read(v->mp4, i, v->sample, v->au_cap);
+    int sz = mp4_video_read(v->mp4, i, v->hwd ? v->hwbuf : v->sample, v->au_cap);
     v->t_io += (unsigned)(now_us() - t0);
     /* a picture that is late is made without the loop filter (what a later picture is predicted from is then not quite as it should be: about the cheapest way to catch up); so are the long run-ups of a jump */
     int fast = late > 0.1 || v->skip_until - pts > 0.5 || (v->opt_slow && (v->speed < 0.995f || now_us() < v->lf_block));
@@ -1466,7 +1548,27 @@ static int soft_step(Video *v)
     h264d_set_fast(v->dec, fast);
     v->soft_skip_n += (unsigned)fast;
     unsigned long long a = now_us();
-    int r = sz > 0 ? h264d_decode(v->dec, v->sample, sz) : -1;
+    int r;
+    if (v->hwd) { /* the PSP's own decoder: the sample as the file has it, the picture as RGBA in a buffer that is neither on the screen nor ready */
+        r = -1;
+        if (sz > 0) {
+            int rd = v->rdy, fr = v->front, b = 0, pics = 0, ww = 0, hh = 0;
+            unsigned err = 0;
+            while (b == rd || b == fr)
+                b++;
+            int hr = hwavc_decode(v->hwd, v->hwbuf, sz, (key || v->hw_first) ? 3 : 0, v->fbuf[b], &pics, &ww, &hh, &err);
+            if (hr == 0) {
+                r = pics > 0;
+                v->hw_first = 0;
+                v->hw_b = b;
+            } else {
+                crumb4("hw-error", hr, (int)err, i, v->n_dec); /* the step that failed, the library's answer, the sample, the pictures before it */
+                v->hw_err = 1;
+            }
+        }
+    } else {
+        r = sz > 0 ? h264d_decode(v->dec, v->sample, sz) : -1;
+    }
 #ifdef PSP5_TEST
     if (v->opt_burn > 0) { /* test switch burn=N: N more milliseconds of work for every picture (a slower processor) */
         unsigned long long until = now_us() + (unsigned long long)v->opt_burn * 1000;
@@ -1544,6 +1646,8 @@ static int soft_start(Video *v)
     v->pending = 0;
     v->rdy = -1;
     v->last_pub = 0;
+    v->hw_first = 1; /* (a play starts at a key frame: the PSP's decoder is given it as a first sample) */
+    v->hw_err = 0;
     v->wquit = 0;
     v->wthread = sceKernelCreateThread("psp5_vdec", soft_thread, 0x24, 0x10000, 0, NULL); /* (below the screen's thread: the buttons and the drawing come first) */
     if (v->wthread < 0) {
@@ -1602,14 +1706,18 @@ int video_update(Video *v, float dt)
     }
     if (!v->have_pic && (v->since += dt) > 8.0f) {
         crumb4("no-picture", v->n_put, v->n_au, v->n_dec, v->src_eof);
-        if (v->hw && hw_to_soft(v, -4)) { /* (the hardware decoder gave nothing in eight seconds: the software one) */
-            video_play(v, (float)v->clock);
+        if (v->hwd) { /* (the PSP's decoder gave nothing in eight seconds: the software decoder goes on) */
+            hw_fallback(v, -4);
             return 0;
         }
         v->failed = 1;
         return 0;
     }
     if (v->soft) { /* the thread makes the pictures: what is ready goes on the screen */
+        if (v->hw_err && v->hwd) { /* the PSP's decoder did not take a sample: the software decoder goes on from here */
+            hw_fallback(v, 1);
+            return 0;
+        }
         int shown = 0, r = v->rdy;
         if (r >= 0) {
             v->front = r; /* (in this order: see soft_publish) */
@@ -1686,10 +1794,6 @@ int video_update(Video *v, float dt)
         }
         v->decoded = 1;
         int r = sceMpegAvcDecode(&v->mpeg, &v->au_avc, FRAME_W, &buf, &got);
-#ifdef PSP5_TEST
-        if (v->hw && v->opt_hwfail == 2 && v->n_dec == 0)
-            r = (int)0x80628001u;
-#endif
         v->have_au = 0;
         v->n_dec++;
         v->last_ts = v->au_ts;
@@ -1703,13 +1807,6 @@ int video_update(Video *v, float dt)
                 s_poisoned = 1; /* (the decoder's fatal error: a PSP gave nothing but 0x80020199 to every video after it) */
             if (v->dec_errors < 3)
                 crumbh("decode-error", (unsigned)r, (unsigned)v->dec_errors, v->au_avc.iAuSize, 0);
-            if (v->hw && !v->have_pic && v->n_dec <= 3) { /* the Baseline mode of the hardware decoder did not take the stream: the software decoder does, from here */
-                if (hw_to_soft(v, r))
-                    video_play(v, (float)v->clock);
-                else
-                    v->failed = 1;
-                return 0;
-            }
             if (++v->dec_errors > 30)
                 v->failed = 1;
             continue;
