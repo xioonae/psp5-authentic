@@ -12,6 +12,7 @@
 #include "mp4.h"
 #include "mpegps.h"
 #include "aac.h"
+#include "tscale.h"
 #include "h264dec.h"
 #include "unit.h"
 #include "music.h"
@@ -239,7 +240,7 @@ struct Video {
     unsigned long long t_play0;
     volatile float speed;          /* how fast a video in software plays: 1 = as it is; below that, the sound is played slower (resampled) and the clock goes slower with it, when the decoder cannot keep up */
     float speed_min;
-    unsigned long long ctl_t;
+    unsigned long long ctl_t, lf_block;
     int opt_slow, opt_burn;
     volatile unsigned t_io, t_conv, t_aud, underruns; /* microseconds spent reading, converting and decoding sound; times the sound ran dry (for the log) */
     int quiet;    /* closed without a trace (refused before anything was done) */
@@ -423,21 +424,40 @@ static int audio_thread(SceSize args, void *argp)
 {
     Video *v = *(Video **)argp;
     short *block = memalign(64, BLOCK * 8);
-    int starving = 0, flip = 0;
-    float pos = 0; /* where in the queue the next output frame is made from, in frames after the tail (below one) */
+    short *win = memalign(64, TS_WINDOW * 4);
+    TScale *ts = memalign(64, sizeof(TScale));
+    int starving = 0, flip = 0, stretch = 0, calm = 0;
     unsigned long long tprev = 0;
-    while (!v->quit && block) {
+    while (!v->quit && block && win && ts) {
         if (v->reset) {
             v->tail = v->head;
             v->played = 0;
-            pos = 0;
+            stretch = 0;
             __sync_synchronize();
             v->reset = 0;
             continue;
         }
         float sp = v->speed;
-        int need = sp >= 0.9995f ? BLOCK : (int)((float)BLOCK * sp) + 3; /* frames the queue has to hold for a block */
-        if (v->paused || !v->started || pcm_count(v) < need) {
+        /* The video is slowed down (the PSP cannot decode it as fast as it plays): the sound is made longer with it, with its pitch as it was (tscale.c). It starts when the speed goes below one and
+         * stops three seconds after it is back at one (the sound then goes on where the last piece would have gone on: no jump). */
+        if (stretch && sp >= 0.9995f && ++calm > 130) {
+            v->tail = (int)(ts->prev_start + TS_HOP);
+            v->played = (unsigned)v->tail;
+            stretch = 0;
+        } else if (stretch && sp < 0.9995f) {
+            calm = 0;
+        }
+        if (!stretch && sp < 0.9995f && v->tail > 200) {
+            ts_begin(ts, (long long)v->tail);
+            stretch = 1;
+            calm = 0;
+        }
+        int ready;
+        if (stretch)
+            ready = (long long)v->head >= ts_low(ts) + TS_WINDOW + TS_HOP;
+        else
+            ready = pcm_count(v) >= BLOCK;
+        if (v->paused || !v->started || !ready) {
             tprev = 0; /* (a wait is not a gap between two blocks) */
             if (v->started && !v->paused && !(v->src_eof & 2) && !starving) {
                 starving = 1;
@@ -449,28 +469,31 @@ static int audio_thread(SceSize args, void *argp)
         starving = 0;
         short *blk = block + (flip ? BLOCK * 2 : 0); /* two blocks in turn: the one just given to the output is not written over */
         flip ^= 1;
-        int used = BLOCK;
-        if (sp >= 0.9995f) {
+        if (stretch) {
+            for (int h = 0; h < BLOCK / TS_HOP; h++) {
+                long long low = ts_low(ts);
+                for (int i = 0; i < TS_WINDOW; i++) {
+                    int at = (int)((low + i) & (PCM_FRAMES - 1));
+                    win[i * 2] = v->pcm[at * 2];
+                    win[i * 2 + 1] = v->pcm[at * 2 + 1];
+                }
+                float s2 = v->speed;
+                s2 = s2 > 1.0f ? 1.0f : s2 < 0.5f ? 0.5f : s2;
+                ts_hop(ts, win, (double)TS_HOP * (double)s2, blk + h * TS_HOP * 2);
+            }
+            long long nlow = ts_low(ts);
+            if (nlow > v->tail)
+                v->tail = (int)nlow;
+            v->played = (unsigned)(long long)ts->nom; /* where in the sound this block is, in frames */
+        } else {
             for (int i = 0; i < BLOCK; i++) {
                 int at = (v->tail + i) & (PCM_FRAMES - 1);
                 blk[i * 2] = v->pcm[at * 2];
                 blk[i * 2 + 1] = v->pcm[at * 2 + 1];
             }
-            pos = 0;
-        } else { /* the video is slowed down: the sound is played slower with it (each output frame is made from two frames of the queue) */
-            for (int i = 0; i < BLOCK; i++) {
-                int ix = (int)pos;
-                float fr = pos - (float)ix;
-                int a = (v->tail + ix) & (PCM_FRAMES - 1), b2 = (v->tail + ix + 1) & (PCM_FRAMES - 1);
-                int l0 = v->pcm[a * 2], l1 = v->pcm[b2 * 2], r0 = v->pcm[a * 2 + 1], r1 = v->pcm[b2 * 2 + 1];
-                blk[i * 2] = (short)(l0 + (int)((float)(l1 - l0) * fr));
-                blk[i * 2 + 1] = (short)(r0 + (int)((float)(r1 - r0) * fr));
-                pos += sp;
-            }
-            used = (int)pos;
-            pos -= (float)used;
+            v->tail += BLOCK;
+            v->played += BLOCK;
         }
-        v->tail += used;
         if (v->dump && v->dump_n + BLOCK * 4 <= v->dump_cap) {
             memcpy(v->dump + v->dump_n, blk, BLOCK * 4);
             v->dump_n += BLOCK * 4;
@@ -486,9 +509,10 @@ static int audio_thread(SceSize args, void *argp)
         }
         tprev = tn;
         v->blocks++;
-        v->played += (unsigned)used;
     }
     free(block);
+    free(win);
+    free(ts);
     return 0;
 }
 
@@ -1096,8 +1120,8 @@ void video_close(Video *v)
         crumb_end();
     } else {
         crumb4("end", v->n_put, v->n_au, v->n_dec, v->err_total);
-        if (v->failed || v->err_total > 0 || (v->soft && v->soft_late_n * 5 > (unsigned)v->n_dec + 5))
-            crumb_keep(); /* it did not play right (or a video in software was late with more than one picture in five: how fast the PSP is): the file stays (video-failed.txt) */
+        if (v->failed || v->err_total > 0 || (v->soft && (v->soft_late_n * 5 > (unsigned)v->n_dec + 5 || v->speed_min < 0.97f)))
+            crumb_keep(); /* it did not play right (or a video in software was late with more than one picture in five, or had to slow down: how fast the PSP is): the file stays (video-failed.txt) */
         else
             crumb_end(); /* it was closed the right way and played: nothing to leave behind */
     }
@@ -1188,6 +1212,7 @@ int video_play(Video *v, float at)
     v->speed = 1.0f;
     v->speed_min = 1.0f;
     v->ctl_t = 0;
+    v->lf_block = 0;
     v->clock = at;
     v->clock_ms = (int)(at * 1000.0);
     v->skip_until = at;
@@ -1308,9 +1333,11 @@ static int soft_step(Video *v)
             if (late > 0.04)
                 sp -= 0.30f * (float)(late - 0.04) * dts2;
             else if (late < 0.02)
-                sp += 0.02f * dts2;
-            sp = sp < 0.6f ? 0.6f : sp > 1.0f ? 1.0f : sp;
+                sp += 0.03f * dts2;
+            sp = sp < 0.7f ? 0.7f : sp > 1.0f ? 1.0f : sp;
             v->speed = sp;
+            if (sp < 0.995f)
+                v->lf_block = tn + 15000000ull; /* (the loop filter is not used again for 15 seconds after the speed was below one: with it a picture takes a third longer, and the speed would go down again) */
             if (sp < v->speed_min)
                 v->speed_min = sp;
         }
@@ -1334,7 +1361,7 @@ static int soft_step(Video *v)
     int sz = mp4_video_read(v->mp4, i, v->sample, v->au_cap);
     v->t_io += (unsigned)(now_us() - t0);
     /* a picture that is late is made without the loop filter (what a later picture is predicted from is then not quite as it should be: about the cheapest way to catch up); so are the long run-ups of a jump */
-    int fast = late > 0.1 || v->skip_until - pts > 0.5;
+    int fast = late > 0.1 || v->skip_until - pts > 0.5 || (v->opt_slow && (v->speed < 0.995f || now_us() < v->lf_block));
     v->soft_late_n += late > 0.1;
     h264d_set_fast(v->dec, fast);
     v->soft_skip_n += (unsigned)fast;
