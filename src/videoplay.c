@@ -293,6 +293,13 @@ static void draw_picture(const Texture *t)
     gfx_tex(t, floorf((SCREEN_W - w) / 2), floorf((SCREEN_H - h) / 2), w, h, RGBA(255, 255, 255, 255));
 }
 
+static void draw_yuv(const VideoYuv *y)
+{
+    float k = fminf((float)SCREEN_W / y->w, (float)SCREEN_H / y->h);
+    float w = floorf(y->w * k + 0.5f), h = floorf(y->h * k + 0.5f);
+    gfx_yuv(y->plane, y->w, y->h, y->ystride, y->cstride, floorf((SCREEN_W - w) / 2), floorf((SCREEN_H - h) / 2), w, h);
+}
+
 static void draw_overlay(const VideoPlayer *v, float a)
 {
     gfx_gradient_v(0, 0, SCREEN_W, 56, RGBA(0, 0, 0, (int)(150 * a)), RGBA(0, 0, 0, 0));
@@ -353,8 +360,13 @@ static void draw_question(const VideoPlayer *v, float a)
 
 void videoplay_draw(VideoPlayer *v)
 {
-    if (v->vid && !v->failed)
-        draw_picture(video_picture(v->vid));
+    if (v->vid && !v->failed) {
+        const VideoYuv *yuv = video_yuv(v->vid);
+        if (yuv)
+            draw_yuv(yuv);
+        else
+            draw_picture(video_picture(v->vid));
+    }
     if (v->failed)
         text_draw(SCREEN_W / 2, SCREEN_H / 2 + 5, 0.7f, 0, RGBA(238, 238, 242, 255), ALIGN_CENTER, L(v->poison ? S_VID_POISON : S_VID_CANT));
     float a = v->overlay >= OVERLAY_FADE ? 1 : v->overlay > 0 ? v->overlay / OVERLAY_FADE : 0;

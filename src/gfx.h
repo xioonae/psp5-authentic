@@ -41,6 +41,9 @@ void gfx_line(float x0, float y0, float x1, float y1, u32 color);
 /* A thin line through the points xy[2n] (not smoothed), each point with its own colour: gfx_polyline() is for many lines (16 bytes of the display list a point). */
 void gfx_polyline(const float *xy, const u32 *colors, int n);
 void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint);
+/* a picture of three 8 bit planes (Y, then U and V with half the width and height; row lengths ystride and cstride, at most 512 and 256, in main memory, written out of the cache), w x h, drawn by the
+ * graphics chip into the rectangle x, y, dw, dh with the colours of BT.601 (video range) */
+void gfx_yuv(const unsigned char *const plane[3], int w, int h, int ystride, int cstride, float x, float y, float dw, float dh);
 /* A picture of the whole screen, kept in video memory, for something that looks the same every frame (the background):
  * draw it once between gfx_snapshot_begin() and gfx_snapshot_end() (the drawing goes into the picture, not onto the screen),
  * then gfx_snapshot_draw() puts the picture on the screen - one opaque image, far cheaper than drawing it all again. The

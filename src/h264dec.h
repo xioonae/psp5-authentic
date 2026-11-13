@@ -24,8 +24,12 @@ int h264d_decode(H264Dec *d, const uint8_t *sample, int len);
 int h264d_why(const H264Dec *d); /* the reason (enum above) of the last -1, or H264_OK */
 int h264d_width(const H264Dec *d);  /* what is shown (the cropping of the SPS taken off) */
 int h264d_height(const H264Dec *d);
-/* the picture of the last decode (when it gave 1) as 16 bits per pixel in the PSP's 5650 order (red in the low bits); stride in pixels */
-void h264d_rgb565(const H264Dec *d, uint16_t *dst, int stride);
+/* the picture of the last decode (when it gave 1) as 16 bits per pixel in the PSP's 5650 order (red in the low bits); stride in pixels. Only the blocks that changed since the last picture that was
+ * converted into the same buffer are made again, so a buffer must always be given the same `slot` (0, 1 or 2: up to three buffers) and a slot the same buffer. */
+void h264d_rgb565(const H264Dec *d, uint16_t *dst, int stride, int slot);
+/* the part of the picture of the last decode that is shown (when it gave 1), as planes: Y into y (rows of ys bytes), U and V into u and v (rows of cs bytes, half the width and height): for a picture whose colours
+ * are made elsewhere */
+void h264d_copy_planes(const H264Dec *d, unsigned char *y, int ys, unsigned char *u, unsigned char *v, int cs);
 /* the number of reference frames the SPS asks for, for the log */
 int h264d_nref(const H264Dec *d);
 /* the loop filter is left out of the pictures that follow (1) or put back (0): about a third of the time of a picture, and what a later picture is predicted from is then not quite as it should be */

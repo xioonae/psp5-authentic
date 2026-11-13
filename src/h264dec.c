@@ -335,9 +335,10 @@ static void free_pictures(H264Dec *d)
     d->dpb = NULL;
     d->ndpb = 0;
     d->cur = d->out = NULL;
-    free(d->slice_of); free(d->kind); free(d->qp); free(d->dbk_idc); free(d->uni); free(d->pdirty); free(d->acc); free(d->dbk_a); free(d->dbk_b);
+    free(d->slice_of); free(d->kind); free(d->qp); free(d->dbk_idc); free(d->uni); free(d->pdirty); free(d->acc[0]); free(d->acc[1]); free(d->acc[2]); free(d->dbk_a); free(d->dbk_b);
     free(d->ipred); free(d->nz); free(d->nzmask); free(d->mv); free(d->refi); free(d->refpic);
-    d->slice_of = NULL; d->kind = d->qp = d->dbk_idc = d->uni = d->pdirty = d->acc = NULL; d->dbk_a = d->dbk_b = d->ipred = NULL;
+    d->slice_of = NULL; d->kind = d->qp = d->dbk_idc = d->uni = d->pdirty = NULL;
+    d->acc[0] = d->acc[1] = d->acc[2] = NULL; d->dbk_a = d->dbk_b = d->ipred = NULL;
     d->nz = NULL; d->nzmask = NULL; d->mv = NULL; d->refi = NULL; d->refpic = NULL;
     d->as = NULL;
 }
@@ -368,7 +369,8 @@ static int activate(H264Dec *d, const H264Sps *s)
     d->dbk_idc = calloc((size_t)n, 1);
     d->uni = calloc((size_t)n, 1);
     d->pdirty = calloc((size_t)n, 1);
-    d->acc = calloc((size_t)n, 1);
+    for (int k = 0; k < 3; k++)
+        d->acc[k] = calloc((size_t)n, 1);
     d->dbk_a = calloc((size_t)n, 1);
     d->dbk_b = calloc((size_t)n, 1);
     d->ipred = calloc((size_t)n * 16, 1);
@@ -377,7 +379,7 @@ static int activate(H264Dec *d, const H264Sps *s)
     d->mv = calloc((size_t)n * 32, sizeof(int16_t));
     d->refi = calloc((size_t)n * 4, 1);
     d->refpic = calloc((size_t)n * 4, sizeof(int));
-    int ok = d->dpb && d->slice_of && d->kind && d->qp && d->dbk_idc && d->uni && d->pdirty && d->acc && d->dbk_a && d->dbk_b && d->ipred && d->nz && d->nzmask && d->mv && d->refi && d->refpic;
+    int ok = d->dpb && d->slice_of && d->kind && d->qp && d->dbk_idc && d->uni && d->pdirty && d->acc[0] && d->acc[1] && d->acc[2] && d->dbk_a && d->dbk_b && d->ipred && d->nz && d->nzmask && d->mv && d->refi && d->refpic;
     for (int i = 0; ok && i < d->ndpb; i++) {
         d->dpb[i].buf = malloc((size_t)d->pic_bytes);
         if (!d->dpb[i].buf) {
@@ -396,7 +398,7 @@ static int activate(H264Dec *d, const H264Sps *s)
     }
     d->as = s;
     d->have_idr = 0;
-    d->dirty_all = 1;
+    d->dirty_all[0] = d->dirty_all[1] = d->dirty_all[2] = 1;
     return 1;
 }
 
@@ -1279,11 +1281,12 @@ static void finish_picture(H264Dec *d)
         for (int x = 0; x < d->mbw; x++) {
             int mb = y * d->mbw + x;
             if (d->slice_of[mb] < 0) { /* never decoded: everything is made again */
-                d->dirty_all = 1;
+                d->dirty_all[0] = d->dirty_all[1] = d->dirty_all[2] = 1;
             } else if (d->pdirty[mb]) {
                 for (int j = y > 0 ? y - 1 : 0; j <= y + 1 && j < d->mbh; j++)
                     for (int i = x > 0 ? x - 1 : 0; i <= x + 1 && i < d->mbw; i++)
-                        d->acc[j * d->mbw + i] = 1;
+                        for (int k = 0; k < 3; k++)
+                            d->acc[k][j * d->mbw + i] = 1;
             }
             d->pdirty[mb] = 0;
         }
@@ -1469,7 +1472,7 @@ void h264d_reset(H264Dec *d)
     d->have_idr = 0;
     d->pic_started = 0;
     d->out = NULL;
-    d->dirty_all = 1;
+    d->dirty_all[0] = d->dirty_all[1] = d->dirty_all[2] = 1;
     d->prev_id = 0;
 }
 
@@ -1514,9 +1517,24 @@ int h264d_width(const H264Dec *d) { return d->width; }
 int h264d_height(const H264Dec *d) { return d->height; }
 int h264d_nref(const H264Dec *d) { return d->as ? d->as->nref : 0; }
 
+void h264d_copy_planes(const H264Dec *d, unsigned char *y, int ys, unsigned char *u, unsigned char *v, int cs)
+{
+    const H264Pic *p = d->out;
+    if (!p)
+        return;
+    const H264Sps *s = d->as;
+    int x0 = 2 * s->crop_l, y0 = 2 * s->crop_t, w = d->width, h = d->height;
+    for (int j = 0; j < h; j++)
+        memcpy(y + (ptrdiff_t)j * ys, p->p[0] + (ptrdiff_t)(y0 + j) * d->stride[0] + x0, (size_t)w);
+    for (int j = 0; j < (h + 1) / 2; j++) {
+        memcpy(u + (ptrdiff_t)j * cs, p->p[1] + (ptrdiff_t)(y0 / 2 + j) * d->stride[1] + x0 / 2, (size_t)(w + 1) / 2);
+        memcpy(v + (ptrdiff_t)j * cs, p->p[2] + (ptrdiff_t)(y0 / 2 + j) * d->stride[2] + x0 / 2, (size_t)(w + 1) / 2);
+    }
+}
+
 /* the picture as 5650 (red in the low bits, the PSP's order); BT.601 with the video range. One table look-up per colour of a pixel: the tables take the sum (the luma plus what the chroma adds) and give the
  * colour clipped and in its place in the 16 bits. */
-void h264d_rgb565(const H264Dec *d_, uint16_t *dst, int stride)
+void h264d_rgb565(const H264Dec *d_, uint16_t *dst, int stride, int slot)
 {
     H264Dec *d = (H264Dec *)d_; /* (what has been converted is noted in it) */
     static int16_t ytab[256], rv[256], gu[256], gv[256], bu[256];
@@ -1547,10 +1565,11 @@ void h264d_rgb565(const H264Dec *d_, uint16_t *dst, int stride)
     int x0 = 2 * s->crop_l, y0 = 2 * s->crop_t;
     int w = d->width, h = d->height;
     int cropped = x0 || y0 || w != d->mbw * 16 || h != d->mbh * 16;
-    int all = d->dirty_all || cropped;
+    uint8_t *acc = d->acc[slot];
+    int all = d->dirty_all[slot] || cropped;
     for (int my = 0; my < d->mbh; my++)
         for (int mx = 0; mx < d->mbw; mx++) {
-            if (!all && !d->acc[my * d->mbw + mx])
+            if (!all && !acc[my * d->mbw + mx])
                 continue;
             int ya = my * 16, yb = ya + 16, xa = mx * 16, xb = xa + 16;
             if (cropped) { /* the whole picture at once, in the first block */
@@ -1572,6 +1591,6 @@ void h264d_rgb565(const H264Dec *d_, uint16_t *dst, int stride)
                 }
             }
         }
-    memset(d->acc, 0, (size_t)d->nmb);
-    d->dirty_all = 0;
+    memset(acc, 0, (size_t)d->nmb);
+    d->dirty_all[slot] = 0;
 }

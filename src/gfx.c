@@ -377,6 +377,91 @@ void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint)
         sceGuEnable(GU_BLEND);
 }
 
+/* --- a picture of three planes (Y, U and V, 8 bits each, 4:2:0): the graphics chip makes the colours ---
+ *
+ * The video player's software decoder (h264dec.c) hands over planes. Making RGB of them on the CPU cost as much as decoding the picture, so the GE does it: each plane is an 8 bit texture with a palette, and
+ * the picture is drawn in five passes on top of each other: the luma as grey (replaces what is there), then what the V and the U plane add to the red, green and blue (added), then what they take away
+ * (subtracted). The palettes hold the BT.601 factors for the video range (R = 1.164 (Y - 16) + 1.596 (V - 128), G = 1.164 (Y - 16) - 0.391 (U - 128) - 0.813 (V - 128), B = 1.164 (Y - 16) + 2.018 (U - 128)):
+ * a colour cannot be negative, so what V and U add and what they take away are two palettes each. A channel gets either an addition or a subtraction from a plane, never both, so the clamping of each
+ * pass changes nothing except for green, which gets something from both planes: V (adding, then taking away) comes first and then U, which is right for the saturated bright colours (yellow, cyan) and
+ * a few steps off, at most, for a pixel that is both very bright and has chroma that pulls the green up and down by a lot. The chroma planes are drawn twice as big with the chip's linear filter, which also smooths them. */
+static u32 __attribute__((aligned(64))) s_yuv_clut[5][256];
+static int s_yuv_ready;
+
+static int yuv_clamp(float v)
+{
+    int i = (int)(v + 0.5f);
+    return i < 0 ? 0 : i > 255 ? 255 : i;
+}
+
+static void yuv_clut_init(void)
+{
+    for (int i = 0; i < 256; i++) {
+        float d = (float)(i - 128);
+        int y = yuv_clamp(1.164f * (float)(i - 16));
+        s_yuv_clut[0][i] = RGBA(y, y, y, 255);
+        s_yuv_clut[1][i] = RGBA(yuv_clamp(1.596f * d), yuv_clamp(-0.813f * d), 0, 255);   /* V adds */
+        s_yuv_clut[2][i] = RGBA(0, yuv_clamp(-0.391f * d), yuv_clamp(2.018f * d), 255);   /* U adds */
+        s_yuv_clut[3][i] = RGBA(yuv_clamp(-1.596f * d), yuv_clamp(0.813f * d), 0, 255);   /* V takes away */
+        s_yuv_clut[4][i] = RGBA(0, yuv_clamp(0.391f * d), yuv_clamp(-2.018f * d), 255);   /* U takes away */
+    }
+    sceKernelDcacheWritebackRange(s_yuv_clut, sizeof(s_yuv_clut));
+    s_yuv_ready = 1;
+}
+
+static int yuv_pow2(int n)
+{
+    int p = 1;
+    while (p < n)
+        p <<= 1;
+    return p;
+}
+
+void gfx_yuv(const unsigned char *const plane[3], int w, int h, int ystride, int cstride, float x, float y, float dw, float dh)
+{
+    if (!s_yuv_ready)
+        yuv_clut_init();
+    /* plane, palette, how it is put on what is there: 0 = replaces, 1 = added, 2 = subtracted */
+    static const struct { int plane, clut, mode; } PASS[5] = { { 0, 0, 0 }, { 2, 1, 1 }, { 2, 3, 2 }, { 1, 2, 1 }, { 1, 4, 2 } };
+    sceGuEnable(GU_TEXTURE_2D);
+    sceGuClutMode(GU_PSM_8888, 0, 0xFF, 0);
+    sceGuTexFunc(GU_TFX_REPLACE, GU_TCC_RGB);
+    sceGuTexWrap(GU_CLAMP, GU_CLAMP);
+    sceGuTexFilter(GU_LINEAR, GU_LINEAR);
+    for (int p = 0; p < 5; p++) {
+        int c = PASS[p].plane != 0;
+        int tw = c ? (w + 1) / 2 : w, th = c ? (h + 1) / 2 : h; /* the texels of the plane */
+        sceGuTexMode(GU_PSM_T8, 0, 0, 0);
+        sceGuClutLoad(32, s_yuv_clut[PASS[p].clut]);
+        sceGuTexImage(0, yuv_pow2(tw), yuv_pow2(th), c ? cstride : ystride, plane[PASS[p].plane]);
+        sceGuTexFlush();
+        if (PASS[p].mode == 0) {
+            sceGuDisable(GU_BLEND);
+        } else {
+            sceGuEnable(GU_BLEND);
+            sceGuBlendFunc(PASS[p].mode == 1 ? GU_ADD : GU_REVERSE_SUBTRACT, GU_FIX, GU_FIX, 0xFFFFFFFF, 0xFFFFFFFF);
+        }
+        /* in strips of 64 texels, as gfx_tex does: the chip reads a texture through a small cache */
+        int n = (tw + 63) / 64;
+        TVert *v = sceGuGetMemory(2 * n * sizeof(TVert));
+        float scale = dw / (float)tw; /* screen pixels per texel */
+        float xs = x, us = 0;
+        for (int k = 0; k < n; k++) {
+            float ue = k < n - 1 ? 64.0f * (k + 1) : (float)tw, xe = k < n - 1 ? floorf(x + ue * scale + 0.5f) : x + dw;
+            v[k * 2] = (TVert){ us, 0, 0xFFFFFFFF, xs, y, 0 };
+            v[k * 2 + 1] = (TVert){ ue, (float)th, 0xFFFFFFFF, xe, y + dh, 0 };
+            xs = xe;
+            us = ue;
+        }
+        sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2 * n, 0, v);
+    }
+    /* everything else is drawn as before */
+    sceGuBlendFunc(GU_ADD, GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA, 0, 0);
+    sceGuEnable(GU_BLEND);
+    s_bound = NULL;
+    s_filter = -1;
+}
+
 /* --- the snapshot: a picture of the screen in video memory --- */
 
 /* It lies behind the two screen buffers (they take 2 x 557 056 bytes of the 2 MB) and is laid out like one: 512 pixels a

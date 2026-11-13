@@ -59,7 +59,7 @@ struct H264Dec {
     int nrl;
     /* the picture being made (per macroblock) */
     int16_t *slice_of; /* the number of the slice a macroblock is in, -1 when it has not been decoded in this picture */
-    uint8_t *kind, *qp, *dbk_idc, *uni, *pdirty, *acc; /* pdirty: the macroblocks this picture changed against the one before; acc: those changed since the picture was last converted to RGB */
+    uint8_t *kind, *qp, *dbk_idc, *uni, *pdirty, *acc[3]; /* pdirty: the macroblocks this picture changed against the one before; acc: those changed since the picture was last converted to RGB, for each of three RGB buffers */
     int8_t *dbk_a, *dbk_b;
     int8_t *ipred;     /* 16 per macroblock: intra 4x4 prediction modes */
     uint8_t *nz;       /* 24 per macroblock: the number of coefficients of the blocks (16 luma in raster order, 4 + 4 chroma) */
@@ -81,7 +81,7 @@ struct H264Dec {
     int err;
     int why;
     int fast;
-    int dirty_all, prev_id;
+    int dirty_all[3], prev_id;
     uint8_t *rbsp;
     int rbsp_cap;
     uint32_t stop_bit;

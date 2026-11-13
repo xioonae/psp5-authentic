@@ -30,7 +30,14 @@ int video_play(Video *v, float at);
 void video_pause(Video *v, int paused);
 /* once a frame (also while paused, to be told when a picture that was asked for has come): 1 when there is a new picture to draw */
 int video_update(Video *v, float dt);
-const Texture *video_picture(const Video *v); /* the last picture, in the size of the video (NULL before the first) */
+const Texture *video_picture(const Video *v); /* the last picture, in the size of the video (NULL before the first, and NULL for a video whose picture is given as planes: video_yuv) */
+/* The last picture of a video that is decoded in software, as planes for gfx_yuv() (the graphics chip makes the colours): Y, U, V as 8 bit rows (ystride, cstride), the size of the video; NULL when the
+ * picture comes as a texture (video_picture) or there is none yet. Valid until the next call of video_update(). */
+typedef struct {
+    const unsigned char *plane[3];
+    int w, h, ystride, cstride;
+} VideoYuv;
+const VideoYuv *video_yuv(const Video *v);
 float video_time(const Video *v);              /* where the video is, in seconds */
 int video_ended(const Video *v);
 int video_failed(const Video *v); /* the decoder gave up: the video cannot go on */

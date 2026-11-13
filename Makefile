@@ -33,6 +33,9 @@ PSP_EBOOT_PIC1 = res/PIC1.PNG
 PSPSDK = $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
 
+# the software decoders are the heaviest loops of psp5: -O3 made a picture about 8 % faster in PPSSPP (instructions counted)
+src/h264dec.o src/h264rec.o src/h264lf.o: CFLAGS := $(filter-out -O2,$(CFLAGS)) -O3
+
 # The helper plugin (plugin/psp5time.c, a kernel module that ARK loads into a game) is built first and carried inside psp5 as a C array
 # (src/helper.c writes it out at every start with ARK, and adds its two lines to PLUGINS.TXT the first time).
 plugin/psp5time.prx: plugin/psp5time.c plugin/exports.exp plugin/Makefile src/awake.c src/awake.h

@@ -33,6 +33,7 @@ typedef struct {
 
 struct Mp4 {
     FILE *fp;
+    FILE *fpa; /* the sound has a file handle (and buffer) of its own: read in turn with the pictures through one, every other read would throw the buffer away and take 16 KB from the Memory Stick again */
     uint8_t *moov;
     long moov_size;
     Track v, a;
@@ -349,7 +350,7 @@ Mp4 *mp4_open(const char *path)
         mp4_close(m);
         return NULL;
     }
-    setvbuf(m->fp, NULL, _IOFBF, 16384);
+    setvbuf(m->fp, NULL, _IOFBF, 32768);
     walk(m, NULL, m->moov, m->moov_size, 0, moov_box);
     if (!m->v.used || !m->v.n_samples || !m->v.width || !m->v.height || m->v.avcc_len < 7) {
         mp4_close(m);
@@ -357,6 +358,11 @@ Mp4 *mp4_open(const char *path)
     }
     if (m->a.used && (!m->a.n_samples || m->a.rate <= 0 || m->a.channels <= 0))
         m->a.used = 0;
+    if (m->a.used) {
+        m->fpa = fopen(path, "rb");
+        if (m->fpa)
+            setvbuf(m->fpa, NULL, _IOFBF, 32768);
+    }
     return m;
 }
 
@@ -366,6 +372,8 @@ void mp4_close(Mp4 *m)
         return;
     if (m->fp)
         fclose(m->fp);
+    if (m->fpa)
+        fclose(m->fpa);
     free(m->moov);
     free(m);
 }
@@ -518,7 +526,8 @@ static int read_sample(Mp4 *m, const Track *t, int i, unsigned char *buf, int ca
 {
     int size = sample_size(t, i);
     long long off = sample_offset(t, i);
-    if (size < 0 || off < 0 || size > cap || fseek(m->fp, (long)off, SEEK_SET) || fread(buf, 1, (size_t)size, m->fp) != (size_t)size)
+    FILE *fp = t == &m->a && m->fpa ? m->fpa : m->fp;
+    if (size < 0 || off < 0 || size > cap || fseek(fp, (long)off, SEEK_SET) || fread(buf, 1, (size_t)size, fp) != (size_t)size)
         return -1;
     return size;
 }

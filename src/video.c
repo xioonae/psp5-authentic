@@ -224,7 +224,20 @@ struct Video {
     int soft_up, pending;
     double pend_ts;
     unsigned soft_us, soft_late_n, soft_skip_n;
+    unsigned long long last_pub;
+    /* the thread that makes the pictures of a stream in software: it reads the file, decodes the sound and the pictures and makes the RGB; the screen loop only takes what is ready */
+    SceUID wthread;
+    volatile int wquit;
+    void *fbuf[3];                 /* three RGB pictures: the one on the screen (front), the one that is ready (rdy, -1 when none) and the one that is being made */
+    volatile int front, rdy;
+    volatile int clock_ms;         /* the clock, for the thread */
+    int aud_errors;
+    volatile unsigned t_io, t_conv, t_aud, underruns; /* microseconds spent reading, converting and decoding sound; times the sound ran dry (for the log) */
     int quiet;    /* closed without a trace (refused before anything was done) */
+    int ge;       /* a picture made in software is given as planes and drawn by the graphics chip (video_yuv); 0: made into RGB by the CPU (test switch ge=0) */
+    int opt_ge;
+    VideoYuv yuv[3];
+    void *ybuf[3];
     int vnext, anext;
     int src_eof;
     /* sceMpeg */
@@ -299,7 +312,12 @@ static double au_sec(const SceMpegAu *a) { return ((double)au_pts(a) - PTS0) / 9
 /* a time stamp the PSP's library gives for a unit that has one: -1 (all ones) is none */
 static int ts_valid(unsigned msb, unsigned lo) { return msb == 0 && lo != 0xFFFFFFFFu; }
 static int pow2(int n) { int p = 1; while (p < n) p <<= 1; return p; }
+static unsigned long long now_us(void) { return sceKernelGetSystemTimeWide(); }
+/* the memory of the planes of one picture for the graphics chip: Y rows of 512, U and V rows of 256, each plane a multiple of 64 bytes */
+static size_t ysz_of(int h) { return ((size_t)512 * (size_t)h + 63) & ~(size_t)63; }
+static size_t csz_of(int h) { return ((size_t)256 * (size_t)((h + 1) / 2) + 63) & ~(size_t)63; }
 static int soft_start(Video *v);
+static void soft_stop(Video *v);
 static float soft_pick_start(Video *v, float at);
 
 /* ---------------------------------------------------------------------- */
@@ -386,6 +404,7 @@ static int audio_thread(SceSize args, void *argp)
 {
     Video *v = *(Video **)argp;
     short *block = memalign(64, BLOCK * 4);
+    int starving = 0;
     while (!v->quit && block) {
         if (v->reset) {
             v->tail = v->head;
@@ -395,9 +414,14 @@ static int audio_thread(SceSize args, void *argp)
             continue;
         }
         if (v->paused || !v->started || pcm_count(v) < BLOCK) {
+            if (v->started && !v->paused && !(v->src_eof & 2) && !starving) {
+                starving = 1;
+                v->underruns++; /* the sound ran dry (not at its end) */
+            }
             sceKernelDelayThread(4000);
             continue;
         }
+        starving = 0;
         for (int i = 0; i < BLOCK; i++) {
             int at = (v->tail + i) & (PCM_FRAMES - 1);
             block[i * 2] = v->pcm[at * 2];
@@ -487,6 +511,7 @@ static int decode_aac(Video *v)
         return 0;
     }
     int i = v->anext++;
+    unsigned long long t0 = now_us();
     int size = mp4_audio_size(v->mp4, i);
     if (size <= 0 || size > 8192 || mp4_audio_read(v->mp4, i, v->aac_in, 8192) != size)
         return 1; /* a frame that cannot be read is skipped: the sound goes on with the next */
@@ -499,10 +524,11 @@ static int decode_aac(Video *v)
         crumb("first-sound", size, 0);
     }
     if (!aac_decode(v->aac, v->aac_in, size, v->aac_out)) {
-        if (++v->dec_errors > 400)
+        if (++v->aud_errors > 400)
             v->audio_ok = 0; /* it does not work: the video goes on without sound */
     }
     pcm_push(v, v->aac_out, AAC_FRAME);
+    v->t_aud += (unsigned)(now_us() - t0);
     return 1;
 }
 
@@ -764,6 +790,7 @@ Video *video_open(const char *path)
         return NULL;
     }
     v->opt_soft = -1;
+    v->opt_ge = 1;
     const char *dot = strrchr(path, '.');
     int pmf = dot && (!strcasecmp(dot, ".pmf") || !strcasecmp(dot, ".psmf"));
     v->frame_dur = 1001.0 / 30000.0; /* (a PMF: the usual 29.97; an MP4 sets its own below) */
@@ -837,6 +864,7 @@ Video *video_open(const char *path)
                     v->um.no_main = strstr(buf, "main=0") != NULL;
                     v->um.force = strstr(buf, "force=1") != NULL;
                     v->opt_soft = strstr(buf, "soft=1") ? 1 : strstr(buf, "soft=0") ? 0 : -1;
+                    v->opt_ge = strstr(buf, "ge=0") ? 0 : 1;
                 }
             }
         }
@@ -923,6 +951,38 @@ Video *video_open(const char *path)
     v->pic.stride = FRAME_W;
     v->pic.psm = GU_PSM_5650;
     v->pic.data = v->frame;
+    if (v->soft) { /* three pictures for the thread of the software decoder (the first RGB one is the one the texture starts with): planes for the graphics chip, or RGB made by the CPU */
+        v->ge = v->opt_ge;
+        for (int k = 0; k < 3; k++) {
+            if (v->ge) {
+                size_t ysz = ysz_of(v->h), csz = csz_of(v->h);
+                v->ybuf[k] = memalign(64, ysz + 2 * csz);
+                if (!v->ybuf[k]) {
+                    crumb("open-fail", __LINE__, 0);
+                    goto fail;
+                }
+                memset(v->ybuf[k], 128, ysz + 2 * csz);
+                v->yuv[k].plane[0] = v->ybuf[k];
+                v->yuv[k].plane[1] = (unsigned char *)v->ybuf[k] + ysz;
+                v->yuv[k].plane[2] = (unsigned char *)v->ybuf[k] + ysz + csz;
+                v->yuv[k].w = v->w;
+                v->yuv[k].h = v->h;
+                v->yuv[k].ystride = 512;
+                v->yuv[k].cstride = 256;
+                sceKernelDcacheWritebackInvalidateRange(v->ybuf[k], (unsigned)(ysz + 2 * csz));
+            } else {
+                v->fbuf[k] = k ? memalign(64, frame_bytes) : v->frame;
+                if (!v->fbuf[k]) {
+                    crumb("open-fail", __LINE__, 0);
+                    goto fail;
+                }
+                memset(v->fbuf[k], 0, frame_bytes);
+                sceKernelDcacheWritebackInvalidateRange(v->fbuf[k], (unsigned)frame_bytes);
+            }
+        }
+        v->front = 0;
+        v->rdy = -1;
+    }
     v->pic.vram = 1; /* (the picture's memory is the engine's: gfx never frees it) */
     /* the sound: the queue and its thread, and the decoder of an MP4's AAC */
     if (v->audio_ok) {
@@ -954,6 +1014,7 @@ void video_close(Video *v)
         return;
     if (!v->quiet)
         crumb("closing", 0, 0);
+    soft_stop(v);
     v->started = 0;
     audio_stop(v);
     session_destroy(v);
@@ -974,6 +1035,13 @@ void video_close(Video *v)
         else
             crumb_end(); /* it was closed the right way and played: nothing to leave behind */
     }
+    free(v->ybuf[0]);
+    free(v->ybuf[1]);
+    free(v->ybuf[2]);
+    if (v->fbuf[1] != v->frame)
+        free(v->fbuf[1]);
+    if (v->fbuf[2] != v->frame)
+        free(v->fbuf[2]);
     free(v->frame);
     free(v->ep);
     free(v->sample);
@@ -991,7 +1059,8 @@ float video_duration(const Video *v) { return v->duration; }
 int video_has_sound(const Video *v) { return v->has_sound; }
 int video_ended(const Video *v) { return v->ended; }
 int video_failed(const Video *v) { return v->failed; }
-const Texture *video_picture(const Video *v) { return v->have_pic ? &v->pic : NULL; }
+const Texture *video_picture(const Video *v) { return v->have_pic && !v->ge ? &v->pic : NULL; }
+const VideoYuv *video_yuv(const Video *v) { return v->have_pic && v->ge ? &v->yuv[v->front] : NULL; }
 
 int video_play(Video *v, float at)
 {
@@ -999,8 +1068,11 @@ int video_play(Video *v, float at)
         at = 0;
     if (v->duration > 0 && at > v->duration - 0.5f)
         at = v->duration > 1 ? v->duration - 1 : 0;
-    if (v->soft && at > 0)
-        at = soft_pick_start(v, at);
+    if (v->soft) {
+        soft_stop(v); /* (the thread first: it reads the file and the clock) */
+        if (at > 0)
+            at = soft_pick_start(v, at);
+    }
     /* stop what runs: the sound is emptied, the session of sceMpeg is made again */
     v->started = 0;
     v->clock_audio = 0;
@@ -1027,12 +1099,15 @@ int video_play(Video *v, float at)
     v->decoded = 0;
     v->n_put = v->n_au = v->n_dec = 0;
     v->soft_us = v->soft_late_n = v->soft_skip_n = 0;
+    v->t_io = v->t_conv = v->t_aud = v->underruns = 0;
+    v->aud_errors = 0;
     v->n_seen = v->hb_lines = 0;
     v->hb = v->since = 0;
     v->a_has_base = 0;
     v->atrac_first = 1;
     v->idle = 0;
     v->clock = at;
+    v->clock_ms = (int)(at * 1000.0);
     v->skip_until = at;
     if (v->kind == VK_MP4) {
         v->vnext = mp4_video_at(v->mp4, at);
@@ -1080,8 +1155,6 @@ float video_time(const Video *v)
 
 #define SOFT_BUDGET_US 45000 /* the time one call of video_update decodes for at most: the screen and the controls are served between the calls */
 
-static unsigned long long now_us(void) { return sceKernelGetSystemTimeWide(); }
-
 /* Where a jump to `at` starts. A picture can only be decoded after the ones it is predicted from, so a jump starts at the sync sample before it and decodes up to `at`; with the 8 seconds between the sync
  * samples of an ordinary video and a decoder that is not much faster than the video itself that is a long wait. When the sync sample after `at` is closer than the one before it and the run up from the
  * one before is longer than two seconds, the jump goes to the one after: the time of the video is then that of the sync sample. */
@@ -1105,91 +1178,150 @@ static float soft_pick_start(Video *v, float at)
     return at;
 }
 
+/* Publishes the picture that is waiting to be made into RGB: into the buffer that is neither on the screen nor ready (three buffers: the screen loop takes `rdy` and makes it `front`, always in that order, and
+ * this thread looks at `rdy` and then at `front`, so it never writes into one the screen has or is about to take). Not a picture from before the place a jump asked for. */
+static void soft_publish(Video *v)
+{
+    if (!v->pending)
+        return;
+    v->pending = 0;
+    if (v->pend_ts + 0.034 < v->skip_until - 0.03)
+        return;
+    int rd = v->rdy, fr = v->front, b = 0;
+    while (b == rd || b == fr)
+        b++;
+    unsigned long long a = now_us();
+    if (v->ge) { /* the planes: the graphics chip makes the colours (and reads the memory itself: written out of the cache) */
+        h264d_copy_planes(v->dec, (unsigned char *)v->yuv[b].plane[0], 512, (unsigned char *)v->yuv[b].plane[1], (unsigned char *)v->yuv[b].plane[2], 256);
+        sceKernelDcacheWritebackInvalidateRange(v->ybuf[b], (unsigned)(ysz_of(v->h) + 2 * csz_of(v->h)));
+    } else {
+        h264d_rgb565(v->dec, (uint16_t *)v->fbuf[b], FRAME_W, b);
+        sceKernelDcacheWritebackInvalidateRange(v->fbuf[b], (unsigned)(v->h * FRAME_W * 2));
+    }
+    v->t_conv += (unsigned)(now_us() - a);
+    v->last_pub = now_us();
+    v->rdy = b;
+}
+
+/* decodes the next picture when its time has come (the clock's or before it); 1 when it did something, 0 when nothing is due */
+static int soft_step(Video *v)
+{
+    int n = mp4_video_count(v->mp4);
+    if (v->vnext >= n) {
+        v->src_eof |= 1;
+        soft_publish(v);
+        return 0;
+    }
+    float dts, pts_f;
+    int key;
+    mp4_video_times(v->mp4, v->vnext, &dts, &pts_f, &key);
+    double pts = pts_f, clock = v->clock_ms / 1000.0, late = clock - pts;
+    if (pts > clock + 0.004) {
+        soft_publish(v); /* (caught up: what was made last goes to the screen) */
+        return 0;
+    }
+    if (late > 2.0) { /* far behind (the decoder is slower than the video): on to the sync sample that is due, skipping what is between */
+        int k = mp4_video_at(v->mp4, (float)(clock + 0.3));
+        if (k > v->vnext) {
+            crumb4("soft-jump", v->vnext, k, (int)(late * 1000), 0);
+            v->vnext = k;
+            h264d_reset(v->dec);
+            v->pending = 0;
+            return 1;
+        }
+    }
+    int i = v->vnext++;
+    unsigned long long t0 = now_us();
+    int sz = mp4_video_read(v->mp4, i, v->sample, v->au_cap);
+    v->t_io += (unsigned)(now_us() - t0);
+    /* a picture that is late is made without the loop filter (what a later picture is predicted from is then not quite as it should be: about the cheapest way to catch up); so are the long run-ups of a jump */
+    int fast = late > 0.1 || v->skip_until - pts > 0.5;
+    v->soft_late_n += late > 0.1;
+    h264d_set_fast(v->dec, fast);
+    v->soft_skip_n += (unsigned)fast;
+    unsigned long long a = now_us();
+    int r = sz > 0 ? h264d_decode(v->dec, v->sample, sz) : -1;
+    unsigned took = (unsigned)(now_us() - a);
+    v->soft_us += took;
+    v->n_au++;
+    v->n_dec++;
+    v->n_put = (int)(v->soft_us / (unsigned)v->n_dec); /* (the log's first number of "alive" and "end" is then the average microseconds a picture took) */
+    if (v->n_dec == 1) {
+        crumbh("first-decode", (unsigned)r, (unsigned)sz, took, (unsigned)h264d_why(v->dec));
+        v->stage |= 2;
+    }
+    if (r < 0) {
+        v->err_total++;
+        if (v->dec_errors < 3)
+            crumb4("decode-error", h264d_why(v->dec), v->dec_errors, sz, i);
+        if (++v->dec_errors > 30)
+            v->failed = 1;
+        return 1;
+    }
+    v->dec_errors = 0;
+    v->since = 0; /* (it goes on: the run up to a far place can take longer than the watchdog's eight seconds) */
+    v->last_ts = pts;
+    v->have_ts = 1;
+    if (r > 0) {
+        v->pending = 1;
+        v->pend_ts = pts;
+    }
+    if (v->pending) { /* made into RGB now, unless the next picture is due as well (this one would hardly be seen) and a picture went to the screen lately */
+        int more = 0;
+        if (v->vnext < n) {
+            float d2, p2;
+            mp4_video_times(v->mp4, v->vnext, &d2, &p2, &key);
+            more = p2 <= clock + 0.004;
+        }
+        if (!more || now_us() - v->last_pub > 120000)
+            soft_publish(v);
+    }
+    return 1;
+}
+
+/* the thread of the software decoder: the sound is kept filled, and the pictures that are due are made */
+static int soft_thread(SceSize args, void *argp)
+{
+    Video *v = *(Video **)argp;
+    while (!v->wquit && !v->failed) {
+        if (v->paused) {
+            sceKernelDelayThread(10000);
+            continue;
+        }
+        pump_audio(v);
+        if (!soft_step(v))
+            sceKernelDelayThread(3000);
+    }
+    return 0;
+}
+
+static void soft_stop(Video *v)
+{
+    v->wquit = 1;
+    if (v->wthread > 0) {
+        sceKernelWaitThreadEnd(v->wthread, NULL);
+        sceKernelDeleteThread(v->wthread);
+        v->wthread = 0;
+    }
+    v->soft_up = 0;
+}
+
 static int soft_start(Video *v)
 {
     h264d_reset(v->dec);
     v->pending = 0;
+    v->rdy = -1;
+    v->last_pub = 0;
+    v->wquit = 0;
+    v->wthread = sceKernelCreateThread("psp5_vdec", soft_thread, 0x24, 0x10000, 0, NULL); /* (below the screen's thread: the buttons and the drawing come first) */
+    if (v->wthread < 0) {
+        v->wthread = 0;
+        return 0;
+    }
     v->soft_up = 1;
+    Video *self = v;
+    sceKernelStartThread(v->wthread, sizeof(self), &self);
     return 1;
-}
-
-/* decodes the pictures that are due (their time is the clock's or before it) and gives the last of them to the screen; 1 when there is a new picture */
-static int soft_update(Video *v)
-{
-    int n = mp4_video_count(v->mp4), shown = 0;
-    unsigned long long t0 = now_us();
-    for (int guard = 0; guard < 12; guard++) {
-        if (v->vnext >= n) {
-            v->src_eof |= 1;
-            break;
-        }
-        float dts, pts_f;
-        int key;
-        mp4_video_times(v->mp4, v->vnext, &dts, &pts_f, &key);
-        double pts = pts_f, late = v->clock - pts;
-        if (pts > v->clock + 0.004)
-            break; /* not yet */
-        if (late > 2.0) { /* far behind (the decoder is slower than the video): on to the sync sample that is due, skipping what is between */
-            int k = mp4_video_at(v->mp4, (float)(v->clock + 0.3));
-            if (k > v->vnext) {
-                crumb4("soft-jump", v->vnext, k, (int)(late * 1000), 0);
-                v->vnext = k;
-                h264d_reset(v->dec);
-                v->pending = 0;
-                continue;
-            }
-        }
-        int i = v->vnext++;
-        int sz = mp4_video_read(v->mp4, i, v->sample, v->au_cap);
-        /* a picture that is late is made without the loop filter (what a later picture is predicted from is then not quite as it should be: about the cheapest way to catch up); so are the long run-ups of a jump */
-        int fast = late > 0.1 || v->skip_until - pts > 0.5;
-        v->soft_late_n += late > 0.1;
-        h264d_set_fast(v->dec, fast);
-        v->soft_skip_n += (unsigned)fast;
-        unsigned long long a = now_us();
-        int r = sz > 0 ? h264d_decode(v->dec, v->sample, sz) : -1;
-        unsigned took = (unsigned)(now_us() - a);
-        v->soft_us += took;
-        v->n_au++;
-        v->n_dec++;
-        v->n_put = (int)(v->soft_us / (unsigned)v->n_dec); /* (the log's first number of "alive" and "end" is then the average microseconds a picture took) */
-        if (v->n_dec == 1) {
-            crumbh("first-decode", (unsigned)r, (unsigned)sz, took, (unsigned)h264d_why(v->dec));
-            v->stage |= 2;
-        }
-        if (r < 0) {
-            v->err_total++;
-            if (v->dec_errors < 3)
-                crumb4("decode-error", h264d_why(v->dec), v->dec_errors, sz, i);
-            if (++v->dec_errors > 30) {
-                v->failed = 1;
-                break;
-            }
-            continue;
-        }
-        v->dec_errors = 0;
-        v->since = 0; /* (it goes on: the run up to a far place can take longer than the watchdog's eight seconds) */
-        v->last_ts = pts;
-        v->have_ts = 1;
-        if (r > 0) {
-            v->pending = 1;
-            v->pend_ts = pts;
-        }
-        if (now_us() - t0 > SOFT_BUDGET_US)
-            break;
-    }
-    if (v->pending) {
-        v->pending = 0;
-        if (v->pend_ts + 0.034 >= v->skip_until - 0.03) {
-            h264d_rgb565(v->dec, (uint16_t *)v->frame, FRAME_W);
-            sceKernelDcacheWritebackInvalidateRange(v->frame, (unsigned)(v->h * FRAME_W * 2));
-            v->have_pic = 1;
-            shown = 1;
-        }
-    }
-    if (v->duration > 0 && v->clock > v->duration + 0.5 && (v->src_eof & 1))
-        v->ended = 1;
-    return shown;
 }
 
 int video_update(Video *v, float dt)
@@ -1198,10 +1330,11 @@ int video_update(Video *v, float dt)
         return 0;
     if (v->paused)
         return 0;
-    if (!v->soft)
+    if (!v->soft) {
         for (int i = 0; i < 3; i++)
             feed(v);
-    pump_audio(v);
+        pump_audio(v); /* (a stream in software has the thread keep its sound filled) */
+    }
     /* the clock: the sound that has been played, or the time that has gone when there is no sound */
     if (v->audio_ok && v->clock_audio && v->a_has_base && !((v->src_eof & 2) && pcm_count(v) == 0))
         v->clock = v->a_base + (double)v->played / v->rate;
@@ -1209,20 +1342,35 @@ int video_update(Video *v, float dt)
         v->clock += dt; /* (no sound, or none came in a second: the picture does not wait for it) */
     else
         v->idle += dt;
+    v->clock_ms = (int)(v->clock * 1000.0);
     /* signs of life in the crash file, a few seconds apart, and the end of a session that gives no picture at all (the screen would stay black for ever) */
     v->hb += dt;
     if (v->hb >= 2.0f && v->hb_lines < 40) {
         v->hb = 0;
         v->hb_lines++;
         crumb4("alive", v->n_put, v->n_au, v->n_dec, (int)(v->clock * 1000));
+        if (v->soft)
+            crumb4("soft-ms", (int)(v->t_io / 1000), (int)(v->t_conv / 1000), (int)(v->t_aud / 1000), (int)v->underruns); /* milliseconds reading the file, making RGB, decoding sound; times the sound ran dry */
     }
     if (!v->have_pic && (v->since += dt) > 8.0f) {
         crumb4("no-picture", v->n_put, v->n_au, v->n_dec, v->src_eof);
         v->failed = 1;
         return 0;
     }
-    if (v->soft)
-        return soft_update(v);
+    if (v->soft) { /* the thread makes the pictures: what is ready goes on the screen */
+        int shown = 0, r = v->rdy;
+        if (r >= 0) {
+            v->front = r; /* (in this order: see soft_publish) */
+            if (!v->ge)
+                v->pic.data = v->fbuf[r];
+            v->rdy = -1;
+            v->have_pic = 1;
+            shown = 1;
+        }
+        if (v->duration > 0 && v->clock > v->duration + 0.5 && (v->src_eof & 1))
+            v->ended = 1;
+        return shown;
+    }
     int shown = 0;
     for (int n = 0; n < 4; n++) {
         if (!v->have_au) {
