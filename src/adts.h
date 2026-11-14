@@ -1,5 +1,5 @@
 /* psp5 authentic – an AAC file in ADTS form (.aac): the raw frames of the stream one after the other, each with a little header of its own (ISO/IEC 14496-3 1.A.3). The frames come out as an MP4 stores
- * them (without the header), so the AAC decoder of the video player (aac.c) takes them as they are. Only AAC-LC with one or two channels and one frame to a header (the decoder does no more).
+ * them (without the header), so the AAC decoder of the video player (aac.c) takes them as they are. Only AAC-LC with the channel configurations 1 to 7 (mono up to 7.1: the decoder mixes more than two channels down) and one frame to a header (the decoder does no more).
  * An ID3v2 tag in front of the stream is skipped; a stream with a damaged place goes on at the next frame that is found. */
 #ifndef ADTS_H
 #define ADTS_H

@@ -33,7 +33,7 @@ static int parse(const unsigned char *h, int *hdr_len, int *sfi, int *channels)
     int ch = ((h[2] & 1) << 2) | (h[3] >> 6);
     int len = ((h[3] & 3) << 11) | (h[4] << 3) | (h[5] >> 5);
     int blocks = (h[6] & 3) + 1;
-    if (profile != 1 || fi >= 13 || (ch != 1 && ch != 2) || blocks != 1) /* LC only, a channel setup in the stream is not read, one block to a frame */
+    if (profile != 1 || fi >= 13 || ch < 1 || ch > 7 || blocks != 1) /* LC only, the channel configurations 1 to 7 (0, a channel layout in the stream, is not read), one block to a frame */
         return 0;
     int hl = (h[1] & 1) ? 7 : 9;
     if (len < hl + 1 || len > MAX_FRAME)

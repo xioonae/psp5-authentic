@@ -1,6 +1,7 @@
 /* psp5 authentic – AAC-LC decoder (see aac.h). Written from the standard (ISO/IEC 14496-3, the syntax of the raw data block, the spectral tools and the filter bank); the tables are in aactab.inc and
  * are data of the standard. Floating point throughout (the PSP's CPU has an FPU). */
 #include "aac.h"
+#include "downmix.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -310,33 +311,54 @@ typedef struct {
 
 typedef struct {
     Ics ics;
-    int prev_shape;
     unsigned char cb[MAXW][MAXB];
     short sf[MAXW][MAXB];    /* per group: the scale factor (the noise energy, the intensity position) */
     short q[MAXW * 128];      /* the quantized spectrum (windows one after the other for short blocks) */
     float coef[MAXW * 128];
-    float overlap[1024];
     int tns_present, n_filt[MAXW];
     struct { int length, order, dir; float lpc[13]; } tns[MAXW][3];
     int pulse_present, n_pulse, pulse_sfb, pulse_off[4], pulse_amp[4];
 } Chan;
 
+typedef struct {
+    float overlap[1024]; /* the second half of the last block of a channel: it is added to the first half of the next */
+    int prev_shape;
+} Hist;
+
+/* The channel configurations 1 to 7 of an AudioSpecificConfig: the elements a frame has, in this order (0 = a single channel, 1 = a pair, 3 = the low-frequency channel), and the place of each
+ * channel they carry, in the order of the elements. (0, a layout in the stream itself, is not supported.) */
+static const struct {
+    unsigned char n_el, el[5], n_ch, role[AAC_MAX_CH];
+} CFG[8] = {
+    { 0, { 0 }, 0, { 0 } },
+    { 1, { 0 }, 1, { DM_FC } },
+    { 1, { 1 }, 2, { DM_FL, DM_FR } },
+    { 2, { 0, 1 }, 3, { DM_FC, DM_FL, DM_FR } },
+    { 3, { 0, 1, 0 }, 4, { DM_FC, DM_FL, DM_FR, DM_BC } },
+    { 3, { 0, 1, 1 }, 5, { DM_FC, DM_FL, DM_FR, DM_BL, DM_BR } },
+    { 4, { 0, 1, 1, 3 }, 6, { DM_FC, DM_FL, DM_FR, DM_BL, DM_BR, DM_LFE } },
+    { 5, { 0, 1, 1, 1, 3 }, 8, { DM_FC, DM_FL, DM_FR, DM_SL, DM_SR, DM_BL, DM_BR, DM_LFE } }, /* "7.1": centre, front pair, side pair, back pair (ffmpeg's reading of it, and VLC's) */
+};
+
 struct AacDec {
-    int rate_idx, rate, channels;
+    int rate_idx, rate, channels, config; /* config: the channel configuration of the stream */
     Swb swb;
-    Chan ch[2];
+    Chan ch[2];              /* the channels of the element that is decoded */
     unsigned random;
     float tmp[2048 + 2048];  /* the transform's output and its working space */
     float win[2048];         /* the windowed output of a block */
-    float out[2][1024];      /* the sound of the channels of a frame */
+    float out[1024];         /* the sound of the channel that was just made */
+    float mix[2][1024];      /* the left and right output of a frame: every channel, mixed in */
+    float wl[AAC_MAX_CH], wr[AAC_MAX_CH]; /* how much of each channel (in the order of CFG[].role) goes to the left and right output */
     unsigned char fbuf[8192 + 16]; /* the frame, with zeros after it */
+    Hist hist[1];            /* one for each channel (more are allocated after the structure) */
 };
 
 void aac_flush(AacDec *d)
 {
-    for (int i = 0; i < 2; i++) {
-        memset(d->ch[i].overlap, 0, sizeof(d->ch[i].overlap));
-        d->ch[i].prev_shape = 0;
+    for (int i = 0; i < d->channels; i++) {
+        memset(d->hist[i].overlap, 0, sizeof(d->hist[i].overlap));
+        d->hist[i].prev_shape = 0;
     }
 }
 
@@ -359,17 +381,20 @@ AacDec *aac_new(const unsigned char *cfg, int cfg_len, int *rate, int *channels)
     else
         return NULL;
     int chans = (int)getb(&b, 4);
-    if (aot != 2 || chans < 1 || chans > 2 || idx > 12)
-        return NULL; /* low complexity, one or two channels */
+    if (aot != 2 || chans < 1 || chans > 7 || idx > 12)
+        return NULL; /* low complexity, channel configurations 1 to 7 (0 = a layout in the stream: no) */
     if (getb(&b, 1)) /* frameLengthFlag: 960-sample frames */
         return NULL;
     tables_init();
-    AacDec *d = calloc(1, sizeof(*d));
+    int n_ch = CFG[chans].n_ch;
+    AacDec *d = calloc(1, sizeof(*d) + (size_t)(n_ch - 1) * sizeof(Hist));
     if (!d)
         return NULL;
     d->rate_idx = idx;
     d->rate = r;
-    d->channels = chans;
+    d->config = chans;
+    d->channels = n_ch;
+    dm_weights(CFG[chans].role, n_ch, d->wl, d->wr);
     d->random = 0x1f2e3d4c;
     if (!swb_for(idx, &d->swb)) {
         free(d);
@@ -378,7 +403,7 @@ AacDec *aac_new(const unsigned char *cfg, int cfg_len, int *rate, int *channels)
     if (rate)
         *rate = r;
     if (channels)
-        *channels = chans;
+        *channels = n_ch;
     return d;
 }
 
@@ -795,13 +820,13 @@ static void imdct(const float *x, float *y, int m, float *work)
 }
 
 /* one channel's frame of spectrum into 1024 samples of sound (float, 16-bit scale), with the overlap of the frame before */
-static void synth(AacDec *d, Chan *c, float *out)
+static void synth(AacDec *d, Chan *c, Hist *h, float *out)
 {
     const Ics *ics = &c->ics;
     float *work = d->tmp + 2048;
     float *buf = d->win;
-    const float *lp = g_win_long[c->prev_shape], *lc = g_win_long[ics->shape];
-    const float *sp = g_win_short[c->prev_shape], *sc = g_win_short[ics->shape];
+    const float *lp = g_win_long[h->prev_shape], *lc = g_win_long[ics->shape];
+    const float *sp = g_win_short[h->prev_shape], *sc = g_win_short[ics->shape];
     if (ics->seq == EIGHT_SHORT) {
         memset(buf, 0, sizeof(float) * 2048);
         for (int w = 0; w < 8; w++) {
@@ -841,10 +866,10 @@ static void synth(AacDec *d, Chan *c, float *out)
         }
     }
     for (int n = 0; n < 1024; n++) {
-        out[n] = c->overlap[n] + buf[n];
-        c->overlap[n] = buf[1024 + n];
+        out[n] = h->overlap[n] + buf[n];
+        h->overlap[n] = buf[1024 + n];
     }
-    c->prev_shape = ics->shape;
+    h->prev_shape = ics->shape;
 }
 
 static short clip16(float v)
@@ -859,10 +884,37 @@ static short clip16(float v)
 
 /* ---------------------------------------------------------------------- */
 
+/* the first channel (place in CFG[].role) of the k-th element of this kind (0 single, 1 pair, 3 low-frequency) that the configuration has, -1 when it has no more of them */
+static int find_element(const AacDec *d, int kind, int k)
+{
+    int ch = 0;
+    for (int i = 0; i < CFG[d->config].n_el; i++) {
+        int e = CFG[d->config].el[i];
+        if (e == kind && k-- == 0)
+            return ch;
+        ch += e == 1 ? 2 : 1;
+    }
+    return -1;
+}
+
+/* a channel whose spectrum is ready: into sound, and into the left and right output with its weights */
+static void add_channel(AacDec *d, Chan *c, int hist, float wl, float wr)
+{
+    if (c->tns_present)
+        apply_tns(d, c);
+    synth(d, c, &d->hist[hist], d->out);
+    if (wl != 0)
+        for (int i = 0; i < AAC_FRAME; i++)
+            d->mix[0][i] += d->out[i] * wl;
+    if (wr != 0)
+        for (int i = 0; i < AAC_FRAME; i++)
+            d->mix[1][i] += d->out[i] * wr;
+}
+
 int aac_decode(AacDec *d, const unsigned char *frame, int len, short *pcm)
 {
     unsigned char *buf = d->fbuf;
-    int ok = 1, got = 0, nch = 0;
+    int ok = 1, got = 0, made = 0, seen[4] = { 0, 0, 0, 0 }; /* got: an element came; made: a channel was made; seen: the elements of each kind that came */
     memset(pcm, 0, (size_t)AAC_FRAME * 4);
     if (len <= 0 || len > 8192)
         return BAD();
@@ -870,30 +922,38 @@ int aac_decode(AacDec *d, const unsigned char *frame, int len, short *pcm)
     memset(buf + len, 0, 16);
     Bits b = { buf, 0, (unsigned)len * 8 };
     Chan *ch = d->ch;
-    float (*out)[1024] = d->out;
-    int have[2] = { 0, 0 };
+    memset(d->mix, 0, sizeof(d->mix));
     while (b.pos + 3 <= b.end && ok) {
         int id = (int)getb(&b, 3);
         if (id == 7) /* end */
             break;
         if (id == 0 || id == 3) { /* single channel or LFE */
             getb(&b, 4);
-            if (got) { /* a second one: not in a stream of one or two channels */
-                ok = BAD();
+            int first = find_element(d, id, seen[id]++);
+            float wl = 1, wr = 1;
+            if (first >= 0) {
+                wl = d->wl[first];
+                wr = d->wr[first];
+            } else if (d->config <= 2 && !got) {
+                first = 0; /* a mono element in a stream that says stereo (or the reverse): played as it is, on both sides */
+            } else {
+                ok = BAD(); /* more elements than the configuration has */
                 break;
             }
             ok = read_ics(d, &b, &ch[0], 0, NULL);
-            if (ok) {
+            if (ok && (id == 0 || first == 0)) { /* (the low-frequency channel is read and left out) */
                 dequant(d, &ch[0]);
-                if (ch[0].tns_present)
-                    apply_tns(d, &ch[0]);
-                synth(d, &ch[0], out[0]);
-                have[0] = 1;
+                add_channel(d, &ch[0], first, wl, wr);
+                made = 1;
             }
             got = 1;
-            nch = 1;
         } else if (id == 1) { /* channel pair */
             getb(&b, 4);
+            int first = find_element(d, 1, seen[1]++);
+            if (first < 0) {
+                ok = BAD();
+                break;
+            }
             int common = get1(&b), ms_present = 0;
             unsigned char ms[MAXW][MAXB];
             memset(ms, 0, sizeof(ms));
@@ -922,15 +982,11 @@ int aac_decode(AacDec *d, const unsigned char *frame, int len, short *pcm)
                 dequant(d, &ch[1]);
                 if (common && ch[0].ics.seq == ch[1].ics.seq)
                     stereo_tools(d, &ch[0], &ch[1], ms_present != 0, ms);
-                for (int i = 0; i < 2; i++) {
-                    if (ch[i].tns_present)
-                        apply_tns(d, &ch[i]);
-                    synth(d, &ch[i], out[i]);
-                    have[i] = 1;
-                }
+                for (int i = 0; i < 2; i++)
+                    add_channel(d, &ch[i], first + i, d->wl[first + i], d->wr[first + i]);
+                made = 1;
             }
             got = 1;
-            nch = 2;
         } else if (id == 4) { /* data stream element */
             getb(&b, 4);
             int align = get1(&b), cnt = (int)getb(&b, 8);
@@ -962,12 +1018,11 @@ int aac_decode(AacDec *d, const unsigned char *frame, int len, short *pcm)
         if (b.pos > b.end)
             ok = BAD();
     }
-    (void)nch;
-    if (!have[0])
+    if (!made)
         return BAD();
     for (int i = 0; i < AAC_FRAME; i++) {
-        pcm[2 * i] = clip16(out[0][i]);
-        pcm[2 * i + 1] = clip16(have[1] ? out[1][i] : out[0][i]);
+        pcm[2 * i] = clip16(d->mix[0][i]);
+        pcm[2 * i + 1] = clip16(d->mix[1][i]);
     }
     return ok;
 }

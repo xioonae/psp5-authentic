@@ -136,7 +136,7 @@ Where to go from there:
   one you are on turns white) and ✕ presses it; ↑ chooses the progress bar, then ← → (or the stick) jump 10 seconds; **⋯** opens *Shuffle*, *Repeat* and *Equalizer*, and ✕ on one opens a popup with its values (Shuffle Off / On, Repeat Off / Current Song / All = the whole folder,
   Equalizer the PSP's own); the speaker chooses the volume: ← → change the PSP's volume (the launcher's volume bar shows it), ✕ or ○ ends.
 - **The music goes on** when you leave Music or the Media tab, and in the File Manager and the FTP server (USB Mode and starting a game stop it). The PSP's **♪** button shows the player alone in the middle of the screen, over all of these; ♪ or ○ closes it.
-- **What plays**: MP3, WAV (PCM, 8 to 32 bits, mono or stereo) and ATRAC3 / ATRAC3plus (`.at3`, `.oma`, `.aa3`). AAC / M4A, WMA, Ogg and FLAC are not played; a file that can't be played is skipped.
+- **What plays**: MP3, WAV (PCM, 8 to 32 bits, mono, stereo or up to eight channels mixed down to stereo), AAC (`.m4a`, `.m4b`, `.aac`: AAC-LC, also with 5.1 or 7.1, mixed down to stereo; not HE-AAC or Apple Lossless) and ATRAC3 / ATRAC3plus (`.at3`, `.oma`, `.aa3`). WMA, Ogg and FLAC are not played; a file that can't be played is skipped.
 - **A name that is too long** scrolls after a moment: the name next to the big card, the selected card in the Library, and the highlighted row in the File Manager, *Manage Saved Data* and *Games and Apps*.
 
 ## Date and time

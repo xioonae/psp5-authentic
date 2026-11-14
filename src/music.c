@@ -16,6 +16,7 @@
 #include "music.h"
 #include "system.h"
 #include "aac.h"
+#include "downmix.h"
 #include "adts.h"
 #include "mp4.h"
 
@@ -758,13 +759,14 @@ static const Codec mp3_codec = { mp3_open, mp3_frame, mp3_seek, mp3_close };
 
 
 /* ---------------------------------------------------------------------- */
-/* WAV: plain PCM (8, 16, 24 or 32 bits, one or two channels), decoded here; the file is read a block at a time */
+/* WAV: plain PCM (8, 16, 24 or 32 bits, one to eight channels: more than two are mixed down to two, downmix.c), decoded here; the file is read a block at a time */
 
 #define WAV_BLOCK 1024 /* samples per channel in a block */
 static u32 s_wav_data, s_wav_len, s_wav_at; /* where the sound starts in the file, how long it is, how far it has been read (bytes of the sound) */
 static int s_wav_bits, s_wav_ch, s_wav_align;
-static unsigned char s_wav_raw[WAV_BLOCK * 2 * 4];
-static short s_wav_out[WAV_BLOCK * 2];
+static float s_wav_wl[DM_MAX], s_wav_wr[DM_MAX]; /* of a file with more than two channels: how much of each goes to the left and to the right output */
+static unsigned char s_wav_raw[WAV_BLOCK * DM_MAX * 4];
+static short s_wav_out[WAV_BLOCK * DM_MAX];
 
 static u32 le32(const unsigned char *p) { return p[0] | ((u32)p[1] << 8) | ((u32)p[2] << 16) | ((u32)p[3] << 24); }
 static u32 le16(const unsigned char *p) { return p[0] | ((u32)p[1] << 8); }
@@ -793,8 +795,15 @@ static int wav_open(void)
             s_rate = (int)le32(fmt + 4);
             s_wav_align = (int)le16(fmt + 12);
             s_wav_bits = (int)le16(fmt + 14);
-            if (s_wav_ch < 1 || s_wav_ch > 2 || (s_wav_bits != 8 && s_wav_bits != 16 && s_wav_bits != 24 && s_wav_bits != 32) || s_wav_align != s_wav_ch * (s_wav_bits / 8))
+            if (s_wav_ch < 1 || s_wav_ch > DM_MAX || (s_wav_bits != 8 && s_wav_bits != 16 && s_wav_bits != 24 && s_wav_bits != 32) || s_wav_align != s_wav_ch * (s_wav_bits / 8))
                 return -1;
+            if (s_wav_ch > 2) { /* where the channels are: the channel mask of an "extensible" file, else the usual layout of that many */
+                unsigned char role[DM_MAX];
+                unsigned mask = n >= 24 && le16(fmt) == 0xFFFE ? le32(fmt + 20) : 0;
+                if (!(mask && dm_roles_mask(mask, s_wav_ch, role)) && !dm_roles_default(s_wav_ch, role))
+                    return -1;
+                dm_weights(role, s_wav_ch, s_wav_wl, s_wav_wr);
+            }
             have_fmt = 1;
         } else if (!memcmp(c, "data", 4)) {
             if (!have_fmt)
@@ -841,11 +850,27 @@ static int wav_frame(const short **pcm_out, int *samples_out, int *ch_out)
         const unsigned char *p = s_wav_raw + i * step;
         s_wav_out[i] = s_wav_bits == 8 ? (short)(((int)p[0] - 128) * 256) : (short)((p[step - 1] << 8) | p[step - 2]); /* the top two bytes of 16, 24 and 32 bit samples */
     }
+    int out_ch = s_wav_ch;
+    if (s_wav_ch > 2) { /* mixed down to two channels, in place (a frame is written where it was read from, or before it) */
+        for (int i = 0; i < n; i++) {
+            const short *in = s_wav_out + i * s_wav_ch;
+            float l = 0, r = 0;
+            for (int c = 0; c < s_wav_ch; c++) {
+                l += in[c] * s_wav_wl[c];
+                r += in[c] * s_wav_wr[c];
+            }
+            l = l < 0 ? l - 0.5f : l + 0.5f;
+            r = r < 0 ? r - 0.5f : r + 0.5f;
+            s_wav_out[2 * i] = l > 32767.0f ? 32767 : l < -32768.0f ? -32768 : (short)l;
+            s_wav_out[2 * i + 1] = r > 32767.0f ? 32767 : r < -32768.0f ? -32768 : (short)r;
+        }
+        out_ch = 2;
+    }
     s_wav_at += (u32)got;
     s_decoded = (float)s_wav_at / ((float)s_rate * s_wav_align);
     *pcm_out = s_wav_out;
     *samples_out = n;
-    *ch_out = s_wav_ch;
+    *ch_out = out_ch;
     return 1;
 }
 
@@ -866,7 +891,7 @@ static void wav_close(void) {}
 static const Codec wav_codec = { wav_open, wav_frame, wav_seek, wav_close };
 
 /* ---------------------------------------------------------------------- */
-/* AAC (.m4a, .m4b, and .aac in ADTS form): the same software decoder as the sound of the videos (aac.c: AAC-LC, one or two channels), with the file read by mp4.c (the audio track of an MP4 file, as the
+/* AAC (.m4a, .m4b, and .aac in ADTS form): the same software decoder as the sound of the videos (aac.c: AAC-LC; a sound of more than two channels is mixed down to two), with the file read by mp4.c (the audio track of an MP4 file, as the
  * video player reads its sound) or adts.c (the frames of a raw stream). The PSP's own AAC decoder is not used (it crashed a PSP). One frame is 1024 samples; a frame that is damaged is silence. A jump
  * starts one frame early and drops what that frame gives, because a frame is made from the overlap with the frame before it. */
 
@@ -915,7 +940,7 @@ static int aac_open(void)
         cfg_len = 2;
         s_duration = adts_duration(s_aac_ts);
     }
-    s_aac_dec = aac_new(cfg, cfg_len, &rate, &ch); /* (NULL: HE-AAC, more than two channels ... not ours) */
+    s_aac_dec = aac_new(cfg, cfg_len, &rate, &ch); /* (NULL: HE-AAC, a channel layout that is in the stream ... not ours) */
     if (!s_aac_dec) {
         aac_close_src();
         return -1;
