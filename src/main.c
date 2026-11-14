@@ -575,10 +575,13 @@ static int files_mode(int pick)
             dt = 0.05f;
         osd_update(dt);
         mode_music_sleep();
+        files_sleep(s_sleeping); /* a video that is open waits while the PSP sleeps */
         note_popup(&s_mode_mu, &in, dt, 1, 0); /* the player of the sound button (the buttons are the popup's while it is open) */
         int pwr = power_step(&in, dt, !files_modal());
         if (pwr == SA_SUSPEND) {
+            files_sleep(1);
             sys_suspend();
+            files_sleep(0);
             old = s_raw;
         } else if (pwr != SA_NONE) {
             pending = pwr;

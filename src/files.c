@@ -12,6 +12,13 @@
 #include <string.h>
 #include <strings.h>
 #include "files.h"
+#include "kbd.h"
+#include "media.h"
+#include "music.h"
+#include "imageview.h"
+#include "videoplay.h"
+#include "textedit.h"
+#include "textbuf.h"
 #include "controls.h"
 #include "gfx.h"
 #include "lang.h"
@@ -74,13 +81,21 @@ static u64 s_free, s_total;   /* enheten som visas */
 static const char *s_devs[2];
 static int s_ndev;
 
+/* --- what ✕ opened: a video or a picture in its viewer, or a text file in the text editor (✕ on a song starts it) --- */
+static ImageView *s_iv;
+static VideoPlayer *s_vp;
+static MusicEntry *s_mfiles;     /* the videos or pictures of the folder, the lines the viewer steps through (they stay while it is open) */
+static TextEdit *s_te;
+static char s_open_path[MAX_PATH]; /* the text file that the View / Edit question is about */
+static int s_asleep;             /* the PSP sleeps (files_sleep): a video that plays is paused */
+
 /* --- urklipp --- */
 static char *s_clip[MAX_CLIP];
 static int s_clip_n, s_clip_move;
 
 /* --- meny --- */
-enum { M_NONE, M_OPTIONS, M_DELETE };
-enum { A_PASTE, A_COPY, A_MOVE, A_RENAME, A_DELETE, A_NEWDIR, A_DELETE_YES, A_CANCEL };
+enum { M_NONE, M_OPTIONS, M_DELETE, M_OPEN };
+enum { A_PASTE, A_COPY, A_MOVE, A_RENAME, A_DELETE, A_NEWDIR, A_DELETE_YES, A_CANCEL, A_VIEW, A_EDIT };
 static int s_menu, s_menu_sel, s_menu_n, s_menu_act[8];
 static float s_menu_anim;
 static int s_menu_ask;       /* the open (or fading) popup is the delete question */
@@ -111,8 +126,6 @@ static struct {
     int ask_src_dir, ask_dst_dir, ask_same, ask_more;
     int all_dd, all_other;        /* an answer given "for all": one for a folder onto a folder, one for the rest (CF_NONE = ask) */
 } W = { .thread = -1 };
-
-static int s_osk_done;
 
 /* --- the question about a name that is taken (the worker waits for it) --- */
 static int s_cf;                          /* 1 = the question is open */
@@ -859,104 +872,14 @@ static void clear_clip(void)
 }
 
 /* ---------------------------------------------------------------------- */
-/* PSP:ns tangentbord */
-
-static void to_utf16(const char *s, unsigned short *o, int n)
-{
-    int k = 0;
-    while (*s && k < n - 1) {
-        unsigned c = (u8)*s++;
-        if (c >= 0xE0 && s[0] && s[1]) {
-            c = ((c & 0x0F) << 12) | ((s[0] & 0x3F) << 6) | (s[1] & 0x3F);
-            s += 2;
-        } else if (c >= 0xC0 && s[0]) {
-            c = ((c & 0x1F) << 6) | (s[0] & 0x3F);
-            s++;
-        }
-        o[k++] = c;
-    }
-    o[k] = 0;
-}
-
-static void to_utf8(const unsigned short *s, char *o, int n)
-{
-    int k = 0;
-    for (; *s; s++) {
-        unsigned c = *s;
-        int len = c < 0x80 ? 1 : c < 0x800 ? 2 : 3;
-        if (k + len >= n)
-            break;
-        if (len == 1) {
-            o[k++] = c;
-        } else if (len == 2) {
-            o[k++] = 0xC0 | (c >> 6);
-            o[k++] = 0x80 | (c & 0x3F);
-        } else {
-            o[k++] = 0xE0 | (c >> 12);
-            o[k++] = 0x80 | ((c >> 6) & 0x3F);
-            o[k++] = 0x80 | (c & 0x3F);
-        }
-    }
-    o[k] = 0;
-}
-
-static void osk_step(void)
-{
-    switch (sceUtilityOskGetStatus()) {
-    case PSP_UTILITY_DIALOG_VISIBLE: sceUtilityOskUpdate(1); break;
-    case PSP_UTILITY_DIALOG_QUIT:    sceUtilityOskShutdownStart(); break;
-    case PSP_UTILITY_DIALOG_NONE:    s_osk_done = 1; break;
-    }
-}
+/* PSP:ns tangentbord (kbd.c) */
 
 static void draw_scene(void);
 
 /* Visar tangentbordet med `init` ifyllt. 1 = användaren bekräftade (texten i out). */
 static int osk_input(const char *desc, const char *init, char *out, int out_size)
 {
-    static unsigned short desc16[64], in16[256], out16[256];
-    to_utf16(desc, desc16, 64);
-    to_utf16(init, in16, 256);
-    memset(out16, 0, sizeof(out16));
-    SceUtilityOskData data;
-    memset(&data, 0, sizeof(data));
-    data.language = PSP_UTILITY_OSK_LANGUAGE_DEFAULT;
-    data.lines = 1;
-    data.unk_24 = 1;
-    data.inputtype = PSP_UTILITY_OSK_INPUTTYPE_ALL;
-    data.desc = desc16;
-    data.intext = in16;
-    data.outtextlength = 256;
-    data.outtextlimit = 200;
-    data.outtext = out16;
-    SceUtilityOskParams params;
-    memset(&params, 0, sizeof(params));
-    params.base.size = sizeof(params);
-    sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_LANGUAGE, &params.base.language);
-    sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_BUTTON_SWAP, &params.base.buttonSwap);
-    params.base.graphicsThread = 17;
-    params.base.accessThread = 19;
-    params.base.fontThread = 18;
-    params.base.soundThread = 16;
-    params.datacount = 1;
-    params.data = &data;
-    if (sceUtilityOskInitStart(&params) < 0)
-        return 0;
-    s_osk_done = 0;
-    while (!s_osk_done) {
-        gfx_begin(RGBA(20, 20, 24, 255));
-        draw_scene();
-        gfx_end_with(osk_step);
-    }
-    if (data.result == PSP_UTILITY_OSK_RESULT_CANCELLED)
-        return 0;
-    if (out16[0])
-        to_utf8(out16, out, out_size);
-    else
-        snprintf(out, out_size, "%s", init);
-    while (out[0] && out[strlen(out) - 1] == ' ') /* FAT tar ändå bort mellanslag på slutet */
-        out[strlen(out) - 1] = 0;
-    return 1;
+    return kbd_input(desc, init, out, out_size, 200, 0, draw_scene);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -983,6 +906,9 @@ static void open_menu(int kind)
             add_act(A_DELETE);
         }
         add_act(A_NEWDIR);
+    } else if (kind == M_OPEN) { /* a text file: look at it or change it */
+        add_act(A_VIEW);
+        add_act(A_EDIT);
     } else {
         add_act(A_DELETE_YES);
         add_act(A_CANCEL);
@@ -1002,6 +928,8 @@ static const char *act_label(int act, char *buf, int size)
     case A_DELETE:
     case A_DELETE_YES: return L(S_F_DELETE);
     case A_NEWDIR:     return L(S_F_NEWDIR);
+    case A_VIEW:       return L(S_TE_VIEW);
+    case A_EDIT:       return L(S_TE_EDIT);
     }
     return L(S_F_CANCEL);
 }
@@ -1105,6 +1033,146 @@ static void new_folder(void)
     load(name, s_sel);
 }
 
+/* ---------------------------------------------------------------------- */
+/* ✕ on a file: it is opened by what it is */
+
+static void close_viewer(void)
+{
+    if (s_iv)
+        imageview_close(s_iv);
+    if (s_vp)
+        videoplay_close(s_vp);
+    s_iv = NULL;
+    s_vp = NULL;
+    free(s_mfiles);
+    s_mfiles = NULL;
+}
+
+/* the videos (or the pictures) of this folder are the lines the viewer steps through with L and R; the chosen file is the first one shown */
+static void open_viewer(const FileEntry *e, int video)
+{
+    int n = 0, idx = -1;
+    free(s_mfiles);
+    s_mfiles = s_count > 0 ? malloc((size_t)s_count * sizeof(MusicEntry)) : NULL;
+    for (int i = 0; s_mfiles && i < s_count; i++) {
+        const FileEntry *f = &s_items[i];
+        if (f->kind != KIND_FILE || !(video ? media_is_video(f->name) : media_is_image(f->name)) || strlen(f->name) >= sizeof(s_mfiles[0].name))
+            continue;
+        snprintf(s_mfiles[n].name, sizeof(s_mfiles[n].name), "%s", f->name);
+        s_mfiles[n].dir = 0;
+        if (f == e)
+            idx = n;
+        n++;
+    }
+    if (idx >= 0) {
+        if (video)
+            s_vp = videoplay_open(s_path, s_mfiles, n, idx);
+        else
+            s_iv = imageview_open(s_path, s_mfiles, n, idx);
+    }
+    if (!s_iv && !s_vp) {
+        free(s_mfiles);
+        s_mfiles = NULL;
+        toast(L(video ? S_VID_CANT : S_IMG_CANT));
+        sound_play(SND_ERROR);
+        return;
+    }
+    sound_play(SND_SELECT);
+}
+
+/* a song starts, and the songs of this folder after it (the player of the sound button has the controls) */
+static void play_song(const FileEntry *e)
+{
+    MusicEntry *list = s_count > 0 ? malloc((size_t)s_count * sizeof(MusicEntry)) : NULL;
+    int n = 0, idx = -1;
+    for (int i = 0; list && i < s_count; i++) {
+        const FileEntry *f = &s_items[i];
+        if (f->kind != KIND_FILE || !music_supported(f->name) || media_is_video(f->name) || strlen(f->name) >= sizeof(list[0].name))
+            continue;
+        snprintf(list[n].name, sizeof(list[n].name), "%s", f->name);
+        list[n].dir = 0;
+        if (f == e)
+            idx = n;
+        n++;
+    }
+    if (idx < 0) {
+        free(list);
+        toast(L(S_TE_CANT));
+        sound_play(SND_ERROR);
+        return;
+    }
+    music_play_folder(s_path, list, n, idx); /* (it keeps its own copy of the names) */
+    free(list);
+    char msg[160], shown[96];
+    text_ellipsis(shown, sizeof(shown), e->shown, 0.5f, 220);
+    snprintf(msg, sizeof(msg), L(S_F_PLAYING), shown);
+    toast(msg);
+    sound_play(SND_SELECT);
+}
+
+static void start_text(const char *path, int edit)
+{
+    StrId why = S_TE_CANT;
+    s_te = textedit_open(path, edit, &why);
+    if (!s_te) {
+        toast(L(why));
+        sound_play(SND_ERROR);
+        return;
+    }
+    sound_play(SND_SELECT);
+}
+
+/* A file that has no formatting is looked at or edited (a question first, when it may be edited: a file that is not UTF-8 text is only shown); a file that is not text is not opened. */
+static void open_text(const FileEntry *e)
+{
+    char path[MAX_PATH];
+    join(path, sizeof(path), s_path, e->name);
+    SceIoStat st;
+    memset(&st, 0, sizeof(st));
+    if (sceIoGetstat(path, &st) >= 0 && st.st_size > TB_MAX_FILE) {
+        toast(L(S_TE_TOO_BIG));
+        sound_play(SND_ERROR);
+        return;
+    }
+    int k = textedit_sniff_file(path);
+    if (k < 0 || k == TB_BINARY) {
+        toast(L(S_TE_CANT));
+        sound_play(SND_ERROR);
+        return;
+    }
+    if (k == TB_NOT_UTF8) {
+        start_text(path, 1); /* (it is shown, and says why it cannot be changed) */
+        return;
+    }
+    snprintf(s_open_path, sizeof(s_open_path), "%s", path);
+    open_menu(M_OPEN);
+}
+
+static void open_file(const FileEntry *e)
+{
+    if (media_is_video(e->name))
+        open_viewer(e, 1);
+    else if (media_is_image(e->name))
+        open_viewer(e, 0);
+    else if (music_supported(e->name))
+        play_song(e);
+    else
+        open_text(e);
+}
+
+static void close_text(void)
+{
+    int saved = textedit_saved(s_te);
+    textedit_close(s_te);
+    s_te = NULL;
+    if (saved) { /* its size is another now */
+        char keep[256] = "";
+        if (s_count)
+            snprintf(keep, sizeof(keep), "%s", s_items[s_sel].name);
+        load(keep, s_sel);
+    }
+}
+
 static void run_act(int act)
 {
     char *paths[MAX_CLIP];
@@ -1131,6 +1199,10 @@ static void run_act(int act)
         break;
     case A_DELETE:
         open_menu(M_DELETE);
+        break;
+    case A_VIEW:
+    case A_EDIT:
+        start_text(s_open_path, act == A_EDIT);
         break;
     case A_DELETE_YES:
         n = targets(paths);
@@ -1311,6 +1383,21 @@ int files_update(const UiInput *in, float dt)
         return 0;
     }
 
+    if (s_te) { /* the text editor has the whole screen and all the buttons (SELECT, the power popup, is main.c's) */
+        if (textedit_update(s_te, in, dt))
+            close_text();
+        return 0;
+    }
+    if (s_iv || s_vp) { /* a picture or a video: the same */
+        if (s_vp)
+            videoplay_hold(s_vp, power_is_open());
+        int done = s_iv ? imageview_update(s_iv, in->pressed, in->held, in->lx, in->ly, dt) : videoplay_update(s_vp, in->pressed, in->held, in->lx, in->ly, dt);
+        if (done) {
+            close_viewer();
+            sound_play(SND_BACK);
+        }
+        return 0;
+    }
     { const char *cur = s_count ? s_items[s_sel].name : ""; /* the highlighted name scrolls from the moment the highlight came to it */
       if (strcmp(cur, s_name_cur)) {
           snprintf(s_name_cur, sizeof(s_name_cur), "%s", cur);
@@ -1366,8 +1453,10 @@ int files_update(const UiInput *in, float dt)
                 sound_play(SND_SELECT);
                 return 1;
             }
+        } else if (s_path[0] && e) {
+            open_file(e); /* ✕ on a file: it is opened (a video, a picture, a song, a text file); the options are on START */
         } else if (s_path[0]) {
-            open_menu(M_OPTIONS); /* ✕ på en fil: vad ska göras med den */
+            open_menu(M_OPTIONS); /* (an empty folder: a new folder, paste) */
         }
     } else if ((in->pressed & PSP_CTRL_SQUARE) && e && e->kind != KIND_DEVICE && !s_pick) {
         e->marked ^= 1; /* (the highlight stays on the row) */
@@ -1643,13 +1732,47 @@ static void draw_scene(void)
 
 void files_draw(void)
 {
+    if (s_iv || s_vp) { /* a picture or a video: nothing else on the screen but the popup of SELECT and the volume bar */
+        gfx_begin(RGBA(0, 0, 0, 255));
+        if (s_iv)
+            imageview_draw(s_iv);
+        else
+            videoplay_draw(s_vp);
+        power_draw();
+        osd_draw();
+        gfx_end();
+        return;
+    }
+    if (s_te) {
+        gfx_begin(RGBA(20, 20, 24, 255));
+        textedit_draw(s_te);
+        power_draw();
+        osd_draw();
+        gfx_end();
+        return;
+    }
     gfx_begin(RGBA(20, 20, 24, 255));
     draw_scene();
     gfx_end();
 }
 
+void files_sleep(int asleep)
+{
+    if (asleep == s_asleep)
+        return;
+    s_asleep = asleep;
+    if (s_vp)
+        videoplay_sleep(s_vp, asleep);
+}
+
 void files_close(void)
 {
+    close_viewer();
+    if (s_te) {
+        textedit_close(s_te);
+        s_te = NULL;
+    }
+    s_asleep = 0;
     stop_op();
     s_cf = 0;
     s_cf_anim = 0;

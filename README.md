@@ -64,6 +64,10 @@ wherever it can, but it doesn't copy the console in everything.
     <td width="50%"><img src="docs/screenshots/file-manager.png" alt="File Manager"><br><sub><b>File Manager</b> – browse the Memory Stick, mark files and folders, then copy, move or delete them</sub></td>
     <td width="50%"><img src="docs/screenshots/file-manager-conflict.png" alt="File Manager, a name that is taken"><br><sub><b>File Manager</b> – when a name is taken: <i>Overwrite</i>, <i>Skip</i>, <i>Merge</i> (folders), <i>Rename</i> or <i>Cancel</i>, with <i>Apply to All</i> (△) for the rest</sub></td>
   </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/file-manager-editor.png" alt="The text editor of the File Manager"><br><sub><b>Text editor</b> – ✕ on a file without formatting asks <i>View</i> or <i>Edit</i>; the editor works a line at a time: ✕ opens the PSP's keyboard with the line, □ adds a line below</sub></td>
+    <td width="50%"><img src="docs/screenshots/file-manager-editor-options.png" alt="The options of the text editor"><br><sub><b>Text editor</b> – START: <i>Save</i>, <i>New line above</i>, <i>Copy</i>, <i>Paste</i>, <i>Delete line</i>, <i>Undo</i>, <i>Go to line</i>; ○ asks whether to save the changes</sub></td>
+  </tr>
 </table>
 
 *The screenshots were taken in the PPSSPP emulator with invented demo games, music and saves. The clock, the dates, the battery, volume and brightness are test values.*
@@ -115,7 +119,12 @@ wherever it can, but it doesn't copy the console in everything.
   one after the other. You can also show the battery percentage (*Settings → psp5 authentic*). A Wi-Fi sign is shown while the PSP's Wi-Fi switch is
   on. At the very end of the top bar is the cog wheel.
 - **File Manager** (*Settings → Storage*). Browse the Memory Stick (and the internal storage on a PSP Go) and copy,
-  move, rename, delete or make folders. When a name is taken it asks: *Overwrite*, *Skip*, *Merge* (folders), *Rename* or *Cancel*, with *Apply to All* for the rest.
+  move, rename, delete or make folders (the options are on START). When a name is taken it asks: *Overwrite*, *Skip*, *Merge* (folders), *Rename* or *Cancel*, with *Apply to All* for the rest.
+  **✕ opens the file:** a video in the video player and a picture in the image viewer (L and R go to the one before and after in the folder), a song starts playing (and the songs of the folder after it; the ♪ button of the PSP has the player), and a file that has no
+  formatting (plain text: `.txt`, `.ini`, `.cfg`, `.log` ... anything that is UTF-8 text, up to 1 MB) asks **View** or **Edit**. The **viewer** scrolls with ↑ ↓ (or the stick) and L / R a page, long lines wrap, START has *Go to line*.
+  The **editor** works a line at a time, as ARK's does: ↑ ↓ choose a line, ✕ opens the PSP's own keyboard with the line in it, □ adds a line below, and START has *Save*, *New line above*, *Copy line*, *Paste line*, *Delete line*, *Undo* and *Go to line*;
+  ○ leaves and asks whether to save when something was changed. A file is written under a temporary name and put in place, so a full card leaves the old file as it was; the line ending (LF or CRLF), a UTF-8 byte order mark and the end of the last line are kept.
+  A file that is not UTF-8 text (or has a line over 1000 bytes) can only be viewed, and a file that is not text (a program, an ISO) says that it cannot be opened.
 - **FTP Server** (*Settings → Network → FTP Server*). Copy files to and from the PSP over Wi-Fi: the PSP's own Wi-Fi window opens so that you choose one of your saved connections, and psp5 authentic shows the address to type
   into an FTP program or the file manager of your computer. It shows who is connected and the file that is going. There is no password, so use it on your own network. If the computer cannot connect, INSTALL.md has a list of what to check (WLAN Power Save of the PSP, the network), and [docs/FTP-TROUBLESHOOTING.md](docs/FTP-TROUBLESHOOTING.md) has a step-by-step workaround for networks where the computer cannot find the PSP (a static ARP entry; Linux, Windows, macOS).
 - **Sounds and languages.** Menu sounds (you can turn them off). 11 languages: psp5 authentic follows the PSP's language; Swedish and

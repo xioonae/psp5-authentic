@@ -15,6 +15,8 @@
  *   charging 0/1   låtsas att batteriet laddas
  *   battery N      låtsas att batteriet har N %
  *   wifi 0/1       låtsas att Wi-Fi-reglaget är av/på
+ *   text ORD       the next keyboard of the PSP (kbd.c) answers ORD (the rest of the line; none = an empty text) without being shown
+ *   textcancel     ... or is closed with ○
  */
 #ifdef PSP5_TEST
 void testrun_init(void);
@@ -26,6 +28,7 @@ int testrun_volume(void);                /* låtsad volym (se ovan), -1 = riktig
 int testrun_charging(void);              /* låtsad laddning 0/1, -1 = riktig */
 int testrun_battery(void);               /* låtsad batterinivå i %, -1 = riktig */
 int testrun_wifi(void);                  /* låtsat Wi-Fi-reglage 0/1, -1 = riktigt */
+int testrun_take_text(char *out, int size); /* 1 = the text of a "text" line is in out (once), -1 = the keyboard is to be cancelled, 0 = none was asked for: the real keyboard */
 #else
 static inline void testrun_init(void) {}
 static inline u32 testrun_buttons(u32 real) { return real; }
@@ -36,6 +39,7 @@ static inline int testrun_volume(void) { return -1; }
 static inline int testrun_charging(void) { return -1; }
 static inline int testrun_battery(void) { return -1; }
 static inline int testrun_wifi(void) { return -1; }
+static inline int testrun_take_text(char *out, int size) { return 0; }
 #endif
 
 #endif
