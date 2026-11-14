@@ -233,7 +233,8 @@ struct Video {
     unsigned char *hwbuf; /* a sample as that decoder takes it (aligned to 64 bytes) */
     int hw_first, hw_b;   /* the next sample is given to it as a first one (mode 3, after a jump); the buffer the picture that is pending is in */
     volatile int hw_err;  /* it did not take a sample: the screen's thread goes back to the software decoder */
-    int hw_pics;
+    double hw_q[8];       /* the times of the samples it has been given and has not given a picture for (a picture comes one sample after its own: the decoder holds it back, see hw_push) */
+    int hw_qh, hw_qn, hw_lat; /* the queue's head and length; how many samples the decoder is behind (so that a sample is given one picture time early) */
     int soft;     /* the pictures are made by h264dec.c: the stream is one the PSP's decoder cannot take (CAVLC, a High profile) */
     H264Dec *dec;
     int soft_up, pending;
@@ -1020,12 +1021,19 @@ static void hw_start(Video *v)
     unsigned char *buf = h ? memalign(64, (size_t)(v->au_cap + 63) & ~63u) : NULL;
     unsigned char *rgb = h ? memalign(64, (size_t)FRAME_W * 512 * 4) : NULL;
     int ok = 0;
-    if (h && buf && rgb) { /* the first sample (a key frame) decoded as a test: every error of the library shows here, before a picture is wanted */
-        int size = mp4_video_read(v->mp4, 0, buf, v->au_cap), pics = 0, w = 0, hh = 0;
-        unsigned err = 0;
-        int r = size > 0 ? hwavc_decode(h, buf, size, 3, rgb, &pics, &w, &hh, &err) : -9;
-        crumb4("hw-probe", r, (int)err, pics, w * 1000 + hh);
-        ok = r == 0 && pics > 0 && w > 0 && hh > 0;
+    if (h && buf && rgb) { /* the first samples decoded as a test (the first, a key frame, gives no picture: the decoder is a sample behind): every error of the library shows here, before a picture is wanted */
+        for (int i = 0; i < 4; i++) {
+            int size = mp4_video_read(v->mp4, i, buf, v->au_cap), pics = 0, w = 0, hh = 0;
+            unsigned err = 0;
+            int r = size > 0 ? hwavc_decode(h, buf, size, i == 0 ? 3 : 0, rgb, &pics, &w, &hh, &err) : -9;
+            crumb4("hw-probe", i, r, (int)err, pics * 1000000 + w * 1000 + hh); /* the sample, the step that failed (0: none), the library's answer, the pictures and their size */
+            if (r != 0)
+                break;
+            if (pics > 0 && w > 0 && hh > 0) {
+                ok = 1;
+                break;
+            }
+        }
     }
     free(rgb);
     if (!ok) {
@@ -1494,6 +1502,27 @@ static void soft_publish(Video *v)
 }
 
 /* decodes the next picture when its time has come (the clock's or before it); 1 when it did something, 0 when nothing is due */
+/* The PSP's decoder gives the picture of a sample one sample late (its first answer has no picture: hwd-decode ... 0 in the log), so the times of the samples it has been given wait in a queue and a
+ * picture that comes out takes the oldest (what PMPlayer Ultraviolet does with its presentation queue). */
+static void hw_push(Video *v, double t)
+{
+    if (v->hw_qn == 8) {
+        v->hw_qh = (v->hw_qh + 1) & 7;
+        v->hw_qn--;
+    }
+    v->hw_q[(v->hw_qh + v->hw_qn++) & 7] = t;
+}
+
+static double hw_pop(Video *v, double dflt)
+{
+    if (v->hw_qn <= 0)
+        return dflt;
+    double t = v->hw_q[v->hw_qh];
+    v->hw_qh = (v->hw_qh + 1) & 7;
+    v->hw_qn--;
+    return t;
+}
+
 static int soft_step(Video *v)
 {
     int n = mp4_video_count(v->mp4);
@@ -1505,7 +1534,9 @@ static int soft_step(Video *v)
     float dts, pts_f;
     int key;
     mp4_video_times(v->mp4, v->vnext, &dts, &pts_f, &key);
-    double pts = pts_f, clock = v->clock_ms / 1000.0, late = clock - pts;
+    double pts = pts_f, clock = v->clock_ms / 1000.0;
+    double due = pts - (v->hwd ? v->hw_lat * v->frame_dur : 0.0); /* (the PSP's decoder is a picture behind: its sample is given a picture time early) */
+    double late = clock - due;
     if (v->opt_slow) { /* the speed: when the pictures are late the video is played slower (the sound with it) until they are not, and a little faster again when they have caught up */
         unsigned long long tn = now_us();
         if (!v->ctl_t)
@@ -1525,7 +1556,7 @@ static int soft_step(Video *v)
                 v->speed_min = sp;
         }
     }
-    if (pts > clock + 0.004) {
+    if (due > clock + 0.004) {
         soft_publish(v); /* (caught up: what was made last goes to the screen) */
         return 0;
     }
@@ -1550,6 +1581,7 @@ static int soft_step(Video *v)
     v->soft_skip_n += (unsigned)fast;
     unsigned long long a = now_us();
     int r;
+    double pend_pts = pts; /* the time of the picture that this call gives (the software decoder: the sample's own) */
     if (v->hwd) { /* the PSP's own decoder: the sample as the file has it, the picture as RGBA in a buffer that is neither on the screen nor ready */
         r = -1;
         if (sz > 0) {
@@ -1557,9 +1589,15 @@ static int soft_step(Video *v)
             unsigned err = 0;
             while (b == rd || b == fr)
                 b++;
+            if (v->hw_first)
+                v->hw_qn = v->hw_qh = 0; /* (a jump: the samples of the place before are not waited for) */
+            hw_push(v, pts);
             int hr = hwavc_decode(v->hwd, v->hwbuf, sz, (key || v->hw_first) ? 3 : 0, v->fbuf[b], &pics, &ww, &hh, &err);
             if (hr == 0) {
                 r = pics > 0;
+                for (int k = 0; k < pics; k++)
+                    pend_pts = hw_pop(v, pts);
+                v->hw_lat = v->hw_qn < 0 ? 0 : v->hw_qn > 3 ? 3 : v->hw_qn; /* (the samples that are in it: in the long run one) */
                 v->hw_first = 0;
                 v->hw_b = b;
             } else {
@@ -1599,14 +1637,14 @@ static int soft_step(Video *v)
     v->have_ts = 1;
     if (r > 0) {
         v->pending = 1;
-        v->pend_ts = pts;
+        v->pend_ts = pend_pts;
     }
     if (v->pending) { /* made into RGB now, unless the next picture is due as well (this one would hardly be seen) and a picture went to the screen lately */
         int more = 0;
         if (v->vnext < n) {
             float d2, p2;
             mp4_video_times(v->mp4, v->vnext, &d2, &p2, &key);
-            more = p2 <= clock + 0.004;
+            more = p2 - (v->hwd ? v->hw_lat * v->frame_dur : 0.0) <= clock + 0.004;
         }
         if (!more || now_us() - v->last_pub > 120000)
             soft_publish(v);
@@ -1649,6 +1687,8 @@ static int soft_start(Video *v)
     v->last_pub = 0;
     v->hw_first = 1; /* (a play starts at a key frame: the PSP's decoder is given it as a first sample) */
     v->hw_err = 0;
+    v->hw_qn = v->hw_qh = 0;
+    v->hw_lat = 1;
     v->wquit = 0;
     v->wthread = sceKernelCreateThread("psp5_vdec", soft_thread, 0x24, 0x10000, 0, NULL); /* (below the screen's thread: the buttons and the drawing come first) */
     if (v->wthread < 0) {
