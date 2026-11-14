@@ -86,7 +86,6 @@ static ImageView *s_iv;
 static VideoPlayer *s_vp;
 static MusicEntry *s_mfiles;     /* the videos or pictures of the folder, the lines the viewer steps through (they stay while it is open) */
 static TextEdit *s_te;
-static char s_open_path[MAX_PATH]; /* the text file that the View / Edit question is about */
 static int s_asleep;             /* the PSP sleeps (files_sleep): a video that plays is paused */
 
 /* --- urklipp --- */
@@ -94,8 +93,8 @@ static char *s_clip[MAX_CLIP];
 static int s_clip_n, s_clip_move;
 
 /* --- meny --- */
-enum { M_NONE, M_OPTIONS, M_DELETE, M_OPEN };
-enum { A_PASTE, A_COPY, A_MOVE, A_RENAME, A_DELETE, A_NEWDIR, A_DELETE_YES, A_CANCEL, A_VIEW, A_EDIT };
+enum { M_NONE, M_OPTIONS, M_DELETE };
+enum { A_PASTE, A_COPY, A_MOVE, A_RENAME, A_DELETE, A_NEWDIR, A_DELETE_YES, A_CANCEL };
 static int s_menu, s_menu_sel, s_menu_n, s_menu_act[8];
 static float s_menu_anim;
 static int s_menu_ask;       /* the open (or fading) popup is the delete question */
@@ -906,9 +905,6 @@ static void open_menu(int kind)
             add_act(A_DELETE);
         }
         add_act(A_NEWDIR);
-    } else if (kind == M_OPEN) { /* a text file: look at it or change it */
-        add_act(A_VIEW);
-        add_act(A_EDIT);
     } else {
         add_act(A_DELETE_YES);
         add_act(A_CANCEL);
@@ -928,8 +924,6 @@ static const char *act_label(int act, char *buf, int size)
     case A_DELETE:
     case A_DELETE_YES: return L(S_F_DELETE);
     case A_NEWDIR:     return L(S_F_NEWDIR);
-    case A_VIEW:       return L(S_TE_VIEW);
-    case A_EDIT:       return L(S_TE_EDIT);
     }
     return L(S_F_CANCEL);
 }
@@ -1110,10 +1104,10 @@ static void play_song(const FileEntry *e)
     sound_play(SND_SELECT);
 }
 
-static void start_text(const char *path, int edit)
+static void start_text(const char *path)
 {
     StrId why = S_TE_CANT;
-    s_te = textedit_open(path, edit, &why);
+    s_te = textedit_open(path, &why);
     if (!s_te) {
         toast(L(why));
         sound_play(SND_ERROR);
@@ -1122,7 +1116,8 @@ static void start_text(const char *path, int edit)
     sound_play(SND_SELECT);
 }
 
-/* A file that has no formatting is looked at or edited (a question first, when it may be edited: a file that is not UTF-8 text is only shown); a file that is not text is not opened. */
+/* A file that has no formatting is opened in the text editor: it can be changed when it is UTF-8 text with lines of at most 1000 bytes, and is only read when not (it says so). A file that is
+ * not text is not opened. */
 static void open_text(const FileEntry *e)
 {
     char path[MAX_PATH];
@@ -1140,12 +1135,7 @@ static void open_text(const FileEntry *e)
         sound_play(SND_ERROR);
         return;
     }
-    if (k == TB_NOT_UTF8) {
-        start_text(path, 1); /* (it is shown, and says why it cannot be changed) */
-        return;
-    }
-    snprintf(s_open_path, sizeof(s_open_path), "%s", path);
-    open_menu(M_OPEN);
+    start_text(path);
 }
 
 static void open_file(const FileEntry *e)
@@ -1199,10 +1189,6 @@ static void run_act(int act)
         break;
     case A_DELETE:
         open_menu(M_DELETE);
-        break;
-    case A_VIEW:
-    case A_EDIT:
-        start_text(s_open_path, act == A_EDIT);
         break;
     case A_DELETE_YES:
         n = targets(paths);

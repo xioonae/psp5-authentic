@@ -24,7 +24,6 @@
 #define RH       14.0f   /* the height of a row of text */
 #define PAD      1.0f    /* above and below the rows of a line */
 #define TE_SIZE  0.52f
-#define VIS_ROWS 12      /* rows that surely fit: the most a page is */
 #define PAGE_LINES 8     /* the lines L and R move the choice by in the editor */
 #define MENU_W   200.0f
 #define MAX_PATH 512
@@ -34,7 +33,7 @@
 #define TEXT_DIM  RGBA(160, 162, 172, 255)
 
 enum { M_NONE, M_OPTIONS, M_ASK };
-enum { A_SAVE, A_NEW_ABOVE, A_COPY, A_PASTE, A_DELETE, A_UNDO, A_GOTO, A_EDIT, A_DONT_SAVE, A_CANCEL };
+enum { A_SAVE, A_NEW_ABOVE, A_COPY, A_PASTE, A_DELETE, A_UNDO, A_GOTO, A_DONT_SAVE, A_CANCEL };
 
 typedef struct {
     int line, n, cap;
@@ -46,7 +45,7 @@ struct TextEdit {
     char path[MAX_PATH];
     char name[256];
     char dir[MAX_PATH];
-    int edit, can_edit;
+    int can_edit;             /* the file may be changed (else it is only read: the same screen, the keys that change something do nothing) */
     int sel;                  /* the chosen line (edit) */
     int top_line, top_row;    /* the first row that is shown */
     float off;                /* pixels the text still has to slide (animated scrolling) */
@@ -54,7 +53,7 @@ struct TextEdit {
     int gutter;               /* the width of the line numbers */
     float text_w;             /* the room of a row of text */
     int rep_dir;
-    float rep_timer;
+    float rep_timer, rep_held; /* a held direction repeats, faster the longer it is held */
     int menu;
     int menu_sel, menu_n, menu_act[10];
     float menu_anim;
@@ -400,45 +399,16 @@ static void set_top(TextEdit *t, int line, int row)
     t->off = clampf(t->off + d, -AREA_BOT, AREA_BOT);
 }
 
-/* the number of rows from (line, row) on, up to `limit` (more is not counted) */
-static int rows_from(TextEdit *t, int line, int row, int limit)
+/* the pixels from the first shown row to the end of line `s` */
+static float px_to_end(TextEdit *t, int top_line, int top_row, int s)
 {
-    int n = tb_count(t->tb), cnt = 0;
-    for (int l = line; l < n && cnt < limit; l++) {
-        cnt += rows_of(t, l) - (l == line ? row : 0);
-    }
-    return cnt;
+    float px = -top_row * RH;
+    for (int l = top_line; l <= s; l++)
+        px += line_h(t, l);
+    return px;
 }
 
-/* scroll by `k` rows (viewing); stops where the last row is at the bottom */
-static void scroll_rows(TextEdit *t, int k)
-{
-    int l = t->top_line, r = t->top_row;
-    for (; k > 0; k--) {
-        int nl = l, nr = r + 1;
-        if (nr >= rows_of(t, l)) {
-            nl = l + 1;
-            nr = 0;
-        }
-        if (nl >= tb_count(t->tb) || rows_from(t, nl, nr, VIS_ROWS) < VIS_ROWS)
-            break;
-        l = nl;
-        r = nr;
-    }
-    for (; k < 0; k++) {
-        if (r > 0) {
-            r--;
-        } else if (l > 0) {
-            l--;
-            r = rows_of(t, l) - 1;
-        } else {
-            break;
-        }
-    }
-    set_top(t, l, r);
-}
-
-/* the chosen line (editing) is whole in the shown part, as far as it fits */
+/* the chosen line is whole in the shown part, as far as it fits (the text is moved by rows, as little as it can be) */
 static void ensure_visible(TextEdit *t)
 {
     int s = t->sel;
@@ -450,13 +420,10 @@ static void ensure_visible(TextEdit *t)
         set_top(t, s - 3, 0);
         return;
     }
-    int r = rows_of(t, t->top_line) - t->top_row;
-    for (int l = t->top_line + 1; l <= s; l++)
-        r += rows_of(t, l);
+    const float avail = AREA_BOT - AREA_TOP - 1;
     int l = t->top_line, row = t->top_row;
-    while (r > VIS_ROWS && !(l == s && row == 0)) {
+    while (px_to_end(t, l, row, s) > avail && !(l == s && row == 0)) {
         row++;
-        r--;
         if (row >= rows_of(t, l)) {
             l++;
             row = 0;
@@ -474,14 +441,13 @@ static void jump_to(TextEdit *t, int line)
     t->top_line = line > 3 ? line - 3 : 0;
     t->top_row = 0;
     t->off = 0;
-    if (t->edit)
-        ensure_visible(t);
+    ensure_visible(t);
 }
 
 /* ---------------------------------------------------------------------- */
 /* opening and closing */
 
-TextEdit *textedit_open(const char *path, int edit, StrId *err)
+TextEdit *textedit_open(const char *path, StrId *err)
 {
     StrId dummy;
     if (!err)
@@ -508,8 +474,7 @@ TextEdit *textedit_open(const char *path, int edit, StrId *err)
     snprintf(t->name, sizeof(t->name), "%s", slash ? slash + 1 : path);
     snprintf(t->dir, sizeof(t->dir), "%.*s", slash ? (int)(slash - path) : 0, path);
     t->can_edit = tb_editable(tb);
-    t->edit = edit && t->can_edit;
-    if (edit && !t->can_edit) {
+    if (!t->can_edit) { /* it is shown, and it says why it cannot be changed */
         snprintf(t->toast, sizeof(t->toast), "%s", L(S_TE_VIEW_ONLY));
         t->toast_t = 3.5f;
     }
@@ -552,7 +517,7 @@ static void open_menu(TextEdit *t)
     t->menu = M_OPTIONS;
     t->menu_n = 0;
     t->menu_sel = 0;
-    if (t->edit) {
+    if (t->can_edit) {
         if (tb_dirty(t->tb))
             add_act(t, A_SAVE);
         add_act(t, A_NEW_ABOVE);
@@ -563,10 +528,9 @@ static void open_menu(TextEdit *t)
         if (tb_can_undo(t->tb))
             add_act(t, A_UNDO);
         add_act(t, A_GOTO);
-    } else {
+    } else { /* (a line can be copied out of a file that cannot be changed) */
         add_act(t, A_GOTO);
-        if (t->can_edit)
-            add_act(t, A_EDIT);
+        add_act(t, A_COPY);
     }
     sound_play(SND_SELECT);
 }
@@ -581,7 +545,6 @@ static StrId act_label(int act)
     case A_DELETE:     return S_TE_DEL_LINE;
     case A_UNDO:       return S_TE_UNDO;
     case A_GOTO:       return S_TE_GOTO;
-    case A_EDIT:       return S_TE_EDIT;
     case A_DONT_SAVE:  return S_TE_DONT_SAVE;
     }
     return S_F_CANCEL;
@@ -666,7 +629,7 @@ static void new_line(TextEdit *t, int below)
 static void goto_line(TextEdit *t)
 {
     char num[16], out[32];
-    int cur = (t->edit ? t->sel : t->top_line) + 1;
+    int cur = t->sel + 1;
     snprintf(num, sizeof(num), "%d", cur);
     s_kbd_t = t;
     int ok = kbd_input(L(S_TE_GOTO), num, out, sizeof(out), 6, 0, kbd_scene);
@@ -695,7 +658,7 @@ static void do_save(TextEdit *t, int *closed)
 /* ○ in the editor: leaves, or asks about the changes. 1 = it is over. */
 static int try_leave(TextEdit *t)
 {
-    if (!t->edit || !tb_dirty(t->tb))
+    if (!tb_dirty(t->tb))
         return 1;
     t->menu = M_ASK;
     t->menu_n = 0;
@@ -771,12 +734,6 @@ static int run_act(TextEdit *t, int act)
     case A_GOTO:
         goto_line(t);
         break;
-    case A_EDIT:
-        t->edit = 1;
-        t->sel = t->top_line;
-        ensure_visible(t);
-        sound_play(SND_SELECT);
-        break;
     default:
         sound_play(SND_BACK);
         break;
@@ -797,12 +754,14 @@ static int vertical(TextEdit *t, const UiInput *in, float dt)
     if (dir != t->rep_dir) {
         t->rep_dir = dir;
         t->rep_timer = 0.32f;
+        t->rep_held = 0;
         return dir;
     }
+    t->rep_held += dt;
     t->rep_timer -= dt;
     if (t->rep_timer > 0)
         return 0;
-    t->rep_timer += t->edit ? 0.07f : 0.035f;
+    t->rep_timer += t->rep_held > 2.5f ? 0.02f : t->rep_held > 1.0f ? 0.04f : 0.07f; /* (a long file is crossed in a few seconds) */
     return dir;
 }
 
@@ -843,31 +802,24 @@ int textedit_update(TextEdit *t, const UiInput *in, float dt)
         }
         return 0;
     }
-    if (t->edit) {
-        int n = tb_count(t->tb);
-        if (in->pressed & PSP_CTRL_LTRIGGER)
-            move = -PAGE_LINES;
-        if (in->pressed & PSP_CTRL_RTRIGGER)
-            move = PAGE_LINES;
-        if (move) {
-            int next = (int)clampf(t->sel + move, 0, n - 1);
-            if (next != t->sel) {
-                t->sel = next;
-                sound_play(SND_MOVE);
-                ensure_visible(t);
-            }
+    int n = tb_count(t->tb);
+    if (in->pressed & PSP_CTRL_LTRIGGER)
+        move = -PAGE_LINES;
+    if (in->pressed & PSP_CTRL_RTRIGGER)
+        move = PAGE_LINES;
+    if (move) {
+        int next = (int)clampf(t->sel + move, 0, n - 1);
+        if (next != t->sel) {
+            t->sel = next;
+            sound_play(SND_MOVE);
+            ensure_visible(t);
         }
+    }
+    if (t->can_edit) { /* (a file that cannot be changed is only read: these do nothing) */
         if (in->pressed & PSP_CTRL_CROSS)
             edit_line(t);
         else if (in->pressed & PSP_CTRL_SQUARE)
             new_line(t, 1);
-    } else {
-        if (in->pressed & PSP_CTRL_LTRIGGER)
-            scroll_rows(t, -VIS_ROWS);
-        else if (in->pressed & PSP_CTRL_RTRIGGER)
-            scroll_rows(t, VIS_ROWS);
-        else if (move)
-            scroll_rows(t, move);
     }
     return 0;
 }
@@ -879,7 +831,7 @@ static void draw_hints(TextEdit *t, float a)
 {
     struct { int btn; StrId text; } h[4];
     int n = 0;
-    if (t->edit) {
+    if (t->can_edit) {
         h[n++] = (typeof(h[0])){ controls_glyph(PSP_CTRL_CROSS), S_TE_EDIT_LINE };
         h[n++] = (typeof(h[0])){ controls_glyph(PSP_CTRL_SQUARE), S_TE_NEW_BELOW };
     }
@@ -905,14 +857,18 @@ static void draw_header(TextEdit *t, float a, float slide)
     text_draw(LEFT + 4 + slide, 34, 0.8f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, name);
     if (tb_dirty(t->tb)) /* changed since it was read or written: a small dot after the name */
         gfx_circle(LEFT + 4 + slide + ceilf(text_width(0.8f, 0, name)) + 9, 28, 3.5f, fade(RGBA(236, 236, 240, 255), a));
-    const char *p = t->dir;
-    float max = WIDTH - 8 - text_width(0.5f, 0, L(t->edit ? S_TE_EDIT : S_TE_VIEW)) - 16;
+    const char *p = t->dir; /* the folder, cut from the left; "View - " in front of it when the file cannot be changed */
+    const char *mode = t->can_edit ? "" : L(S_TE_VIEW);
+    float max = WIDTH - 8 - (mode[0] ? text_width(0.5f, 0, mode) + 24 : 0);
     while (text_width(0.5f, 0, p) > max && strchr(p + 1, '/'))
         p = strchr(p + 1, '/');
-    char line[MAX_PATH + 24];
-    snprintf(line, sizeof(line), "%s  -  %s%s", L(t->edit ? S_TE_EDIT : S_TE_VIEW), p == t->dir ? "" : "...", p);
+    char line[MAX_PATH + 40];
+    if (mode[0])
+        snprintf(line, sizeof(line), "%s  -  %s%s", mode, p == t->dir ? "" : "...", p);
+    else
+        snprintf(line, sizeof(line), "%s%s", p == t->dir ? "" : "...", p);
     text_draw(LEFT + 4 + slide, 52, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_LEFT, line);
-    int n = tb_count(t->tb), cur = (t->edit ? t->sel : t->top_line) + 1;
+    int n = tb_count(t->tb), cur = t->sel + 1;
     char pos[64];
     snprintf(pos, sizeof(pos), L(S_TE_LINE), cur, n);
     float right = LEFT + WIDTH;
@@ -950,7 +906,7 @@ static void draw_text(TextEdit *t, float a, float slide)
     int n = tb_count(t->tb);
     gfx_clip(0, AREA_TOP - 2, SCREEN_W, AREA_BOT - AREA_TOP + 4);
     float y0 = AREA_TOP + t->off - t->top_row * RH;
-    int sel_on = t->edit && !t->menu;
+    int sel_on = !t->menu;
     float yb = y0;
     for (int l = t->top_line; l < n && yb < AREA_BOT + 4; l++) {
         draw_line_block(t, l, yb, a, slide, sel_on && l == t->sel);
@@ -964,7 +920,7 @@ static void draw_text(TextEdit *t, float a, float slide)
     gfx_clip_reset();
     if (n > 12) { /* the scroll bar */
         float h = AREA_BOT - AREA_TOP, th = clampf(h * 12.0f / n, 12, h);
-        float ty = AREA_TOP + (h - th) * (float)(t->edit ? t->sel : t->top_line) / (float)(n - 1);
+        float ty = AREA_TOP + (h - th) * (float)t->sel / (float)(n - 1);
         gfx_round_rect(LEFT + WIDTH + 6, ty, 3, th, 1.5f, fade(RGBA(255, 255, 255, 70), a));
     }
 }

@@ -721,8 +721,6 @@ static const char *const T[S_COUNT][NL] = {
                          "Reinicia psp5 para volver a reproducir vídeos", "Riavvia psp5 per riprodurre di nuovo i video", "Start psp5 opnieuw om weer video's af te spelen", "Reinicie o psp5 para voltar a reproduzir vídeos", "Перезапустите psp5, чтобы снова смотреть видео", "ビデオを再生するには psp5 を再起動してください", "Restartujte psp5, aby šla videa znovu přehrát" },
     [S_TE_VIEW] = { "View", "Visa", "Ansehen", "Afficher",
                                 "Ver", "Visualizza", "Bekijken", "Ver", "Просмотр", "表示", "Zobrazit" },
-    [S_TE_EDIT] = { "Edit", "Redigera", "Bearbeiten", "Modifier",
-                                "Editar", "Modifica", "Bewerken", "Editar", "Изменить", "編集", "Upravit" },
     [S_TE_SAVE] = { "Save", "Spara", "Speichern", "Enregistrer",
                                 "Guardar", "Salva", "Opslaan", "Guardar", "Сохранить", "保存", "Uložit" },
     [S_TE_DONT_SAVE] = { "Don't save", "Spara inte", "Nicht speichern", "Ne pas enregistrer",
