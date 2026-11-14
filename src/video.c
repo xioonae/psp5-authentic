@@ -1166,6 +1166,7 @@ Video *video_open(const char *path)
     v->opt_slow = 1;
     v->opt_hw = 1; /* (the PSP's own decoder for a stream it may take; hw=0 in video-opts.txt leaves it out) */
     v->speed = 1.0f;
+    v->speed_min = 1.0f; /* (a video that was only opened and left has not slowed down: with 0 here its crash file was kept every time) */
     const char *dot = strrchr(path, '.');
     int pmf = dot && (!strcasecmp(dot, ".pmf") || !strcasecmp(dot, ".psmf"));
     v->frame_dur = 1001.0 / 30000.0; /* (a PMF: the usual 29.97; an MP4 sets its own below) */
