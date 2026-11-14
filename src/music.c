@@ -15,6 +15,9 @@
 #include <strings.h>
 #include "music.h"
 #include "system.h"
+#include "aac.h"
+#include "adts.h"
+#include "mp4.h"
 
 #define MAX_ENTRIES  1000   /* lines of one folder in the Music screen, and songs in a queue */
 #define QNAME        128    /* a name in the queue (the same size as MusicEntry.name) */
@@ -268,8 +271,27 @@ static int unsync(unsigned char *b, int len)
 
 #define MAX_COVER_TAG (2 * 1024 * 1024) /* större taggar läses inte (minnet på PSP-1000) */
 
+/* .m4a / .m4b: the tags are those of an MP4 file (title, artist, album, the cover) */
+static int mp4_audio_ext(const char *path)
+{
+    const char *dot = strrchr(path, '.');
+    return dot && (!strcasecmp(dot + 1, "m4a") || !strcasecmp(dot + 1, "m4b"));
+}
+
 void *music_cover_data(const char *path, u32 *size_out)
 {
+    if (mp4_audio_ext(path)) {
+        Mp4 *m = mp4_open_audio(path);
+        void *copy = NULL;
+        int len = 0, png = 0;
+        const unsigned char *cv = m ? mp4_cover(m, &len, &png) : NULL;
+        if (cv && len > 0 && len <= MAX_COVER_TAG && (copy = malloc((size_t)len))) {
+            memcpy(copy, cv, (size_t)len);
+            *size_out = (u32)len;
+        }
+        mp4_close(m);
+        return copy;
+    }
     SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0777);
     if (fd < 0)
         return NULL;
@@ -844,6 +866,140 @@ static void wav_close(void) {}
 static const Codec wav_codec = { wav_open, wav_frame, wav_seek, wav_close };
 
 /* ---------------------------------------------------------------------- */
+/* AAC (.m4a, .m4b, and .aac in ADTS form): the same software decoder as the sound of the videos (aac.c: AAC-LC, one or two channels), with the file read by mp4.c (the audio track of an MP4 file, as the
+ * video player reads its sound) or adts.c (the frames of a raw stream). The PSP's own AAC decoder is not used (it crashed a PSP). One frame is 1024 samples; a frame that is damaged is silence. A jump
+ * starts one frame early and drops what that frame gives, because a frame is made from the overlap with the frame before it. */
+
+static Mp4 *s_aac_m4;
+static Adts *s_aac_ts;
+static AacDec *s_aac_dec;
+static int s_aac_i;                 /* the next frame (an MP4) */
+static int s_aac_skip;              /* the next frame is only decoded (the one before a jump's place), not played */
+static unsigned char s_aac_buf[8192];
+static short __attribute__((aligned(64))) s_aac_pcm[AAC_FRAME * 2];
+
+static void aac_close_src(void)
+{
+    if (s_aac_dec)
+        aac_free(s_aac_dec);
+    if (s_aac_m4)
+        mp4_close(s_aac_m4);
+    if (s_aac_ts)
+        adts_close(s_aac_ts);
+    s_aac_dec = NULL;
+    s_aac_m4 = NULL;
+    s_aac_ts = NULL;
+}
+
+static int aac_open(void)
+{
+    unsigned char h[12];
+    memset(h, 0, sizeof(h));
+    aac_close_src();
+    sceIoLseek32(s_fd, 0, PSP_SEEK_SET);
+    if (sceIoRead(s_fd, h, 12) < 8)
+        return -1;
+    const unsigned char *cfg;
+    int cfg_len = 0, rate = 0, ch = 0;
+    if (!memcmp(h + 4, "ftyp", 4)) { /* an MP4 audio file */
+        s_aac_m4 = mp4_open_audio(s_path);
+        if (!s_aac_m4)
+            return -1;
+        cfg = mp4_audio_config(s_aac_m4, &cfg_len);
+        s_duration = mp4_audio_duration(s_aac_m4);
+    } else { /* a raw stream */
+        s_aac_ts = adts_open(s_path);
+        if (!s_aac_ts)
+            return -1;
+        cfg = adts_config(s_aac_ts);
+        cfg_len = 2;
+        s_duration = adts_duration(s_aac_ts);
+    }
+    s_aac_dec = aac_new(cfg, cfg_len, &rate, &ch); /* (NULL: HE-AAC, more than two channels ... not ours) */
+    if (!s_aac_dec) {
+        aac_close_src();
+        return -1;
+    }
+    s_rate = rate;
+    s_channels = 2; /* (the decoder gives two channels: a mono stream is two equal ones) */
+    s_aac_i = 0;
+    s_aac_skip = 0;
+    s_decoded = 0;
+    return 0;
+}
+
+/* the file is closed by sleep mode: it is opened again (an MP4 is read from its movie box again; the place in the stream is the same) */
+static int aac_reopen(void)
+{
+    if (s_aac_m4) {
+        mp4_close(s_aac_m4);
+        s_aac_m4 = mp4_open_audio(s_path);
+        return s_aac_m4 != NULL;
+    }
+    return s_aac_ts && adts_reopen(s_aac_ts);
+}
+
+static int aac_frame(const short **pcm_out, int *samples_out, int *ch_out)
+{
+    int len;
+    if (s_aac_m4) {
+        if (s_aac_i >= mp4_audio_count(s_aac_m4))
+            return 0;
+        len = mp4_audio_read(s_aac_m4, s_aac_i, s_aac_buf, sizeof(s_aac_buf));
+        if (len < 0 && s_path[0] && aac_reopen())
+            len = mp4_audio_read(s_aac_m4, s_aac_i, s_aac_buf, sizeof(s_aac_buf));
+        if (len < 0)
+            return -1;
+        s_aac_i++;
+        s_decoded = mp4_audio_time(s_aac_m4, s_aac_i < mp4_audio_count(s_aac_m4) ? s_aac_i : s_aac_i - 1);
+    } else {
+        len = adts_next(s_aac_ts, s_aac_buf, sizeof(s_aac_buf));
+        if (len < 0 && s_path[0] && aac_reopen())
+            len = adts_next(s_aac_ts, s_aac_buf, sizeof(s_aac_buf));
+        if (len == 0)
+            return 0;
+        if (len < 0)
+            return -1;
+        s_decoded = adts_time(s_aac_ts);
+    }
+    if (len == 0 || !aac_decode(s_aac_dec, s_aac_buf, len, s_aac_pcm))
+        memset(s_aac_pcm, 0, sizeof(s_aac_pcm)); /* (an empty or a damaged frame: a moment of silence, the song goes on) */
+    *pcm_out = s_aac_pcm;
+    *ch_out = 2;
+    *samples_out = s_aac_skip ? 0 : AAC_FRAME;
+    s_aac_skip = 0;
+    return 1;
+}
+
+static int aac_seek(float sec)
+{
+    if (sec < 0)
+        sec = 0;
+    if (s_aac_m4) {
+        if (sec >= s_duration - 0.5f)
+            return -1;
+        int i = mp4_audio_at(s_aac_m4, sec);
+        s_aac_i = i > 0 ? i - 1 : 0; /* one frame early: it is decoded for the overlap and not played */
+        s_aac_skip = i > 0;
+        s_decoded = mp4_audio_time(s_aac_m4, i);
+    } else {
+        if (adts_seek(s_aac_ts, sec) != 0)
+            return -1;
+        s_aac_skip = 1; /* (the first frame at the place is decoded and dropped: a frame lost is better than half a frame) */
+        s_decoded = adts_time(s_aac_ts);
+    }
+    aac_flush(s_aac_dec);
+    return 0;
+}
+
+static void aac_close(void)
+{
+    aac_close_src();
+}
+
+static const Codec aac_codec = { aac_open, aac_frame, aac_seek, aac_close };
+
+/* ---------------------------------------------------------------------- */
 /* ATRAC3 and ATRAC3plus (the PSP's own music: .at3, .oma, .aa3), by the PSP's sceAtrac library. The file is read through a buffer of 64 KB: the library says where in
  * the file it wants more and where in the buffer it goes (sceAtracGetStreamDataInfo), and a jump asks it which part of the file it needs for the new place. */
 
@@ -981,6 +1137,9 @@ static const struct { const char *ext; const Codec *codec; } FORMATS[] = {
     { "at3", &atrac_codec },
     { "oma", &atrac_codec },
     { "aa3", &atrac_codec },
+    { "m4a", &aac_codec },
+    { "m4b", &aac_codec },
+    { "aac", &aac_codec },
 };
 
 static const Codec *codec_for(const char *name)
@@ -1017,6 +1176,21 @@ static void read_song_tags(const char *path, Track *t)
     Item it;
     memset(&it, 0, sizeof(it));
     snprintf(it.t.path, sizeof(it.t.path), "%s", path);
+    if (mp4_audio_ext(path)) { /* (the file is open already when it is the song that plays: its movie box is read once) */
+        Mp4 *m = s_aac_m4 && !strcmp(s_path, path) ? s_aac_m4 : mp4_open_audio(path);
+        if (m) {
+            mp4_tag(m, MP4_TAG_TITLE, it.t.title, sizeof(it.t.title));
+            if (!mp4_tag(m, MP4_TAG_ARTIST, it.t.artist, sizeof(it.t.artist)))
+                mp4_tag(m, MP4_TAG_ALBUM_ARTIST, it.t.artist, sizeof(it.t.artist));
+            mp4_tag(m, MP4_TAG_ALBUM, it.t.album, sizeof(it.t.album));
+            if (m != s_aac_m4)
+                mp4_close(m);
+        }
+        if (!it.t.title[0])
+            title_from_name(path, it.t.title, sizeof(it.t.title));
+        *t = it.t;
+        return;
+    }
     SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0777);
     unsigned char *buf = fd >= 0 ? malloc(TAG_READ) : NULL;
     if (buf) {
@@ -1406,7 +1580,7 @@ void music_init(void)
     s_now_valid = 0;
     s_elapsed = s_duration = 0;
     s_lock = sceKernelCreateSema("psp5_music", 0, 1, 1, NULL);
-    s_thread = sceKernelCreateThread("psp5_music", player_thread, 0x14, 0x4000, PSP_THREAD_ATTR_USER, NULL);
+    s_thread = sceKernelCreateThread("psp5_music", player_thread, 0x14, 0x8000, PSP_THREAD_ATTR_USER, NULL);
     if (s_thread >= 0 && sceKernelStartThread(s_thread, 0, NULL) < 0) {
         sceKernelDeleteThread(s_thread);
         s_thread = -1;

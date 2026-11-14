@@ -366,6 +366,30 @@ Mp4 *mp4_open(const char *path)
     return m;
 }
 
+/* An audio file in the MP4 family (.m4a, .m4b): no video track is needed, the first AAC audio track is the file. The sound has its file handle (fpa) and the movie box is read whole (it holds the tags
+ * and the cover too). NULL when there is no movie box, or no AAC track. */
+Mp4 *mp4_open_audio(const char *path)
+{
+    Mp4 *m = calloc(1, sizeof(*m));
+    if (!m)
+        return NULL;
+    m->fp = fopen(path, "rb");
+    if (!m->fp || !load_moov(m)) {
+        mp4_close(m);
+        return NULL;
+    }
+    setvbuf(m->fp, NULL, _IOFBF, 32768);
+    walk(m, NULL, m->moov, m->moov_size, 0, moov_box);
+    if (!m->a.used || !m->a.n_samples || m->a.rate <= 0 || m->a.channels <= 0 || !m->a.asc || m->a.asc_len < 2 || !m->a.timescale) {
+        mp4_close(m);
+        return NULL;
+    }
+    m->fpa = fopen(path, "rb");
+    if (m->fpa)
+        setvbuf(m->fpa, NULL, _IOFBF, 32768);
+    return m;
+}
+
 void mp4_close(Mp4 *m)
 {
     if (!m)
@@ -607,3 +631,112 @@ int mp4_audio_size(Mp4 *m, int i) { return sample_size(&m->a, i); }
 int mp4_audio_read(Mp4 *m, int i, unsigned char *buf, int cap) { return read_sample(m, &m->a, i, buf, cap); }
 float mp4_audio_time(Mp4 *m, int i) { return (float)((double)sample_dts(&m->a, i) / m->a.timescale); }
 int mp4_audio_at(Mp4 *m, float t) { return sample_at(&m->a, t); }
+
+float mp4_audio_duration(const Mp4 *m)
+{
+    if (m->a.timescale && m->a.duration)
+        return (float)((double)m->a.duration / m->a.timescale);
+    return m->movie_scale ? (float)((double)m->movie_duration / m->movie_scale) : 0;
+}
+
+/* ---------------------------------------------------------------------- */
+/* the tags and the cover (the iTunes way: moov / udta / meta / ilst, or moov / meta / ilst) */
+
+static const uint8_t *find_box(const uint8_t *p, long size, uint32_t type, long *body)
+{
+    while (size >= 8) {
+        uint64_t sz = be32(p);
+        uint32_t t = be32(p + 4);
+        long hdr = 8;
+        if (sz == 1) {
+            if (size < 16)
+                return NULL;
+            sz = be64(p + 8);
+            hdr = 16;
+        } else if (sz == 0) {
+            sz = (uint64_t)size;
+        }
+        if (sz < (uint64_t)hdr || sz > (uint64_t)size)
+            return NULL;
+        if (t == type) {
+            *body = (long)(sz - hdr);
+            return p + hdr;
+        }
+        p += sz;
+        size -= (long)sz;
+    }
+    return NULL;
+}
+
+/* the box `ilst` that holds the items (NULL when the file has none) */
+static const uint8_t *ilst_of(const Mp4 *m, long *size)
+{
+    long n = 0, k = 0;
+    const uint8_t *meta = NULL;
+    const uint8_t *udta = find_box(m->moov, m->moov_size, 0x75647461, &n); /* udta */
+    if (udta)
+        meta = find_box(udta, n, 0x6d657461, &k); /* meta */
+    if (!meta)
+        meta = find_box(m->moov, m->moov_size, 0x6d657461, &k);
+    if (!meta || k < 4)
+        return NULL;
+    return find_box(meta + 4, k - 4, 0x696c7374, size); /* (meta has its version and flags first) */
+}
+
+/* the first `data` of the item `key`: its body (the type and the place come first: 8 bytes), the size of that, and the type (1 = text, 13 = JPEG, 14 = PNG) */
+static const uint8_t *item_data(const Mp4 *m, uint32_t key, long *size, int *type)
+{
+    long n = 0, k = 0;
+    const uint8_t *ilst = ilst_of(m, &n);
+    if (!ilst)
+        return NULL;
+    const uint8_t *item = find_box(ilst, n, key, &k);
+    if (!item)
+        return NULL;
+    long d = 0;
+    const uint8_t *data = find_box(item, k, 0x64617461, &d); /* data */
+    if (!data || d < 8)
+        return NULL;
+    *type = (int)(be32(data) & 0xFFFFFF);
+    *size = d - 8;
+    return data + 8;
+}
+
+int mp4_tag(const Mp4 *m, uint32_t key, char *out, int cap)
+{
+    long n = 0;
+    int type = 0;
+    out[0] = 0;
+    const uint8_t *d = item_data(m, key, &n, &type);
+    if (!d || type != 1 || cap < 2)
+        return 0;
+    if (n > cap - 1)
+        n = cap - 1;
+    memcpy(out, d, (size_t)n);
+    out[n] = 0;
+    /* a cut in the middle of a character is taken off */
+    int i = (int)n;
+    while (i > 0 && ((unsigned char)out[i - 1] & 0xC0) == 0x80)
+        i--;
+    if (i > 0 && (unsigned char)out[i - 1] >= 0xC0) {
+        int need = (unsigned char)out[i - 1] >= 0xF0 ? 4 : (unsigned char)out[i - 1] >= 0xE0 ? 3 : 2;
+        if ((int)n - (i - 1) < need)
+            out[i - 1] = 0;
+    }
+    for (char *c = out; *c; c++) /* (a line feed or a tab in a tag is a space) */
+        if ((unsigned char)*c < 32)
+            *c = ' ';
+    return (int)strlen(out);
+}
+
+const unsigned char *mp4_cover(const Mp4 *m, int *len, int *is_png)
+{
+    long n = 0;
+    int type = 0;
+    const uint8_t *d = item_data(m, MP4_TAG_COVER, &n, &type);
+    if (!d || (type != 13 && type != 14) || n <= 0 || n > 0x7FFFFFFF)
+        return NULL;
+    *len = (int)n;
+    *is_png = type == 14;
+    return d;
+}
