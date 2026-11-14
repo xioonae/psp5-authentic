@@ -72,7 +72,7 @@ int iso_read(IsoReader *r, void *buf, u32 size, u32 offset)
 
 static u32 le32(const u8 *p)
 {
-    return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
+    return p[0] | (p[1] << 8) | (p[2] << 16) | ((u32)p[3] << 24); /* (an int shift of a byte over 127 by 24 is not defined) */
 }
 
 /* Söker efter `name` i en katalog (extent/size). Namn i ISO9660 kan sluta på ";1". */

@@ -21,33 +21,6 @@ typedef struct __attribute__((packed)) {
     u32 data_offset;
 } SfoEntry;
 
-int sfo_get_string(const u8 *sfo, u32 sfo_size, const char *key, char *out, int out_size)
-{
-    const SfoHeader *h = (const SfoHeader *)sfo;
-    if (sfo_size < sizeof(SfoHeader) || h->magic != SFO_MAGIC)
-        return 0;
-    if (sizeof(SfoHeader) + h->count * sizeof(SfoEntry) > sfo_size)
-        return 0;
-
-    const SfoEntry *e = (const SfoEntry *)(sfo + sizeof(SfoHeader));
-    for (u32 i = 0; i < h->count; i++) {
-        u32 koff = h->key_table + e[i].key_offset;
-        if (koff >= sfo_size || strcmp((const char *)sfo + koff, key) != 0)
-            continue;
-
-        u32 doff = h->data_table + e[i].data_offset;
-        u32 len = e[i].len;
-        if (doff + len > sfo_size)
-            return 0;
-        if (len >= (u32)out_size)
-            len = out_size - 1;
-        memcpy(out, sfo + doff, len);
-        out[len] = 0;
-        return 1;
-    }
-    return 0;
-}
-
 /* SFO-huvudet och posttabellen måste rymmas i datat (u64: ett trasigt antal får inte svämma över) */
 static int sfo_valid(const u8 *sfo, u32 sfo_size)
 {
@@ -55,6 +28,33 @@ static int sfo_valid(const u8 *sfo, u32 sfo_size)
     if (sfo_size < sizeof(SfoHeader) || h->magic != SFO_MAGIC)
         return 0;
     return (u64)sizeof(SfoHeader) + (u64)h->count * sizeof(SfoEntry) <= sfo_size;
+}
+
+/* A PARAM.SFO comes from any file on the card (an ISO, an EBOOT.PBP, a folder), so nothing in it is trusted: every offset is added in 64 bits (a key table or data offset near 2^32 must not wrap
+ * round to a place inside the buffer), a key has to end inside the data (strcmp would run on past the end), and an output of no room is not written at all. */
+int sfo_get_string(const u8 *sfo, u32 sfo_size, const char *key, char *out, int out_size)
+{
+    if (!sfo || !key || !out || out_size < 1 || !sfo_valid(sfo, sfo_size))
+        return 0;
+    const SfoHeader *h = (const SfoHeader *)sfo;
+    const SfoEntry *e = (const SfoEntry *)(sfo + sizeof(SfoHeader));
+    size_t klen = strlen(key);
+    for (u32 i = 0; i < h->count; i++) {
+        u64 koff = (u64)h->key_table + e[i].key_offset;
+        if (koff >= sfo_size || klen >= sfo_size - koff || memcmp(sfo + koff, key, klen) != 0 || sfo[koff + klen] != 0)
+            continue; /* (not this key, or a key that does not end inside the data) */
+
+        u64 doff = (u64)h->data_table + e[i].data_offset;
+        u32 len = e[i].len;
+        if (doff + len > sfo_size)
+            return 0;
+        if (len >= (u32)out_size)
+            len = (u32)out_size - 1;
+        memcpy(out, sfo + doff, len);
+        out[len] = 0;
+        return 1;
+    }
+    return 0;
 }
 
 int sfo_count(const u8 *sfo, u32 sfo_size)
