@@ -598,8 +598,45 @@ static void logo_render(float w, float h, float cx, float cy, int tw, int th, un
     }
 }
 
+/* The pictures that the screens ask for the first time they are drawn are stored ready (iconbake_data.inc, made by tools/gen_icon_bake.py from this very function): the pictures of the Music, Videos
+ * and Images cards, the cube, the note, the cog, the Wi-Fi sign and a few more took 0.3 to 1 second together on a PSP when the Media tab or Settings came into view the first time (every sample of
+ * every pixel is a distance to a shape). A picture is found by exactly the numbers it is asked for; any other is calculated as before. The host test icons/iconbake_test.py checks that the file is up to
+ * date. Each picture is stored as pairs (coverage, run length), row after row, as the Library card's (libicon_data.inc). */
+typedef struct {
+    unsigned char kind;
+    unsigned short tw, th;
+    float w, h, r, cx, cy;
+    unsigned short start; /* in icon_baked_data */
+} IconBake;
+
+#ifdef ICON_NO_BAKED /* (tools/gen_icon_bake.py builds this file without the stored pictures, to make them) */
+#define ICON_BAKED_COUNT 0
+static const IconBake icon_baked[1] = { { 0 } };
+static const unsigned char icon_baked_data[1] = { 0 };
+#else
+#include "iconbake_data.inc"
+#endif
+
+static int baked_render(int kind, float w, float h, float r, float cx, float cy, int tw, int th, unsigned char *out)
+{
+    for (int i = 0; i < ICON_BAKED_COUNT; i++) {
+        const IconBake *b = &icon_baked[i];
+        if (b->kind != kind || b->tw != tw || b->th != th || b->w != w || b->h != h || b->r != r || b->cx != cx || b->cy != cy)
+            continue;
+        const unsigned char *p = icon_baked_data + b->start;
+        for (int n = 0; n < tw * th; p += 2) { /* pairs: coverage, run */
+            memset(out + n, p[0], p[1]);
+            n += p[1];
+        }
+        return 1;
+    }
+    return 0;
+}
+
 void icon_render(int kind, float w, float h, float r, float cx, float cy, int tw, int th, unsigned char *out)
 {
+    if (baked_render(kind, w, h, r, cx, cy, tw, th, out))
+        return;
     if (kind == ICON_LOGO) {
         logo_render(w, h, cx, cy, tw, th, out);
         return;

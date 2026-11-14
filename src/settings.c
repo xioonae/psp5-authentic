@@ -926,7 +926,8 @@ static void build(int rebuild)
 
 void settings_open(void)
 {
-    font_ensure_cjk(); /* språkens egna namn (Русский, 日本語) */
+    /* (the Japanese font, for the languages' own names (Русский, 日本語), is not loaded here but when the Language page comes into view, page_enter: it is a large font, and loading it made Settings open
+     * a fraction of a second late every time, though most visits never look at the languages) */
     char path[200];
     snprintf(path, sizeof(path), "%sSETTINGS.TXT", sys_ark_dir());
     arkcfg_load(path);
@@ -1167,6 +1168,8 @@ static void page_enter(int page)
     int *sel = &S.item[page], *top = &S.top[page];
     if (page == PG_INFO) /* what it shows is asked of the PSP when it comes into view (the battery changes) */
         fill_about(&s_cats[PG_INFO]);
+    if (page == PG_LANG)
+        font_ensure_cjk(); /* the languages' own names: 日本語 is in the font that is loaded now (it is kept to the end of the screen) */
     if (page == PG_CSTORE) { /* the numbers are asked of the storage when it comes into view */
         storage_start();
         store_fill();
