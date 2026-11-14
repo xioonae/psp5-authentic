@@ -235,6 +235,7 @@ struct Video {
     volatile int hw_err;  /* it did not take a sample: the screen's thread goes back to the software decoder */
     double hw_q[8];       /* the times of the samples it has been given and has not given a picture for (a picture comes one sample after its own: the decoder holds it back, see hw_push) */
     int hw_qh, hw_qn, hw_lat; /* the queue's head and length; how many samples the decoder is behind (so that a sample is given one picture time early) */
+    int hw_lat0;          /* ... as the test at the opening found it (the sample the first picture came with): what every play starts with */
     int soft;     /* the pictures are made by h264dec.c: the stream is one the PSP's decoder cannot take (CAVLC, a High profile) */
     H264Dec *dec;
     int soft_up, pending;
@@ -1031,6 +1032,7 @@ static void hw_start(Video *v)
                 break;
             if (pics > 0 && w > 0 && hh > 0) {
                 ok = 1;
+                v->hw_lat0 = i; /* (the samples that were in the decoder when the picture of the first came out) */
                 break;
             }
         }
@@ -1295,6 +1297,7 @@ void video_close(Video *v)
     if (!v->quiet)
         crumb("closing", 0, 0);
     soft_stop(v);
+    int hw_good = v->hwd != NULL && !v->hw_err; /* (the PSP's decoder played it to the end: nothing to look at) */
     hw_stop(v);
     v->started = 0;
     audio_stop(v);
@@ -1311,7 +1314,7 @@ void video_close(Video *v)
         crumb_end();
     } else {
         crumb4("end", v->n_put, v->n_au, v->n_dec, v->err_total);
-        if (v->failed || v->err_total > 0 || (v->opt_hw && v->um.hw_ok) || (v->soft && (v->soft_late_n * 5 > (unsigned)v->n_dec + 5 || v->speed_min < 0.97f)))
+        if (v->failed || v->err_total > 0 || (v->opt_hw && v->um.hw_ok && !hw_good) || (v->soft && (v->soft_late_n * 5 > (unsigned)v->n_dec + 5 || v->speed_min < 0.97f)))
             crumb_keep(); /* it did not play right (or a video in software was late with more than one picture in five, or had to slow down: how fast the PSP is; or the hardware decoder's Baseline mode was tried: its first tests): the file stays (video-failed.txt) */
         else
             crumb_end(); /* it was closed the right way and played: nothing to leave behind */
@@ -1696,7 +1699,7 @@ static int soft_start(Video *v)
     v->hw_first = 1; /* (a play starts at a key frame: the PSP's decoder is given it as a first sample) */
     v->hw_err = 0;
     v->hw_qn = v->hw_qh = 0;
-    v->hw_lat = 1;
+    v->hw_lat = v->hw_lat0 > 0 && v->hw_lat0 <= 6 ? v->hw_lat0 : 1; /* (what the opening test measured: the first pictures of a play are not taken for late) */
     if (v->hwd) { /* a new place: the decoder keeps pictures and state a key frame does not clear (after a jump the first version of this froze for seconds), so it is opened again, as PMPlayer Ultraviolet does at every seek */
         int rr = hwavc_reset(v->hwd);
         crumbh("hw-reset", (unsigned)rr, 0, 0, 0);
