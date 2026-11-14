@@ -1,6 +1,10 @@
 /* psp5 authentic – the PSP's own H.264 decoder for a CAVLC stream (see hwavc.h) */
 #include "hwavc.h"
 
+#ifdef PSP5_HW_FAKE /* (a test build for PPSSPP: a stand-in with the software decoder's pictures, see hwfake.inc) */
+#include "hwfake.inc"
+#else
+
 #include <malloc.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -245,7 +249,7 @@ void hwavc_close(HwAvc *h)
     free(h);
 }
 
-int hwavc_decode(HwAvc *h, void *sample, int size, int mode, void *rgb, int *pics, int *w, int *h_out, unsigned *err)
+int hwavc_decode(HwAvc *h, void *sample, int size, int mode, void *rgb[2], int *pics, int *w, int *h_out, unsigned *err)
 {
     int log = h->calls < 3;
     h->calls++;
@@ -286,38 +290,46 @@ int hwavc_decode(HwAvc *h, void *sample, int size, int mode, void *rgb, int *pic
     }
     if (n <= 0)
         return 0;
-    PicInfo *info = d->info;
-    PicYuv *yuv = d->yuv;
-    if (info->width <= 0 || info->width > FRAME_W || info->height <= 0 || info->height > 512) {
-        *err = 0x80000001u;
-        L("hwd-size", (unsigned)info->width, (unsigned)info->height, 0, 0);
+    if (n > 2) { /* (more pictures in one call than the two that PMPlayer Ultraviolet knows what to do with) */
+        *err = 0x80000002u;
+        L("hwd-many", (unsigned)n, 0, 0, 0);
         return -3;
     }
-    if (!rgb) { /* the picture is not wanted (the run up to a place a jump asked for): it is not converted */
-        *pics = n;
-        *w = info->width;
-        *h_out = info->height;
-        return 0;
-    }
-    Csc csc;
-    csc.height = (info->height + 15) >> 4;
-    csc.width = (info->width + 15) >> 4;
-    csc.mode0 = 0;
-    csc.mode1 = 0;
-    for (int i = 0; i < 8; i++)
-        csc.buf[i] = yuv->buf[i];
-    unsigned rgb_bytes = (unsigned)FRAME_W * (unsigned)((info->height + 15) & ~15) * 4;
-    sceKernelDcacheWritebackInvalidateRange(rgb, rgb_bytes); /* (no old line of the picture's memory may be written over what the converter makes) */
-    r = sceMpegBaseCscAvc(rgb, 0, FRAME_W, &csc);
-    sceKernelDcacheWritebackInvalidateRange(rgb, rgb_bytes);
-    if (log)
-        L("hwd-csc", (unsigned)r, (unsigned)info->width, (unsigned)info->height, (unsigned)n);
-    if (r != 0) {
-        *err = (unsigned)r;
-        return -4;
+    /* the pictures of this call are the elements of the arrays that the library points to, in the order they are to be shown */
+    for (int k = 0; k < n; k++) {
+        PicInfo *info = d->info + k;
+        PicYuv *yuv = d->yuv + k;
+        if (info->width <= 0 || info->width > FRAME_W || info->height <= 0 || info->height > 512) {
+            *err = 0x80000001u;
+            L("hwd-size", (unsigned)info->width, (unsigned)info->height, (unsigned)k, 0);
+            return -3;
+        }
+        if (k == 0) {
+            *w = info->width;
+            *h_out = info->height;
+        }
+        if (!rgb || !rgb[k]) /* the picture is not wanted (the run up to a place a jump asked for): it is counted, not converted */
+            continue;
+        Csc csc;
+        csc.height = (info->height + 15) >> 4;
+        csc.width = (info->width + 15) >> 4;
+        csc.mode0 = 0;
+        csc.mode1 = 0;
+        for (int i = 0; i < 8; i++)
+            csc.buf[i] = yuv->buf[i];
+        unsigned rgb_bytes = (unsigned)FRAME_W * (unsigned)((info->height + 15) & ~15) * 4;
+        sceKernelDcacheWritebackInvalidateRange(rgb[k], rgb_bytes); /* (no old line of the picture's memory may be written over what the converter makes) */
+        r = sceMpegBaseCscAvc(rgb[k], 0, FRAME_W, &csc);
+        sceKernelDcacheWritebackInvalidateRange(rgb[k], rgb_bytes);
+        if (log)
+            L("hwd-csc", (unsigned)r, (unsigned)info->width, (unsigned)info->height, (unsigned)(n * 10 + k));
+        if (r != 0) {
+            *err = (unsigned)r;
+            return -4;
+        }
     }
     *pics = n;
-    *w = info->width;
-    *h_out = info->height;
     return 0;
 }
+
+#endif /* PSP5_HW_FAKE */

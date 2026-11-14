@@ -101,6 +101,7 @@ int unit_init(UnitMaker *u, Mp4 *m, uint8_t *sample, int cap)
      * (Baseline with one reference frame, relabelled Main) gave the fatal error, CABAC streams decoded. A High profile: the PSP's own player says "corrupted". */
     /* a CAVLC stream the PSP's decoder in its Baseline mode may be tried with (hwavc.h): I and P pictures only (picture order type 2), no slice groups, Main or Baseline profile */
     u->hw_ok = found && !cabac && !fmo && (u->profile == 66 || u->profile == 77) && u->poc == 2;
+    u->hw_main = found && !fmo && u->profile == 77 && !u->hw_ok; /* the rest of the Main profile (CABAC, or B pictures): the PSP's decoder in its Main mode */
     /* what the PSP's decoder (the one of its sceMpeg library) is known not to take: it answers its fatal error, after which no video decodes until psp5 is started again. CAVLC: the maintainer's tests
      * (Baseline with one reference frame, relabelled Main) gave the fatal error, CABAC streams decoded. A High profile: the PSP's own player says "corrupted". */
     if (!u->force) {

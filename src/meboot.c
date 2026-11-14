@@ -62,6 +62,9 @@ static void resolve(void)
 int meboot_available(void)
 {
     resolve();
+#ifdef PSP5_HW_FAKE
+    return 1; /* (the test build with a stand-in decoder, hwfake.inc) */
+#endif
     return s_func != 0;
 }
 
@@ -73,7 +76,7 @@ int meboot_module(void) { return s_mod; }
 int meboot_start(int type)
 {
     resolve();
-#if defined(PSP5_TEST) && !defined(PSP5_VIDEO_REAL) /* (PPSSPP has no ARK and no Engine to start: the rest of the route is what its tests are for) */
+#if defined(PSP5_TEST) && (!defined(PSP5_VIDEO_REAL) || defined(PSP5_HW_FAKE)) /* (PPSSPP has no ARK and no Engine to start: the rest of the route is what its tests are for) */
     if (!s_func && type >= 0) {
         s_cur = type;
         return 0;

@@ -6,7 +6,8 @@
  * +0x10000), and gives it the samples of the MP4 as they are in the file with sceMpegGetAvcNalAu; sceMpegAvcDecode, sceMpegAvcDecodeDetail2 and sceMpegBaseCscAvc then give the picture as RGB.
  * Every step writes a line to the log (hwavc_log): the first run on a PSP-1000 of a version that used the game's library stopped at sceMpegCreate (0x807f00ff).
  *
- * Only for a stream the PSP's decoder in its Baseline mode may take (unit.c hw_ok: CAVLC, no B pictures); video.c falls back to the software decoder when any step fails. */
+ * Only for a stream the PSP's decoder may take: in its Baseline mode a CAVLC stream without B pictures (unit.c hw_ok), in its Main mode a Main profile stream with CABAC or B pictures (hw_main); the Engine is
+ * started with the image that fits (meboot.h) before hwavc_open(). video.c goes on with the software decoder (CAVLC) or the games' library (CABAC) when any step fails. */
 #ifndef HWAVC_H
 #define HWAVC_H
 
@@ -21,16 +22,17 @@ int hwlib_up(void);
 void hwlib_down(void);
 int hwlib_is_up(void);
 
-/* Opens a decoder (the library must be up and the Engine started with the Baseline image): sps and pps are the NAL units as the file has them (header byte first, no start code), nal_prefix the
+/* Opens a decoder (the library must be up and the Engine started with the image that fits the stream): sps and pps are the NAL units as the file has them (header byte first, no start code), nal_prefix the
  * size of the length in front of each NAL unit of a sample (1 to 4). NULL when a step failed (the log says which). */
 HwAvc *hwavc_open(const unsigned char *sps, int sps_len, const unsigned char *pps, int pps_len, int nal_prefix);
 void hwavc_close(HwAvc *h);
 /* A fresh library state (Delete, Finish, Init, Create, InitAu again) for a new place of the video: PMPlayer Ultraviolet does it at every seek. 0 when it is open, else -1 and nothing is left open. */
 int hwavc_reset(HwAvc *h);
 
-/* One sample of the file (in memory aligned to 64 bytes, room for its size rounded up to 64): mode 3 for the first sample and for a key frame, else 0. When the decoder gives a picture (*pics > 0)
- * it is written as RGBA (8 bits each, GU_PSM_8888) with 512 pixels a row to rgb (aligned to 64 bytes, room for 512 x the height rounded up to 16; NULL: the picture is only counted, not converted); *w and *h are its size. 0 when it is done, a
- * negative number of the step that failed otherwise (-1 sceMpegGetAvcNalAu, -2 sceMpegAvcDecode, -3 sceMpegAvcDecodeDetail2, -4 sceMpegBaseCscAvc); *err is the library's answer. */
-int hwavc_decode(HwAvc *h, void *sample, int size, int mode, void *rgb, int *pics, int *w, int *h_out, unsigned *err);
+/* One sample of the file (in memory aligned to 64 bytes, room for its size rounded up to 64): mode 3 for the first sample and for a key frame, else 0. The decoder is some samples behind and gives its
+ * pictures in display order: *pics is how many came out of this call (0, 1 or 2). Picture k is written as RGBA (8 bits each, GU_PSM_8888) with 512 pixels a row to rgb[k] (aligned to 64 bytes, room for 512 x the
+ * height rounded up to 16) when that is not NULL (rgb itself may be NULL: nothing is converted, the pictures are only counted); *w and *h are the size of the first. 0 when it is done, a negative number of
+ * the step that failed otherwise (-1 sceMpegGetAvcNalAu, -2 sceMpegAvcDecode, -3 sceMpegAvcDecodeDetail2 or a picture it cannot take, -4 sceMpegBaseCscAvc); *err is the library's answer. */
+int hwavc_decode(HwAvc *h, void *sample, int size, int mode, void *rgb[2], int *pics, int *w, int *h_out, unsigned *err);
 
 #endif

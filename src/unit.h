@@ -21,6 +21,7 @@ typedef struct {
     int nref, wmb, hmb, poc, cabac, nref0, weighted; /* what the SPS and the PPS that are given to the decoder say (0 when the stream carries them in its samples) */
     int to_main; /* ... and its Baseline SPS is made a Main one */
     int hw_ok;   /* the stream may be tried with the PSP's decoder in its Baseline mode (hwavc.h): CAVLC, no slice groups, Main or Baseline profile, picture order type 2 (no B pictures) */
+    int hw_main; /* ... or Main profile, no slice groups, with CABAC or B pictures (what the Baseline mode does not take): the PSP's decoder in its Main mode may be tried (hwavc.h) */
     H264Tick tick;
     double tick_s;
 } UnitMaker;
