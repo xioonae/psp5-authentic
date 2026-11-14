@@ -1048,23 +1048,28 @@ static void hw_start(Video *v)
     crumb("hw-on", 0, 0);
 }
 
-/* The decoder failed while the video played (the screen's thread calls this): the software decoder goes on from where the clock is. */
-static void hw_fallback(Video *v, int why)
+/* gives the PSP's decoder up for good and makes what the software decoder needs (no thread is running: the callers have stopped it or not started it) */
+static void hw_to_soft_now(Video *v)
 {
-    crumbh("hw-fallback", (unsigned)why, (unsigned)v->n_dec, (unsigned)v->err_total, 0);
-    soft_stop(v); /* (the thread first: it uses the decoder) */
     hw_stop(v);
     v->hw_err = 0;
     v->have_pic = 0;
     v->pic.psm = GU_PSM_5650;
     v->pic.opaque = 0;
-    if (!soft_buffers(v, (size_t)FRAME_W * 512 * 2)) {
+    if (!soft_buffers(v, (size_t)FRAME_W * 512 * 2))
         v->failed = 1;
-        return;
-    }
-    if (!v->ge)
+    else if (!v->ge)
         v->pic.data = v->fbuf[0];
-    video_play(v, (float)v->clock);
+}
+
+/* The decoder failed while the video played (the screen's thread calls this): the software decoder goes on from where the clock is. */
+static void hw_fallback(Video *v, int why)
+{
+    crumbh("hw-fallback", (unsigned)why, (unsigned)v->n_dec, (unsigned)v->err_total, 0);
+    soft_stop(v); /* (the thread first: it uses the decoder) */
+    hw_to_soft_now(v);
+    if (!v->failed)
+        video_play(v, (float)v->clock);
 }
 
 Video *video_open(const char *path)
@@ -1084,6 +1089,7 @@ Video *video_open(const char *path)
     v->opt_soft = -1;
     v->opt_ge = 1;
     v->opt_slow = 1;
+    v->opt_hw = 1; /* (the PSP's own decoder for a stream it may take; hw=0 in video-opts.txt leaves it out) */
     v->speed = 1.0f;
     const char *dot = strrchr(path, '.');
     int pmf = dot && (!strcasecmp(dot, ".pmf") || !strcasecmp(dot, ".psmf"));
@@ -1160,7 +1166,7 @@ Video *video_open(const char *path)
                     v->um.no_main = strstr(buf, "main=0") != NULL;
                     v->um.force = strstr(buf, "force=1") != NULL;
                     v->opt_soft = strstr(buf, "soft=1") ? 1 : strstr(buf, "soft=0") ? 0 : -1;
-                    v->opt_hw = strstr(buf, "hw=1") ? 1 : strstr(buf, "hw=3") ? 3 : 0;
+                    v->opt_hw = strstr(buf, "hw=0") ? 0 : strstr(buf, "hw=3") ? 3 : 1;
                     v->opt_ge = strstr(buf, "ge=0") ? 0 : 1;
                     v->opt_pcm = strstr(buf, "pcm=1") != NULL;
                     v->opt_slow = strstr(buf, "slow=0") == NULL;
@@ -1537,6 +1543,7 @@ static int soft_step(Video *v)
     double pts = pts_f, clock = v->clock_ms / 1000.0;
     double due = pts - (v->hwd ? v->hw_lat * v->frame_dur : 0.0); /* (the PSP's decoder is a picture behind: its sample is given a picture time early) */
     double late = clock - due;
+    double late_ctl = due < v->skip_until - 0.03 ? 0.0 : late; /* (the run up from a key frame to the place of a jump is not the decoder being slow: the speed does not go down for it) */
     if (v->opt_slow) { /* the speed: when the pictures are late the video is played slower (the sound with it) until they are not, and a little faster again when they have caught up */
         unsigned long long tn = now_us();
         if (!v->ctl_t)
@@ -1544,9 +1551,9 @@ static int soft_step(Video *v)
         if (tn - v->ctl_t >= 100000) {
             float dts2 = (float)(tn - v->ctl_t) / 1e6f, sp = v->speed;
             v->ctl_t = tn;
-            if (late > 0.04)
-                sp -= 0.30f * (float)(late - 0.04) * dts2;
-            else if (late < 0.02)
+            if (late_ctl > 0.04)
+                sp -= 0.30f * (float)(late_ctl - 0.04) * dts2;
+            else if (late_ctl < 0.02)
                 sp += 0.03f * dts2;
             sp = sp < 0.7f ? 0.7f : sp > 1.0f ? 1.0f : sp;
             v->speed = sp;
@@ -1592,12 +1599,13 @@ static int soft_step(Video *v)
             if (v->hw_first)
                 v->hw_qn = v->hw_qh = 0; /* (a jump: the samples of the place before are not waited for) */
             hw_push(v, pts);
-            int hr = hwavc_decode(v->hwd, v->hwbuf, sz, (key || v->hw_first) ? 3 : 0, v->fbuf[b], &pics, &ww, &hh, &err);
+            int unseen = v->hw_qn > 0 && v->hw_q[v->hw_qh] + 0.034 < v->skip_until - 0.03; /* (the picture that comes out is one soft_publish would not show: before the place of a jump) */
+            int hr = hwavc_decode(v->hwd, v->hwbuf, sz, (key || v->hw_first) ? 3 : 0, unseen ? NULL : v->fbuf[b], &pics, &ww, &hh, &err);
             if (hr == 0) {
-                r = pics > 0;
+                r = pics > 0 && !unseen;
                 for (int k = 0; k < pics; k++)
                     pend_pts = hw_pop(v, pts);
-                v->hw_lat = v->hw_qn < 0 ? 0 : v->hw_qn > 3 ? 3 : v->hw_qn; /* (the samples that are in it: in the long run one) */
+                v->hw_lat = v->hw_qn < 0 ? 0 : v->hw_qn > 6 ? 6 : v->hw_qn; /* (the samples that are in it: this stream's, 3 reference frames, three) */
                 v->hw_first = 0;
                 v->hw_b = b;
             } else {
@@ -1689,6 +1697,14 @@ static int soft_start(Video *v)
     v->hw_err = 0;
     v->hw_qn = v->hw_qh = 0;
     v->hw_lat = 1;
+    if (v->hwd) { /* a new place: the decoder keeps pictures and state a key frame does not clear (after a jump the first version of this froze for seconds), so it is opened again, as PMPlayer Ultraviolet does at every seek */
+        int rr = hwavc_reset(v->hwd);
+        crumbh("hw-reset", (unsigned)rr, 0, 0, 0);
+        if (rr != 0)
+            hw_to_soft_now(v); /* (it will not open again: the software decoder goes on) */
+        if (v->failed)
+            return 0;
+    }
     v->wquit = 0;
     v->wthread = sceKernelCreateThread("psp5_vdec", soft_thread, 0x24, 0x10000, 0, NULL); /* (below the screen's thread: the buttons and the drawing come first) */
     if (v->wthread < 0) {

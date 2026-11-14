@@ -25,9 +25,11 @@ int hwlib_is_up(void);
  * size of the length in front of each NAL unit of a sample (1 to 4). NULL when a step failed (the log says which). */
 HwAvc *hwavc_open(const unsigned char *sps, int sps_len, const unsigned char *pps, int pps_len, int nal_prefix);
 void hwavc_close(HwAvc *h);
+/* A fresh library state (Delete, Finish, Init, Create, InitAu again) for a new place of the video: PMPlayer Ultraviolet does it at every seek. 0 when it is open, else -1 and nothing is left open. */
+int hwavc_reset(HwAvc *h);
 
 /* One sample of the file (in memory aligned to 64 bytes, room for its size rounded up to 64): mode 3 for the first sample and for a key frame, else 0. When the decoder gives a picture (*pics > 0)
- * it is written as RGBA (8 bits each, GU_PSM_8888) with 512 pixels a row to rgb (aligned to 64 bytes, room for 512 x the height rounded up to 16); *w and *h are its size. 0 when it is done, a
+ * it is written as RGBA (8 bits each, GU_PSM_8888) with 512 pixels a row to rgb (aligned to 64 bytes, room for 512 x the height rounded up to 16; NULL: the picture is only counted, not converted); *w and *h are its size. 0 when it is done, a
  * negative number of the step that failed otherwise (-1 sceMpegGetAvcNalAu, -2 sceMpegAvcDecode, -3 sceMpegAvcDecodeDetail2, -4 sceMpegBaseCscAvc); *err is the library's answer. */
 int hwavc_decode(HwAvc *h, void *sample, int size, int mode, void *rgb, int *pics, int *w, int *h_out, unsigned *err);
 

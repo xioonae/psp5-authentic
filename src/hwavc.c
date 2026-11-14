@@ -148,6 +148,49 @@ struct HwAvc {
     int calls;
 };
 
+/* the library's own state: Init, the memory, Create, InitAu. 0 when it is all up; else what was made is given back */
+static int session_open(HwAvc *h)
+{
+    int r = sceMpegInit();
+    L("hwo-init", (unsigned)r, 0, 0, 0);
+    if (r != 0)
+        return -1;
+    h->inited = 1;
+    int size = sceMpegQueryMemSize(MODE);
+    L("hwo-size", (unsigned)size, 0, 0, 0);
+    if (size <= 0)
+        return -2;
+    h->mem = memalign(64, (size_t)(size + 63) & ~63u);
+    if (!h->mem)
+        return -2;
+    memset(h->ring, 0, sizeof(h->ring));
+    r = sceMpegCreate(&h->mpeg, h->mem, size, (SceMpegRingbuffer *)h->ring, FRAME_W, MODE, (SceInt32)(uintptr_t)s_ddr);
+    L("hwo-create", (unsigned)r, (unsigned)size, (unsigned)MODE, (unsigned)(uintptr_t)s_ddr);
+    if (r != 0)
+        return -3;
+    h->created = 1;
+    memset(h->au, 0xFF, 64);
+    r = sceMpegInitAu(&h->mpeg, (unsigned char *)s_ddr + AU_OFFSET, h->au);
+    L("hwo-initau", (unsigned)r, 0, 0, 0);
+    return r != 0 ? -4 : 0;
+}
+
+static void session_close(HwAvc *h)
+{
+    if (h->created) {
+        sceMpegDelete(&h->mpeg);
+        L("hwc-delete", 0, 0, 0, 0);
+        h->created = 0;
+    }
+    if (h->inited) {
+        sceMpegFinish();
+        L("hwc-finish", 0, 0, 0, 0);
+        h->inited = 0;
+    }
+    free(h->mem);
+    h->mem = NULL;
+}
+
 HwAvc *hwavc_open(const unsigned char *sps, int sps_len, const unsigned char *pps, int pps_len, int nal_prefix)
 {
     if (!sps || !pps || sps_len <= 0 || pps_len <= 0 || nal_prefix < 1 || nal_prefix > 4)
@@ -163,54 +206,40 @@ HwAvc *hwavc_open(const unsigned char *sps, int sps_len, const unsigned char *pp
     h->au = memalign(64, 64);
     if (!s_ddr || !h->ps || !h->au) {
         L("hwo-memory", 0, 0, 0, 0);
-        goto fail;
+        hwavc_close(h);
+        return NULL;
     }
     memcpy(h->ps, sps, (size_t)sps_len);
     memcpy(h->ps + sps_len, pps, (size_t)pps_len);
     h->sps_len = sps_len;
     h->pps_len = pps_len;
     h->nal_prefix = nal_prefix;
-    int r = sceMpegInit();
-    L("hwo-init", (unsigned)r, 0, 0, 0);
-    if (r != 0)
-        goto fail;
-    h->inited = 1;
-    int size = sceMpegQueryMemSize(MODE);
-    L("hwo-size", (unsigned)size, 0, 0, 0);
-    if (size <= 0)
-        goto fail;
-    h->mem = memalign(64, (size_t)(size + 63) & ~63u);
-    if (!h->mem)
-        goto fail;
-    r = sceMpegCreate(&h->mpeg, h->mem, size, (SceMpegRingbuffer *)h->ring, FRAME_W, MODE, (SceInt32)(uintptr_t)s_ddr);
-    L("hwo-create", (unsigned)r, (unsigned)size, (unsigned)MODE, (unsigned)(uintptr_t)s_ddr);
-    if (r != 0)
-        goto fail;
-    h->created = 1;
-    memset(h->au, 0xFF, 64);
-    r = sceMpegInitAu(&h->mpeg, (unsigned char *)s_ddr + AU_OFFSET, h->au);
-    L("hwo-initau", (unsigned)r, 0, 0, 0);
-    if (r != 0)
-        goto fail;
+    if (session_open(h) != 0) {
+        hwavc_close(h);
+        return NULL;
+    }
     return h;
-fail:
-    hwavc_close(h);
-    return NULL;
+}
+
+/* A fresh library state for a new place in the video (a play, a jump): the decoder keeps pictures and state of its own that a key frame does not clear (PMPlayer Ultraviolet: "A discontinuity must
+ * start from a fresh context even when the target sample is a valid IDR": it closes the decoder and opens it again at every seek). 0 when it is open again, else -1 (nothing is left open). */
+int hwavc_reset(HwAvc *h)
+{
+    session_close(h);
+    int r = session_open(h);
+    if (r != 0) {
+        session_close(h);
+        return -1;
+    }
+    h->calls = 0; /* (the first samples of the new place are written to the log too) */
+    return 0;
 }
 
 void hwavc_close(HwAvc *h)
 {
     if (!h)
         return;
-    if (h->created) {
-        sceMpegDelete(&h->mpeg);
-        L("hwc-delete", 0, 0, 0, 0);
-    }
-    if (h->inited) {
-        sceMpegFinish();
-        L("hwc-finish", 0, 0, 0, 0);
-    }
-    free(h->mem);
+    session_close(h);
     free(h->ps);
     free(h->au);
     free(h);
@@ -263,6 +292,12 @@ int hwavc_decode(HwAvc *h, void *sample, int size, int mode, void *rgb, int *pic
         *err = 0x80000001u;
         L("hwd-size", (unsigned)info->width, (unsigned)info->height, 0, 0);
         return -3;
+    }
+    if (!rgb) { /* the picture is not wanted (the run up to a place a jump asked for): it is not converted */
+        *pics = n;
+        *w = info->width;
+        *h_out = info->height;
+        return 0;
     }
     Csc csc;
     csc.height = (info->height + 15) >> 4;
