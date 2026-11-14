@@ -29,10 +29,14 @@ void hwavc_close(HwAvc *h);
 /* A fresh library state (Delete, Finish, Init, Create, InitAu again) for a new place of the video: PMPlayer Ultraviolet does it at every seek. 0 when it is open, else -1 and nothing is left open. */
 int hwavc_reset(HwAvc *h);
 
+#define HWAVC_PICS 3    /* the pictures of one call that can be converted */
+#define HWAVC_MAX_OUT 8 /* more than this in one call is not a decoder that works: refused */
+
 /* One sample of the file (in memory aligned to 64 bytes, room for its size rounded up to 64): mode 3 for the first sample and for a key frame, else 0. The decoder is some samples behind and gives its
- * pictures in display order: *pics is how many came out of this call (0, 1 or 2). Picture k is written as RGBA (8 bits each, GU_PSM_8888) with 512 pixels a row to rgb[k] (aligned to 64 bytes, room for 512 x the
- * height rounded up to 16) when that is not NULL (rgb itself may be NULL: nothing is converted, the pictures are only counted); *w and *h are the size of the first. 0 when it is done, a negative number of
+ * pictures in display order: *pics is how many came out of this call (0, 1, 2 or 3: three come out together when a key frame makes the decoder put out the pictures it held; up to HWAVC_MAX_OUT are
+ * accepted). Picture k (the first HWAVC_PICS of them) is written as RGBA (8 bits each, GU_PSM_8888) with 512 pixels a row to rgb[k] (aligned to 64 bytes, room for 512 x the height rounded up to 16) when
+ * that is not NULL (rgb itself may be NULL: nothing is converted, the pictures are only counted; a picture after the first HWAVC_PICS is only counted); *w and *h are the size of the first. 0 when it is done, a negative number of
  * the step that failed otherwise (-1 sceMpegGetAvcNalAu, -2 sceMpegAvcDecode, -3 sceMpegAvcDecodeDetail2 or a picture it cannot take, -4 sceMpegBaseCscAvc); *err is the library's answer. */
-int hwavc_decode(HwAvc *h, void *sample, int size, int mode, void *rgb[2], int *pics, int *w, int *h_out, unsigned *err);
+int hwavc_decode(HwAvc *h, void *sample, int size, int mode, void *rgb[HWAVC_PICS], int *pics, int *w, int *h_out, unsigned *err);
 
 #endif

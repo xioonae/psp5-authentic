@@ -1035,7 +1035,7 @@ static void hw_start(Video *v)
     unsigned char *rgb = h ? memalign(64, (size_t)FRAME_W * (size_t)((v->h + 15) & ~15) * 4) : NULL;
     int ok = 0;
     if (h && buf && rgb) { /* the first samples decoded as a test (the decoder is some samples behind: the first gives no picture): every error of the library shows here, before a picture is wanted */
-        void *rgbs[2] = { rgb, NULL };
+        void *rgbs[HWAVC_PICS] = { rgb, NULL, NULL };
         for (int i = 0; i < 12 && i < mp4_video_count(v->mp4); i++) {
             int size = mp4_video_read(v->mp4, i, buf, v->au_cap), pics = 0, w = 0, hh = 0;
             unsigned err = 0;
@@ -1673,10 +1673,12 @@ static int hw_step(Video *v)
     unsigned long long t0 = now_us();
     int sz = mp4_video_read(v->mp4, i, v->hwbuf, v->au_cap);
     v->t_io += (unsigned)(now_us() - t0);
-    int dst[2], pics = 0, ww = 0, hh = 0, hr = -9;
+    int dst[HWP_PIC], pics = 0, ww = 0, hh = 0, hr = -9;
     unsigned err = 0;
     hwp_plan(p, pts, v->skip_until, v->front, v->rdy, dst);
-    void *rgb[2] = { dst[0] >= 0 ? v->fbuf[dst[0]] : NULL, dst[1] >= 0 ? v->fbuf[dst[1]] : NULL };
+    void *rgb[HWAVC_PICS];
+    for (int k = 0; k < HWAVC_PICS; k++)
+        rgb[k] = dst[k] >= 0 ? v->fbuf[dst[k]] : NULL;
     unsigned long long a = now_us();
     if (sz > 0)
         hr = hwavc_decode(v->hwd, v->hwbuf, sz, mode, rgb, &pics, &ww, &hh, &err);

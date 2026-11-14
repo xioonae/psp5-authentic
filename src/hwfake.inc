@@ -98,14 +98,14 @@ static void emit(HwAvc *h, int k, void *dst)
     (void)k;
 }
 
-int hwavc_decode(HwAvc *h, void *sample, int size, int mode, void *rgb[2], int *pics, int *w, int *h_out, unsigned *err)
+int hwavc_decode(HwAvc *h, void *sample, int size, int mode, void *rgb[HWAVC_PICS], int *pics, int *w, int *h_out, unsigned *err)
 {
     *pics = 0;
     *err = 0;
     h->calls++;
     int n = 0;
-    if (mode == 3 && h->qn > 0) { /* a key frame while pictures are held: they come out first (two at most in one call) */
-        while (h->qn > 0 && n < 2) {
+    if (mode == 3 && h->qn > 0) { /* a key frame while pictures are held: they come out first (all that it holds, three on the PSP-1000's log: HWAVC_PICS at most in one call) */
+        while (h->qn > 0 && n < HWAVC_PICS) {
             emit(h, n, rgb ? rgb[n] : NULL);
             n++;
         }
@@ -139,6 +139,8 @@ int hwavc_decode(HwAvc *h, void *sample, int size, int mode, void *rgb[2], int *
             n++;
         }
     }
+    if (n >= 3 && s_log) /* (the line that the real library's code writes for it) */
+        s_log("hwd-burst", (unsigned)n, (unsigned)mode, (unsigned)h->calls, 0);
     *w = h264d_width(h->dec);
     *h_out = h264d_height(h->dec);
     *pics = n;

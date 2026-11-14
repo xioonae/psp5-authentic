@@ -249,7 +249,7 @@ void hwavc_close(HwAvc *h)
     free(h);
 }
 
-int hwavc_decode(HwAvc *h, void *sample, int size, int mode, void *rgb[2], int *pics, int *w, int *h_out, unsigned *err)
+int hwavc_decode(HwAvc *h, void *sample, int size, int mode, void *rgb[HWAVC_PICS], int *pics, int *w, int *h_out, unsigned *err)
 {
     int log = h->calls < 3;
     h->calls++;
@@ -290,13 +290,15 @@ int hwavc_decode(HwAvc *h, void *sample, int size, int mode, void *rgb[2], int *
     }
     if (n <= 0)
         return 0;
-    if (n > 2) { /* (more pictures in one call than the two that PMPlayer Ultraviolet knows what to do with) */
+    if (n > HWAVC_MAX_OUT) { /* (a decoder that gives this many pictures at once is not working: the log of a PSP-1000 had three, at a key frame, where it puts out the three it held) */
         *err = 0x80000002u;
         L("hwd-many", (unsigned)n, 0, 0, 0);
         return -3;
     }
+    if (n >= 3) /* (three or more at once: what a key frame does to the pictures the decoder held) */
+        L("hwd-burst", (unsigned)n, (unsigned)mode, (unsigned)h->calls, 0);
     /* the pictures of this call are the elements of the arrays that the library points to, in the order they are to be shown */
-    for (int k = 0; k < n; k++) {
+    for (int k = 0; k < n && k < HWAVC_PICS; k++) { /* (the pictures after the first three are counted, not converted) */
         PicInfo *info = d->info + k;
         PicYuv *yuv = d->yuv + k;
         if (info->width <= 0 || info->width > FRAME_W || info->height <= 0 || info->height > 512) {

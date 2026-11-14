@@ -71,7 +71,7 @@ static int take_min(HwPipe *p, double *t)
 
 static int is_unseen(double t, double skip_until) { return t + 0.034 < skip_until - 0.03; }
 
-void hwp_plan(HwPipe *p, double pts_in, double skip_until, int front, int rdy, int dst[2])
+void hwp_plan(HwPipe *p, double pts_in, double skip_until, int front, int rdy, int dst[HWP_PIC])
 {
     if (pts_in >= 0) {
         if (p->npend == HWP_PEND) { /* (more samples than a decoder is ever behind: the smallest time is dropped) */
@@ -82,14 +82,14 @@ void hwp_plan(HwPipe *p, double pts_in, double skip_until, int front, int rdy, i
     } else {
         p->flush++;
     }
-    int used[HWP_OUT + 4], nu = 0;
+    int used[HWP_OUT + 2 + HWP_PIC], nu = 0;
     for (int i = 0; i < p->nout; i++)
         used[nu++] = p->out[i].buf;
     if (front >= 0)
         used[nu++] = front;
     if (rdy >= 0)
         used[nu++] = rdy;
-    for (int k = 0; k < 2; k++) {
+    for (int k = 0; k < HWP_PIC; k++) {
         dst[k] = -1;
         double t = kth(p, k);
         if (t < -1e8 || is_unseen(t, skip_until))
@@ -107,13 +107,13 @@ void hwp_plan(HwPipe *p, double pts_in, double skip_until, int front, int rdy, i
     }
 }
 
-void hwp_done(HwPipe *p, int pics, const int dst[2], double skip_until)
+void hwp_done(HwPipe *p, int pics, const int dst[HWP_PIC], double skip_until)
 {
     for (int k = 0; k < pics; k++) {
         double t;
         if (!take_min(p, &t))
             break; /* (more pictures than samples waiting: what a key frame given again at the end makes) */
-        if (k < 2 && dst[k] >= 0 && !is_unseen(t, skip_until) && p->nout < HWP_OUT) {
+        if (k < HWP_PIC && dst[k] >= 0 && !is_unseen(t, skip_until) && p->nout < HWP_OUT) {
             int i = p->nout++;
             while (i > 0 && p->out[i - 1].pts > t) { /* (they come in display order; kept in order whatever happens) */
                 p->out[i] = p->out[i - 1];
