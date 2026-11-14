@@ -1636,8 +1636,9 @@ static int hw_step(Video *v)
     if (act == HWP_PUBLISH) { /* the picture's time has come */
         HwOut o = hwp_pop_out(p);
         double late = clock - o.pts;
-        v->hw_late = late > 0 ? late : 0;
-        v->soft_late_n += late > 0.1;
+        int run_up = o.pts < v->skip_until + 1.0; /* (the first second after a place that a jump or a resume asked for: the decoder had to run up to it from a key frame, and these pictures are late because of that, not because it is slow: the sound is not slowed for them, and the crash file is not kept for them) */
+        v->hw_late = late > 0 && !run_up ? late : 0;
+        v->soft_late_n += late > 0.1 && !run_up;
         v->rdy = o.buf; /* (the screen's thread takes it) */
         v->hw_pub++;
         v->last_pub = now_us();
