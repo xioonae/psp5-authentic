@@ -7,6 +7,8 @@
 /* Filhanteraren (Inställningar → Minne): bläddra på minneskortet (och internminnet
  * på PSP Go), kopiera, flytta, byt namn, radera och skapa mappar. Rör aldrig flash0. */
 void files_open(void);
+/* Asks the PSP for the free space of both storages in the background (call it at the start: the first count after a start takes seconds, and the screens that ask for it themselves would wait). */
+void files_warm_space(void);
 /* The File Manager as a place to choose a plugin: only folders and .prx files are listed, ✕ on a file closes it with that file chosen, ○ goes up and out of the top; copy, move,
  * rename, delete, new folder and marks are not there. files_update() gives 1 when it is over; files_picked() then says what was chosen.
  *

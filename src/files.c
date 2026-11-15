@@ -317,6 +317,15 @@ static void space_ask(const char *path)
     space_kick();
 }
 
+/* At the start of psp5: both storages are asked in the background, so that the first count after a start (1.8 to 2.6 s on a PSP-1000, per PSP5/perf.txt) is over before a screen asks for it on the screen's
+ * thread: Settings > Storage > Console Storage asked for it itself and stood still for two frames of 1.85 s and 1.76 s (one for each storage), the game information does the same. The PSP keeps the
+ * number once it has counted (0.2 ms the next time). A storage that is not there answers with an error at once. */
+void files_warm_space(void)
+{
+    space_ask("ms0:/");
+    space_ask("ef0:/");
+}
+
 /* the numbers of the storage `path` is on, when there are some; *changed is set when they are new since the last call for this storage */
 static int space_get(const char *path, u64 *free_b, u64 *total_b, int *changed)
 {
@@ -1919,6 +1928,7 @@ void files_sleep(int asleep)
 void files_close(void)
 {
     close_viewer();
+    videoplay_flush(); /* (a video that was left while it was opening is closed by a thread: done before the File Manager ends) */
     if (s_te) {
         textedit_close(s_te);
         s_te = NULL;

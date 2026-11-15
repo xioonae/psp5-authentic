@@ -53,6 +53,8 @@ struct VideoPlayer {
     int asleep;          /* the PSP sleeps: the video waits */
     int held;            /* a popup of the launcher is over the video: it waits */
     float ask_anim;
+    volatile int busy;   /* the loading thread is opening or starting a video of this player: the screen's thread leaves vid and what the thread writes alone, and shows the wheel (written by the screen's thread before a job and by the loading thread as it ends) */
+    int was_busy;        /* (the screen's thread: busy was 1, and the pause and the overlay are put right when it is 0) */
 };
 
 static void say_time(char *out, int size, float sec)
@@ -87,7 +89,10 @@ static void drop(VideoPlayer *v)
     v->vid = NULL;
 }
 
-static void load_current(VideoPlayer *v)
+/* What opening a video costs on a PSP-1000 (PSP5/perf.txt: 2.2 s to open, 0.5 s to close the one before; the start of the decoder, the modules and the Media Engine, and a line written to the Memory
+ * Stick for every step of it) was a screen that stood still. It is done by a thread of its own (`psp5_vload`), one job at a time in the order they are given; while v->busy the screen's thread only
+ * shows the wheel and answers ○. The jobs: open (and start, or ask) the video of v->index, start it at a place, close a player that was left while it was loading. */
+static void do_load(VideoPlayer *v)
 {
     drop(v);
     v->failed = v->ask = v->ended = v->paused = v->seek_pending = v->poison = 0;
@@ -120,6 +125,99 @@ static void load_current(VideoPlayer *v)
     PERF_END("video: start", 0, 0, t_v); /* (the decoder started: the modules, the Media Engine, the first samples) */
 }
 
+static void do_play(VideoPlayer *v, float at)
+{
+    unsigned long long t_v = PERF_START();
+    if (!video_play(v->vid, at))
+        FAIL(v);
+    PERF_END("video: start", 1, 0, t_v);
+}
+
+enum { JOB_LOAD, JOB_PLAY, JOB_CLOSE };
+typedef struct { int kind; VideoPlayer *v; float at; } Job;
+static SceUID s_load_thread = -1;
+static Job s_jobs[8];
+static volatile unsigned s_jobs_head, s_jobs_tail; /* head: the screen's thread writes it, tail: the loading thread (no atomic operation: see files.c) */
+
+static int load_thread(SceSize args, void *argp)
+{
+    for (;;) {
+        while (s_jobs_tail != s_jobs_head) {
+            Job j = s_jobs[s_jobs_tail % 8];
+            VideoPlayer *v = j.v;
+            if (j.kind == JOB_LOAD) {
+                do_load(v);
+            } else if (j.kind == JOB_PLAY) {
+                do_play(v, j.at);
+            } else { /* the player was left while it was loading: it is the thread's now */
+                unsigned long long t_c = PERF_START();
+                drop(v);
+                free(v);
+                v = NULL;
+                PERF_END("video: close", 1, 0, t_c);
+            }
+            __sync_synchronize();
+            if (v)
+                v->busy = 0; /* (the last touch: the screen's thread may free the player after this) */
+            s_jobs_tail++;
+        }
+        sceKernelSleepThread(); /* (submit wakes it: a wake-up before the sleep is counted by the PSP and not lost) */
+    }
+    return 0;
+}
+
+/* the screen's thread: gives the thread a job; 0 when it cannot (the job is then done here, as it was before the thread) */
+static int submit(int kind, VideoPlayer *v, float at)
+{
+    if (s_load_thread < 0) {
+        SceUID th = sceKernelCreateThread("psp5_vload", load_thread, 0x30, 0x10000, PSP_THREAD_ATTR_USER, NULL);
+        if (th >= 0 && sceKernelStartThread(th, 0, NULL) >= 0)
+            s_load_thread = th;
+        else {
+            if (th >= 0)
+                sceKernelDeleteThread(th);
+            return 0;
+        }
+    }
+    unsigned h = s_jobs_head;
+    if (h - s_jobs_tail >= 8)
+        return 0;
+    s_jobs[h % 8].kind = kind;
+    s_jobs[h % 8].v = v;
+    s_jobs[h % 8].at = at;
+    __sync_synchronize();
+    s_jobs_head = h + 1;
+    sceKernelWakeupThread(s_load_thread);
+    return 1;
+}
+
+void videoplay_flush(void)
+{
+    while (s_jobs_tail != s_jobs_head)
+        sceKernelDelayThread(2000);
+}
+
+/* opens (and starts, or asks about) the video of v->index: the thread does it */
+static void start_load(VideoPlayer *v)
+{
+    v->busy = 1;
+    v->was_busy = 1;
+    if (!submit(JOB_LOAD, v, 0)) {
+        do_load(v);
+        v->busy = 0;
+    }
+}
+
+static void start_play(VideoPlayer *v, float at)
+{
+    v->busy = 1;
+    v->was_busy = 1;
+    if (!submit(JOB_PLAY, v, at)) {
+        do_play(v, at);
+        v->busy = 0;
+    }
+}
+
 VideoPlayer *videoplay_open(const char *dir, const MusicEntry *files, int count, int index)
 {
     if (count <= 0 || index < 0 || index >= count)
@@ -133,7 +231,7 @@ VideoPlayer *videoplay_open(const char *dir, const MusicEntry *files, int count,
     v->index = index;
     music_stop(); /* the sound is the video's now */
     sys_fast_later(1); /* the processor at its fastest while the video plays (a thread changes it: the opening takes longer than the change, and the screen must not wait for it) */
-    load_current(v);
+    start_load(v);
     return v;
 }
 
@@ -141,16 +239,25 @@ void videoplay_close(VideoPlayer *v)
 {
     if (!v)
         return;
-    remember(v);
-    drop(v);
     sys_fast_later(0);
+    if (!v->busy)
+        remember(v);
+    /* The thread closes the video, in its own time: closing takes 0.5 s on a PSP-1000 (PSP5/perf.txt) and the screen does not wait for it; a player that is still being opened is closed when the thread
+     * is done with it (the jobs are done in the order they were given). The player is the thread's from here: ui_free() and files_close() wait for it (videoplay_flush) before psp5 is let go. */
+    if (submit(JOB_CLOSE, v, 0))
+        return;
+    while (v->busy) /* (no thread to be had: here, as it was) */
+        sceKernelDelayThread(2000);
+    unsigned long long t_c = PERF_START();
+    drop(v);
+    PERF_END("video: close", 0, 0, t_c);
     free(v);
 }
 
 /* the engine waits when the user paused it, the question is on screen, a popup of the launcher is over it or the PSP sleeps */
 static void apply_pause(VideoPlayer *v)
 {
-    if (v->vid)
+    if (v->vid && !v->busy)
         video_pause(v->vid, v->paused || v->ask || v->held || v->asleep);
 }
 
@@ -174,7 +281,7 @@ static void go(VideoPlayer *v, int by)
         return;
     remember(v);
     v->index = (v->index + by + v->count) % v->count;
-    load_current(v);
+    start_load(v);
 }
 
 static void nudge(VideoPlayer *v, int dir)
@@ -193,6 +300,15 @@ static void nudge(VideoPlayer *v, int dir)
 
 int videoplay_update(VideoPlayer *v, u32 pressed, u32 held, int lx, int ly, float dt)
 {
+    if (v->busy) { /* the thread is opening or starting a video: the wheel turns, ○ leaves, nothing else is touched */
+        v->time += dt;
+        return (pressed & PSP_CTRL_CIRCLE) ? 1 : 0;
+    }
+    if (v->was_busy) { /* it is ready (or has failed) */
+        v->was_busy = 0;
+        v->overlay = OVERLAY_SHOW;
+        apply_pause(v);
+    }
     /* A video that is decoded in software needs all the processor there is: the loop that draws the screen (about two milliseconds a turn) runs at half the speed, a picture is drawn every second vertical blank. */
     if (v->vid && !v->failed && video_soft(v->vid))
         sceDisplayWaitVblankStart();
@@ -217,9 +333,7 @@ int videoplay_update(VideoPlayer *v, u32 pressed, u32 held, int lx, int ly, floa
             if (v->ask_sel == 1)
                 videomem_forget(current_name(v), v->len_s); /* from the beginning: the memory of the place is gone */
             v->ask = 0;
-            if (!video_play(v->vid, v->ask_sel == 0 ? v->resume_at : 0))
-                FAIL(v);
-            apply_pause(v);
+            start_play(v, v->ask_sel == 0 ? v->resume_at : 0);
         }
         return 0;
     }
@@ -291,6 +405,17 @@ static void key_sign(float cx, float cy, const char *label, float a)
 {
     gfx_round_rect(cx - 13, cy - 8, 26, 16, 5, RGBA(190, 192, 200, (int)(210 * a)));
     text_draw(cx, cy + 4, 0.5f, 1, RGBA(28, 28, 34, (int)(255 * a)), ALIGN_CENTER, label);
+}
+
+/* the wheel while a video is being opened: eight dots in a ring, the light one runs round */
+static void draw_wheel(float t)
+{
+    int head = (int)(t * 9.0f) & 7;
+    for (int i = 0; i < 8; i++) {
+        float ang = (float)i * 0.78539816f;
+        int age = (head - i + 8) & 7;
+        gfx_circle(SCREEN_W / 2 + 16.0f * cosf(ang), SCREEN_H / 2 + 16.0f * sinf(ang), 2.6f, RGBA(238, 238, 242, 255 - age * 28));
+    }
 }
 
 static void draw_picture(const Texture *t)
@@ -369,6 +494,13 @@ static void draw_question(const VideoPlayer *v, float a)
 
 void videoplay_draw(VideoPlayer *v)
 {
+    if (v->busy) { /* (vid is the thread's while it works) */
+        draw_wheel(v->time);
+        char n[24];
+        snprintf(n, sizeof(n), "%d/%d", v->index + 1, v->count);
+        text_draw(SCREEN_W / 2, 31, 0.8f, 0, RGBA(238, 238, 242, 255), ALIGN_CENTER, n);
+        return;
+    }
     if (v->vid && !v->failed) {
         const VideoYuv *yuv = video_yuv(v->vid);
         if (yuv)

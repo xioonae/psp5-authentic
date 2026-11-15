@@ -254,6 +254,8 @@ static void app_start(EntryList *list, Ui *ui, int boot)
     perf_mark("sound_init");
     if (!s_safe)
         umd_start(); /* skivan hinner snurra upp under startskärmen */
+    if (boot)
+        files_warm_space(); /* (the free space of the storages is counted in the background while the start screen plays: the first count takes seconds) */
     if (boot && g_boot_anim && !s_safe) {
         boot_run(&s_running); /* startskärmen, innan spelen läses in */
         perf_mark("boot_anim");

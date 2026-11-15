@@ -851,6 +851,7 @@ void ui_free(Ui *ui)
         imageview_close(ui->iv);
     if (ui->vp)
         videoplay_close(ui->vp);
+    videoplay_flush(); /* (a video that was left while it was opening is closed by a thread: it is done before a game starts or psp5 ends) */
     sys_fast_flush(); /* (the clock is given back before a game starts or psp5 ends: the viewer's close left that to a thread) */
     ui->iv = NULL;
     ui->vp = NULL;
