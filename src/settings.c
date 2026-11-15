@@ -34,7 +34,7 @@
 #define LIST_TOP    58.0f
 #define ICON_W      26.0f  /* the room of the icon in front of the label (the categories only) */
 #define MAX_ITEMS   (MAX_PLUGINS + 4)
-#define PSP5_VERSION "1.2.0"
+#define PSP5_VERSION "1.3.0"
 #define APP_NAME     "psp5 authentic"
 
 #define TEXT_MAIN RGBA(238, 238, 242, 255)

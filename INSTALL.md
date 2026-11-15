@@ -1,6 +1,6 @@
 # Installing psp5 authentic
 
-*psp5 authentic 1.2.0 – a fork of psp5 (v1.5.3), originally made by Mille Weber ([08Weber/psp5](https://github.com/08Weber/psp5)), forked by Xioonae*
+*psp5 authentic 1.3.0 – a fork of psp5 (v1.5.3), originally made by Mille Weber ([08Weber/psp5](https://github.com/08Weber/psp5)), forked by Xioonae*
 
 **You need:** a PSP with **ARK-4 or ARK-5** (PSP-1000, 2000, 3000 or PSP Go), or a **PS Vita** (1000 or 2000) with **ARK-5**, and a **USB cable**
 (on a Vita, whatever you already use to copy files to it with VitaShell).
@@ -17,8 +17,8 @@ and it finds the PSP Go's internal storage by itself.
 
 | Your ARK | Download this |
 |---|---|
-| **ARK-5** (also the PS Vita) | `psp5-authentic-v1.2.0-ARK5.zip` |
-| **ARK-4** | `psp5-authentic-v1.2.0-ARK4.zip` |
+| **ARK-5** (also the PS Vita) | `psp5-authentic-v1.3.0-ARK5.zip` |
+| **ARK-4** | `psp5-authentic-v1.3.0-ARK4.zip` |
 
 You'll find them under [Releases](../../releases). Unzip the one you downloaded. It has a `READ ME.txt` with the same steps as below, for every device.
 
