@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
+#include "perf.h"
 #include "settings.h"
 #include "arkcfg.h"
 #include "plugins.h"
@@ -1162,7 +1163,15 @@ void settings_back(void)
 }
 
 /* The page comes into view: the chosen row is kept (and is on the list), and the list starts where it was, or just enough further on to show the row. */
+static void page_enter_body(int page);
 static void page_enter(int page)
+{
+    unsigned long long t0 = PERF_START();
+    page_enter_body(page);
+    PERF_END("settings: page", page, 0, t0); /* (PSP5/perf.txt: a page that takes long to come up shows as a long frame of Settings) */
+}
+
+static void page_enter_body(int page)
 {
     const Category *c = &s_cats[page];
     int *sel = &S.item[page], *top = &S.top[page];

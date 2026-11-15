@@ -14,6 +14,7 @@
 #include <string.h>
 #include <strings.h>
 #include "music.h"
+#include "perf.h"
 #include "system.h"
 #include "aac.h"
 #include "downmix.h"
@@ -418,6 +419,7 @@ int music_list_dir(const char *dir, MusicEntry **out)
 int music_list_dir_filter(const char *dir, int (*ok)(const char *name), MusicEntry **out)
 {
     *out = NULL;
+    unsigned long long t0 = PERF_START();
     SceUID d = sceIoDopen(dir);
     if (d < 0)
         return -1;
@@ -447,6 +449,7 @@ int music_list_dir_filter(const char *dir, int (*ok)(const char *name), MusicEnt
     if (n > 1)
         qsort(e, n, sizeof(MusicEntry), cmp_entries);
     *out = e;
+    PERF_END("music: list, items", n, 0, t0); /* (PSP5/perf.txt: the folder read from the card and sorted; also the lists of the Videos and Images screens) */
     return n;
 }
 

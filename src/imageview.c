@@ -1,6 +1,7 @@
 /* psp5 authentic – the image viewer (see imageview.h) */
 #include <pspkernel.h>
 #include <pspctrl.h>
+#include <psppower.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +14,7 @@
 #include "sound.h"
 #include "system.h"
 #include "perf.h"
+#include "music.h"
 
 #define OVERLAY_SHOW 3.0f /* seconds the overlay is there after a press */
 #define OVERLAY_FADE 0.5f /* ... the last of them are its going away */
@@ -140,6 +142,8 @@ static int cancel_read(void *arg)
 static void probe_read(const char *path, unsigned bytes)
 {
     unsigned long long t0 = PERF_START();
+    PERF_END("cpu: MHz, music", scePowerGetCpuClockFrequency(), music_state() == MUSIC_PLAYING, t0); /* (how fast the processor runs while a picture is made, and whether the player is at work) */
+    t0 = PERF_START();
     SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
     char *buf = fd >= 0 ? malloc(65536) : NULL;
     if (buf) {

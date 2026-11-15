@@ -8,6 +8,7 @@
 #include <math.h>
 #include <string.h>
 #include "image.h"
+#include "perf.h"
 
 #define NTX_MAGIC 0x3158544E /* "NTX1" */
 #define MAX_PNG_PIXELS (512 * 512)
@@ -283,6 +284,7 @@ static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(voi
         img_free(out);
         return 0;
     }
+    unsigned long long t0 = PERF_START();
     jpeg_create_decompress(&cinfo);
     jpeg_stdio_src(&cinfo, fp);
     jpeg_save_markers(&cinfo, JPEG_APP0 + 1, 0xFFFF); /* the camera's EXIF: which way up the picture is */
@@ -292,6 +294,7 @@ static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(voi
     }
     s_src_w = (int)cinfo.image_width;
     s_src_h = (int)cinfo.image_height;
+    PERF_END("jpg: header", cinfo.progressive_mode, cinfo.num_components, t0); /* (PSP5/perf.txt: the numbers are "progressive" and the number of colour components) */
     int orient = 1;
     for (jpeg_saved_marker_ptr mk = cinfo.marker_list; mk; mk = mk->next)
         if (mk->marker == JPEG_APP0 + 1) {
@@ -309,7 +312,9 @@ static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(voi
     cinfo.dct_method = JDCT_IFAST; /* the fast one: the picture is made smaller to the screen's size, where the small difference is not seen, and a PSP is slow */
     cinfo.do_fancy_upsampling = FALSE;
     cinfo.do_block_smoothing = FALSE;
+    t0 = PERF_START();
     jpeg_start_decompress(&cinfo);
+    PERF_END("jpg: start", cinfo.scale_denom, cinfo.progressive_mode ? cinfo.input_scan_number : 0, t0); /* (the whole of a progressive file is read here: the numbers are the 1/n scale and the scans read) */
     int w = cinfo.output_width, h = cinfo.output_height;
     if ((u64)w * h > 4000000ull || cinfo.output_components != 3)
         longjmp(err.jump, 1);
@@ -319,6 +324,7 @@ static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(voi
     row = malloc(w * 3);
     if (!out->px || !row)
         longjmp(err.jump, 1);
+    t0 = PERF_START();
     while (cinfo.output_scanline < cinfo.output_height) {
         int y = cinfo.output_scanline;
         if (cancel && (y & 15) == 0 && cancel(arg))
@@ -328,13 +334,16 @@ static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(voi
         for (int x = 0; x < w; x++)
             out->px[y * w + x] = RGBA(row[x * 3], row[x * 3 + 1], row[x * 3 + 2], 255);
     }
+    PERF_END("jpg: rows", w, h, t0);
     jpeg_finish_decompress(&cinfo);
     jpeg_destroy_decompress(&cinfo);
     free((void *)row);
+    t0 = PERF_START();
     if (!shrink_to_fit(out, bw, bh) || !orient_image(out, orient)) {
         img_free(out);
         return 0;
     }
+    PERF_END("jpg: fit, turn", out->w, out->h, t0);
     return 1;
 }
 
@@ -531,6 +540,68 @@ void img_free(Image *img)
 
 #define CH(c, s) (((c) >> (s)) & 0xFF)
 
+/* The shrink: every output pixel is the mean of the box of source pixels it covers. This is the same mean, number for number, as the loop in img_resize() below makes (a test compares them on random
+ * pictures), made faster: the two channels of a pair are added in one 32-bit number (a box of up to 256 pixels, so no 16-bit half overflows), and the division by the number of pixels is a
+ * multiplication by its reciprocal (exact for every sum of at most 255 * 256: checked for all of them). On a PSP-1000 the divisions (four a pixel, 35 cycles each) were most of the time of the
+ * shrink of a picture, which took about as long as decoding it (PSP5/perf.txt, `jpg: fit, turn`). Returns 0 when it cannot (a box over 256 pixels, no memory): the caller then does it the slow way. */
+static int resize_down_fast(const Image *src, int dw, int dh, u32 *dst)
+{
+    float sx = (float)src->w / dw, sy = (float)src->h / dh;
+    if (((int)sx + 2) * ((int)sy + 2) > 256)
+        return 0;
+    int *xb = malloc((size_t)(dw + 1) * sizeof(int)); /* where the box of each column begins (and ends): the same numbers as the first version made for every pixel */
+    if (!xb)
+        return 0;
+    for (int x = 0; x <= dw; x++)
+        xb[x] = (int)(x * sx);
+    static u32 recip[257]; /* about 2^32 / n */
+    if (!recip[2])
+        for (int n = 2; n <= 256; n++)
+            recip[n] = 0xFFFFFFFFu / n + 1; /* (the same as floor(2^32 / n) + 1 for every n that is not a power of two, and 2^32 / n for those: exact too; no 64-bit division) */
+    for (int y = 0; y < dh; y++) {
+        int y0 = (int)(y * sy), y1 = (int)((y + 1) * sy);
+        if (y1 <= y0)
+            y1 = y0 + 1;
+        if (y1 > src->h)
+            y1 = src->h;
+        for (int x = 0; x < dw; x++) {
+            int x0 = xb[x], x1 = xb[x + 1];
+            if (x1 <= x0)
+                x1 = x0 + 1;
+            if (x1 > src->w)
+                x1 = src->w;
+            int n = (x1 - x0) * (y1 - y0);
+            if (x1 <= x0 || y1 <= y0) { /* (a box that is outside the picture: as the first version, black and clear) */
+                dst[y * dw + x] = 0;
+                continue;
+            }
+            u32 rb = 0, ga = 0; /* red and blue, green and alpha: a 16-bit sum each */
+            for (int yy = y0; yy < y1; yy++) {
+                const u32 *p = src->px + (size_t)yy * src->w;
+                for (int xx = x0; xx < x1; xx++) {
+                    u32 c = p[xx];
+                    rb += c & 0x00FF00FFu;
+                    ga += (c >> 8) & 0x00FF00FFu;
+                }
+            }
+            u32 r;
+            if (n == 1) {
+                r = rb & 0x00FF00FFu;
+                r |= (ga & 0x00FF00FFu) << 8;
+            } else {
+                u32 m = recip[n];
+                r = (u32)(((u64)(rb & 0xFFFFu) * m) >> 32);
+                r |= (u32)(((u64)(rb >> 16) * m) >> 32) << 16;
+                r |= (u32)(((u64)(ga & 0xFFFFu) * m) >> 32) << 8;
+                r |= (u32)(((u64)(ga >> 16) * m) >> 32) << 24;
+            }
+            dst[y * dw + x] = r;
+        }
+    }
+    free(xb);
+    return 1;
+}
+
 int img_resize(const Image *src, int dw, int dh, Image *out)
 {
     out->w = dw;
@@ -540,6 +611,8 @@ int img_resize(const Image *src, int dw, int dh, Image *out)
         return 0;
 
     float sx = (float)src->w / dw, sy = (float)src->h / dh;
+    if ((sx > 1.0f || sy > 1.0f) && resize_down_fast(src, dw, dh, out->px))
+        return 1;
     for (int y = 0; y < dh; y++) {
         for (int x = 0; x < dw; x++) {
             u32 acc[4] = { 0 };

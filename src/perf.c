@@ -19,7 +19,7 @@ typedef struct {
     unsigned bucket[5];  /* <= 18 ms (a frame of 60 a second), <= 34, <= 51, <= 100, longer */
 } Stat;
 
-#define MAX_EVENTS 64
+#define MAX_EVENTS 128
 typedef struct {
     char what[20];
     unsigned a, b;
@@ -109,7 +109,7 @@ void perf_dump(const char *dir)
     SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_TRUNC, 0777);
     if (fd < 0)
         return;
-    static char buf[12288]; /* (96 marks of 42 letters, 9 screens of about 100 and 64 events of about 60) */
+    static char buf[16384]; /* (96 marks of 42 letters, 9 screens of about 100 and 128 events of about 60) */
     int n = 0;
 #define ADD(...) do { if (n < (int)sizeof(buf) - 200) n += snprintf(buf + n, sizeof(buf) - n, __VA_ARGS__); } while (0)
     ADD("psp5 perf: ms since the first step, ms since the step before\n");
