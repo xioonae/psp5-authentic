@@ -8,6 +8,7 @@
 #include <string.h>
 #include "loader.h"
 #include "art.h"
+#include "perf.h"
 
 #define NEAR_RANGE 5  /* laddas före bakgrunden (raden visar ~6 kort) */
 #define LOAD_RANGE 14 /* laddas i förväg (biblioteket visar ~17 kort) */
@@ -50,7 +51,9 @@ static int load_icon_near(int range)
                 continue;
             s_slots[i].state = SLOT_LOADING;
             int round = s_round;
+            unsigned long long t0 = PERF_START();
             Texture *t = round ? art_load_icon(&s_list->items[i]) : art_load_icon_square(&s_list->items[i]);
+            PERF_END("icon: card, found", i, t != NULL, t0);
             s_slots[i].tex = t;
             s_slots[i].round = round;
             s_slots[i].shown = 0;
@@ -68,7 +71,9 @@ static int load_bg(void)
     int want = s_bg_want;
     if (want < 0 || want >= s_list->count)
         return 0;
+    unsigned long long t0 = PERF_START();
     s_bg_tex = art_load_bg(&s_list->items[want]);
+    PERF_END("bg: card, found", want, s_bg_tex != NULL, t0);
     s_bg_index = want;
     s_bg_done = 1;
     return 1;
@@ -86,7 +91,9 @@ static int load_cover(void)
     snprintf(album, sizeof(album), "%s", s_cov_album);
     if (s_cov_want != want) /* the screen asked for another song while this was copied: the copy may be half of one and half of the other, it is not used (the next turn takes the new one) */
         return 0;
+    unsigned long long t0 = PERF_START();
     s_cov_tex = art_load_cover(path, album);
+    PERF_END("cover: song, found", want, s_cov_tex != NULL, t0);
     s_cov_index = want;
     s_cov_done = 1;
     return 1;

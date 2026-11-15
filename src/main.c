@@ -199,7 +199,7 @@ static int note_popup(MusicUi *mu, UiInput *in, float dt, int allow, int keep_co
         UiInput none = UI_NO_INPUT;
         *in = none; /* the screen below is not touched while the popup is open */
         if (music_needs_cjk())
-            font_ensure_cjk(); /* (Japanese or Russian titles: loaded once) */
+            font_ensure_cjk_later(); /* (Japanese or Russian titles: loaded once, in a thread) */
         return 1;
     }
     return 0;

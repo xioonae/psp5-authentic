@@ -162,9 +162,14 @@ int tex_swizzle(Texture *t);
 
 /* Text (intraFont, systemtypsnitt läses från flash0). `need_jpn` laddar japanskt alternativtypsnitt. */
 void font_init(int need_jpn);
-void font_term(void);
+void font_term(void); /* the screen is over: the fonts stay loaded (font_init takes them again) */
+void font_unload(void); /* really unloads them */
 /* Laddar det japanska typsnittet (kanji, kana, kyrilliska) om det inte redan är laddat. */
 void font_ensure_cjk(void);
+/* The same in a thread: the font is in use from the frame after it is loaded (some 0.7 s on a PSP-1000, which is no frozen picture). For a screen that does not need it for measuring at once. */
+void font_ensure_cjk_later(void);
+/* for fontasync.c: puts a font that it has loaded (jpn0.pgf) in use as the alternative font; 0 when there is one already or no Latin font */
+int font_attach_cjk(void *font); /* (an intraFont *) */
 float text_width(float size, int bold, const char *s);
 void text_draw(float x, float y, float size, int bold, u32 color, int align, const char *s);
 /* Största storlek ≤ size (ner till min_size) där texten ryms inom max_w */

@@ -12,6 +12,7 @@
 #include <string.h>
 #include <strings.h>
 #include "files.h"
+#include "perf.h"
 #include "kbd.h"
 #include "media.h"
 #include "music.h"
@@ -200,6 +201,141 @@ static int dev_space(const char *path, u64 *free_b, u64 *total_b)
     u64 cluster = (u64)info.sector_size * info.sectors_per_cluster;
     *free_b = (u64)info.free_clusters * cluster;
     *total_b = (u64)info.max_clusters * cluster;
+    return 1;
+}
+
+/* The free space of a storage is asked of the PSP in a thread of its own: the first time after a start the Memory Stick counts the free clusters of its whole table, and on the maintainer's PSP-1000 that
+ * took 1.8 seconds (PSP5/perf.txt: the File Manager opened in 1868 ms the first time, 70 ms the second), during which the screen showed nothing. Now the list is there at once and the bar at the top
+ * (and the "free" of a storage in the list of storages) comes when the numbers do; the numbers of the last time are shown meanwhile. The thread only writes the numbers below (a sequence number, odd while
+ * it writes, makes the reader take a whole set), so it can go on after the File Manager is closed. */
+#define SP_DEVS 3 /* ms0:, ef0: and room for one more name */
+static struct {
+    char dev[8];
+    volatile int want;       /* ask (again) */
+    volatile unsigned seq;   /* odd: the numbers are being written */
+    volatile int known;      /* the numbers are from the PSP */
+    u64 free_b, total_b;
+} s_sp[SP_DEVS];
+static SceUID s_sp_thread = -1;     /* the thread of the last question (it is reaped by the next one: a thread that has ended is only freed by the system when it is deleted) */
+static volatile int s_sp_run;       /* 1 while a thread (or the caller, when there is no thread) is asking the PSP: only one at a time, so the numbers are written by one */
+static unsigned s_sp_seen[SP_DEVS]; /* the last numbers the screen took */
+
+static int space_slot(const char *path, int make)
+{
+    char dev[8];
+    snprintf(dev, sizeof(dev), "%.4s", path);
+    int free_slot = -1;
+    for (int i = 0; i < SP_DEVS; i++) {
+        if (!strcmp(s_sp[i].dev, dev))
+            return i;
+        if (!s_sp[i].dev[0] && free_slot < 0)
+            free_slot = i;
+    }
+    if (!make || free_slot < 0)
+        return -1;
+    snprintf(s_sp[free_slot].dev, sizeof(s_sp[free_slot].dev), "%s", dev);
+    return free_slot;
+}
+
+/* asks the PSP for what is wanted (one storage at a time) */
+static int space_work(void)
+{
+    int did = 0;
+    for (int i = 0; i < SP_DEVS; i++) {
+        if (!s_sp[i].want)
+            continue;
+        s_sp[i].want = 0;
+        u64 f = 0, t = 0;
+        unsigned long long t0 = PERF_START();
+        int ok = dev_space(s_sp[i].dev, &f, &t);
+        PERF_END("files: free space", i, ok, t0); /* (PSP5/perf.txt: the first time after a start took 1.8 s on a PSP-1000) */
+        if (ok) { /* (when the PSP does not answer, the numbers of the last time stay) */
+            s_sp[i].seq++; /* odd */
+            __sync_synchronize();
+            s_sp[i].free_b = f;
+            s_sp[i].total_b = t;
+            s_sp[i].known = 1;
+            __sync_synchronize();
+            s_sp[i].seq++;
+        }
+        did = 1;
+    }
+    return did;
+}
+
+static int space_wanted(void)
+{
+    for (int i = 0; i < SP_DEVS; i++)
+        if (s_sp[i].want)
+            return 1;
+    return 0;
+}
+
+static int space_thread(SceSize args, void *argp)
+{
+    for (;;) {
+        while (space_work())
+            ;
+        s_sp_run = 0;
+        __sync_synchronize();
+        /* a question that came as this thread was ending: the one who claims `run` (this thread or the asker) takes it */
+        if (!space_wanted() || !__sync_bool_compare_and_swap(&s_sp_run, 0, 1))
+            break;
+    }
+    return 0;
+}
+
+/* asks for the numbers of the storage `path` (again, when they are known already) */
+static void space_ask(const char *path)
+{
+    int i = space_slot(path, 1);
+    if (i < 0)
+        return;
+    s_sp[i].want = 1;
+    __sync_synchronize();
+    if (!__sync_bool_compare_and_swap(&s_sp_run, 0, 1))
+        return; /* a thread is at it and will see this one before it ends */
+    if (s_sp_thread >= 0) { /* the one that ended (or is ending) */
+        sceKernelWaitThreadEnd(s_sp_thread, NULL);
+        sceKernelDeleteThread(s_sp_thread);
+        s_sp_thread = -1;
+    }
+    SceUID th = sceKernelCreateThread("psp5_files_space", space_thread, 0x30, 0x4000, PSP_THREAD_ATTR_USER, NULL);
+    if (th >= 0 && sceKernelStartThread(th, 0, NULL) >= 0) {
+        s_sp_thread = th;
+        return;
+    }
+    if (th >= 0)
+        sceKernelDeleteThread(th);
+    while (space_work()) /* no thread: the PSP is asked here, as it used to be */
+        ;
+    s_sp_run = 0;
+}
+
+/* the numbers of the storage `path` is on, when there are some; *changed is set when they are new since the last call for this storage */
+static int space_get(const char *path, u64 *free_b, u64 *total_b, int *changed)
+{
+    int i = space_slot(path, 0);
+    if (i < 0)
+        return 0;
+    unsigned a;
+    u64 f, t;
+    int known;
+    do {
+        a = s_sp[i].seq;
+        __sync_synchronize();
+        f = s_sp[i].free_b;
+        t = s_sp[i].total_b;
+        known = s_sp[i].known;
+        __sync_synchronize();
+    } while ((a & 1) || a != s_sp[i].seq);
+    if (!known)
+        return 0;
+    *free_b = f;
+    *total_b = t;
+    if (changed)
+        *changed = a != s_sp_seen[i];
+    s_sp_seen[i] = a;
     return 1;
 }
 
@@ -754,6 +890,28 @@ static int marked_count(void)
     return n;
 }
 
+/* once a frame: the numbers of the storage that is shown (the bar at the top), or of the storages in the list of them, when the PSP has given them */
+static void space_poll(void)
+{
+    u64 f, t;
+    int changed = 0;
+    if (s_path[0]) {
+        if (space_get(s_path, &f, &t, &changed) && changed) {
+            s_free = f;
+            s_total = t;
+        }
+        return;
+    }
+    for (int i = 0; i < s_count; i++) {
+        FileEntry *e = &s_items[i];
+        if (e->kind == KIND_DEVICE && space_get(e->name, &f, &t, &changed) && changed) {
+            char num[24];
+            fmt_size(num, sizeof(num), f);
+            snprintf(e->size, sizeof(e->size), L(S_F_FREE), num);
+        }
+    }
+}
+
 /* Läser in s_path och markerar `select` (namn), eller annars raden `fallback` */
 static void load(const char *select, int fallback)
 {
@@ -767,17 +925,14 @@ static void load(const char *select, int fallback)
             FileEntry *e = &s_items[i];
             snprintf(e->name, sizeof(e->name), "%s", s_devs[i]);
             snprintf(e->shown, sizeof(e->shown), "%s", L(s_devs[i][0] == 'e' ? S_F_INTERNAL : S_F_MS));
-            u64 f, t;
-            if (dev_space(e->name, &f, &t)) {
-                char num[24];
-                fmt_size(num, sizeof(num), f);
-                snprintf(e->size, sizeof(e->size), L(S_F_FREE), num);
-            }
+            space_ask(e->name); /* (the "free" of it comes when the PSP has counted: space_poll) */
             e->kind = KIND_DEVICE;
             s_count++;
         }
     } else {
+        unsigned long long t0 = PERF_START();
         int n = read_dir(s_path, &s_items);
+        PERF_END("files: list, items", n < 0 ? 0 : n, 0, t0); /* (the folder is read, not sorted or cut to fit yet) */
         s_count = n < 0 ? 0 : n;
         if (s_pick) { /* folders, and the plugins (.prx) in them */
             int w = 0;
@@ -799,8 +954,11 @@ static void load(const char *select, int fallback)
             if (e->kind == KIND_FILE)
                 fmt_size(e->size, sizeof(e->size), e->bytes);
         }
-        dev_space(s_path, &s_free, &s_total);
+        space_ask(s_path);
     }
+    for (int i = 0; i < SP_DEVS; i++)
+        s_sp_seen[i] = ~0u; /* (what is known is taken at once, below, and again when new numbers come) */
+    space_poll();
     s_sel = fallback < s_count ? fallback : s_count - 1;
     if (s_sel < 0)
         s_sel = 0;
@@ -1358,6 +1516,7 @@ int files_update(const UiInput *in, float dt)
     s_cf_anim = clampf(s_cf_anim + (s_cf ? 7 : -7) * dt, 0, 1);
     if (s_toast_time > 0)
         s_toast_time -= dt;
+    space_poll();
 
     if (W.thread >= 0) { /* åtgärd pågår: bara ○ (avbryt) – eller frågan om ett namn som är upptaget, som tar alla knappar */
         if (!W.running)

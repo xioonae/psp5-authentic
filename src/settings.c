@@ -1169,7 +1169,7 @@ static void page_enter(int page)
     if (page == PG_INFO) /* what it shows is asked of the PSP when it comes into view (the battery changes) */
         fill_about(&s_cats[PG_INFO]);
     if (page == PG_LANG)
-        font_ensure_cjk(); /* the languages' own names: 日本語 is in the font that is loaded now (it is kept to the end of the screen) */
+        font_ensure_cjk_later(); /* the languages' own names: 日本語 comes with the font that is loaded in a thread now (it is kept for good) */
     if (page == PG_CSTORE) { /* the numbers are asked of the storage when it comes into view */
         storage_start();
         store_fill();

@@ -14,4 +14,13 @@ void perf_frame(int screen, float seconds);
 /* writes dir/perf.txt when that file exists (see above), else does nothing */
 void perf_dump(const char *dir);
 
+/* How long a piece of work took (a picture decoded, a folder listed, a cover made): kept in a list of the last 64 and written to perf.txt after the frames. The two functions are weak so that a
+ * program that does not have perf.c (the tests of single files on a PC) still links: the macros do nothing there. */
+unsigned long long perf_clock(void) __attribute__((weak)); /* microseconds */
+void perf_event(const char *what, unsigned a, unsigned b, unsigned long long start_us) __attribute__((weak)); /* `what` with two numbers (the report says what they are), that began at start_us and ends now */
+/* 1 when dir/perf.txt is there (asked once): a measurement that costs work of its own (reading a file a second time to tell the reading from the decoding) is made only then */
+int perf_wanted(const char *dir) __attribute__((weak));
+#define PERF_START() (perf_clock ? perf_clock() : 0ull)
+#define PERF_END(what, a, b, t0) do { if (perf_event) perf_event((what), (unsigned)(a), (unsigned)(b), (t0)); } while (0)
+
 #endif

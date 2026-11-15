@@ -12,6 +12,7 @@
 #include "lang.h"
 #include "sound.h"
 #include "system.h"
+#include "perf.h"
 
 #define OVERLAY_SHOW 3.0f /* seconds the overlay is there after a press */
 #define OVERLAY_FADE 0.5f /* ... the last of them are its going away */
@@ -134,6 +135,23 @@ static int cancel_read(void *arg)
     return v->quit || v->want != v->reading; /* (the one that is read is not the one that is wanted any more) */
 }
 
+/* For PSP5/perf.txt, when that file is there: how long the file takes to be read alone, in the pieces the decoder reads it in (64 KB), so that the numbers of the picture can say how much of its time
+ * is the card and how much is the decoding. Made before the picture is, so that it is the first reading of the file. */
+static void probe_read(const char *path, unsigned bytes)
+{
+    unsigned long long t0 = PERF_START();
+    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+    char *buf = fd >= 0 ? malloc(65536) : NULL;
+    if (buf) {
+        while (sceIoRead(fd, buf, 65536) > 0)
+            ;
+        PERF_END("image: read, KB", bytes / 1024, 0, t0);
+    }
+    free(buf);
+    if (fd >= 0)
+        sceIoClose(fd);
+}
+
 static int reader(SceSize args, void *argp)
 {
     ImageView *v = *(ImageView **)argp;
@@ -147,7 +165,17 @@ static int reader(SceSize args, void *argp)
         snprintf(path, sizeof(path), "%s/%s", v->dir, v->files[idx].name);
         Image img = { 0, 0, NULL };
         v->reading = idx;
+        SceIoStat st;
+        unsigned bytes = sceIoGetstat(path, &st) >= 0 ? (unsigned)st.st_size : 0;
+        if (perf_wanted && perf_wanted(PSP5_DATA_DIR))
+            probe_read(path, bytes);
+        unsigned long long t0 = PERF_START();
         int ok = img_load_fit_cancel(path, SCREEN_W, SCREEN_H, &img, cancel_read, v);
+        if (ok) { /* (PSP5/perf.txt: what a picture of that size costs here, the reading and the decoding together) */
+            int sw, sh;
+            img_last_source(&sw, &sh);
+            PERF_END("image: KB, kpix", bytes / 1024, (unsigned)((long long)sw * sh / 1000), t0);
+        }
         if (v->quit) {
             img_free(&img);
             break;

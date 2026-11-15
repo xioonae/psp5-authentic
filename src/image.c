@@ -261,6 +261,13 @@ static int shrink_to_fit(Image *img, int mw, int mh)
     return 1;
 }
 
+static volatile int s_src_w, s_src_h; /* what the last picture was in the file (perf.txt only: another thread's loading may mix two, which only makes a line of it wrong) */
+void img_last_source(int *w, int *h)
+{
+    *w = s_src_w;
+    *h = s_src_h;
+}
+
 static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(void *), void *arg)
 {
     struct jpeg_decompress_struct cinfo;
@@ -283,6 +290,8 @@ static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(voi
         jpeg_destroy_decompress(&cinfo);
         return 0;
     }
+    s_src_w = (int)cinfo.image_width;
+    s_src_h = (int)cinfo.image_height;
     int orient = 1;
     for (jpeg_saved_marker_ptr mk = cinfo.marker_list; mk; mk = mk->next)
         if (mk->marker == JPEG_APP0 + 1) {
@@ -336,6 +345,8 @@ static int load_png_fit(FILE *fp, int mw, int mh, Image *out)
     png.version = PNG_IMAGE_VERSION;
     if (!png_image_begin_read_from_stdio(&png, fp))
         return 0;
+    s_src_w = (int)png.width;
+    s_src_h = (int)png.height;
     if ((u64)png.width * png.height > MAX_VIEW_PNG_PIXELS) {
         png_image_free(&png);
         return 0;
@@ -388,6 +399,8 @@ static int load_bmp_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(void
         return 0;
     if (bpp != 1 && bpp != 4 && bpp != 8 && bpp != 16 && bpp != 24 && bpp != 32)
         return 0;
+    s_src_w = w;
+    s_src_h = h;
     unsigned char pal[256][3] = { { 0 } }; /* r, g, b */
     if (bpp <= 8) {
         unsigned n = colors ? colors : 1u << bpp, esz = dib == 12 ? 3 : 4;

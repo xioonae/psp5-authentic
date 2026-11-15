@@ -1481,7 +1481,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         loader_focus(*sel);
     }
     if (music_needs_cjk())
-        font_ensure_cjk(); /* japanska/ryska låttitlar (laddas bara en gång) */
+        font_ensure_cjk_later(); /* japanska/ryska låttitlar (laddas bara en gång; i en tråd: typsnittet är stort) */
     update_background(ui, dt);
     if (ui->tab == TAB_MUSIC && ui->mscreen == 0)
         musicui_update_cover(&ui->mu, dt);
