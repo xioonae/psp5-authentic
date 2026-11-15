@@ -23,14 +23,14 @@ typedef struct {
 typedef struct {
     char what[20];
     unsigned a, b;
-    float ms;
+    unsigned us; /* how long it took (a 32-bit number of microseconds: 71 minutes at most, and no 64-bit to float conversion in the code that runs at the start) */
     u64 at; /* when it ended */
 } Event;
 
 static Mark s_marks[MAX_MARKS];
 static int s_nmarks;
 static Event s_events[MAX_EVENTS]; /* the last MAX_EVENTS, a ring */
-static unsigned s_nevents;
+static volatile unsigned s_nevents;
 static Stat s_stat[PF_COUNT];
 
 static const char *const SCREEN[PF_COUNT] = { "Games", "Media", "Library", "Music", "Settings", "Information", "Saved Data", "File Manager", "FTP" };
@@ -66,11 +66,13 @@ void perf_event(const char *what, unsigned a, unsigned b, unsigned long long sta
     if (!start)
         return;
     u64 now = sceKernelGetSystemTimeWide();
-    Event *e = &s_events[__sync_fetch_and_add(&s_nevents, 1) % MAX_EVENTS]; /* (two threads may report) */
+    unsigned slot = s_nevents; /* (two threads may report: two events at the very same moment may share a line, which is nothing to a record; no atomic operation: see files.c) */
+    s_nevents = slot + 1;
+    Event *e = &s_events[slot % MAX_EVENTS];
     snprintf(e->what, sizeof(e->what), "%s", what);
     e->a = a;
     e->b = b;
-    e->ms = (float)(now - start) / 1000.0f;
+    e->us = (unsigned)(now - start);
     e->at = now;
 }
 
@@ -128,7 +130,7 @@ void perf_dump(const char *dir)
         unsigned first = s_nevents > MAX_EVENTS ? s_nevents - MAX_EVENTS : 0;
         for (unsigned i = first; i < s_nevents; i++) {
             const Event *e = &s_events[i % MAX_EVENTS];
-            ADD("%8.1f  %-19s %9u %9u %8.1f\n", (double)(e->at - t0) / 1e6, e->what, e->a, e->b, (double)e->ms);
+            ADD("%8.1f  %-19s %9u %9u %8.1f\n", (double)(e->at - t0) / 1e6, e->what, e->a, e->b, (double)e->us / 1000.0);
         }
     }
     ADD("\nmemory now: largest free block %d KB, total free %d KB\n", (int)(sceKernelMaxFreeMemSize() / 1024), (int)(sceKernelTotalFreeMemSize() / 1024));

@@ -33,7 +33,7 @@ void fontasync_start(void)
     if (s_state)
         return;
     s_state = 1;
-    SceUID th = sceKernelCreateThread("psp5_cjk_font", load_thread, 0x30, 0x4000, PSP_THREAD_ATTR_USER, NULL);
+    SceUID th = sceKernelCreateThread("psp5_cjk_font", load_thread, 0x30, 0x8000, PSP_THREAD_ATTR_USER, NULL);
     if (th >= 0 && sceKernelStartThread(th, 0, NULL) >= 0) {
         s_thread = th;
         return;

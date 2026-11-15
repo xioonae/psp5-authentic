@@ -207,18 +207,23 @@ static int dev_space(const char *path, u64 *free_b, u64 *total_b)
 /* The free space of a storage is asked of the PSP in a thread of its own: the first time after a start the Memory Stick counts the free clusters of its whole table, and on the maintainer's PSP-1000 that
  * took 1.8 seconds (PSP5/perf.txt: the File Manager opened in 1868 ms the first time, 70 ms the second), during which the screen showed nothing. Now the list is there at once and the bar at the top
  * (and the "free" of a storage in the list of storages) comes when the numbers do; the numbers of the last time are shown meanwhile. The thread only writes the numbers below (a sequence number, odd while
- * it writes, makes the reader take a whole set), so it can go on after the File Manager is closed. */
+ * it writes, makes the reader take a whole set), so it can go on after the File Manager is closed.
+ *
+ * No atomic read-modify-write is used (GCC turns __sync_fetch_and_add and the compare-and-swap into `ll` / `sc`; nothing in psp5 had used one before, and the version that did gave a PSP-1000 no start
+ * screen at all: whether the Allegrex lacks them is not certain, so psp5 does not use them). Every variable has ONE writer: `asked` the main thread (one more for each question), `served` the thread
+ * (the `asked` it read before it counted), `done` the thread (as it ends). There is work while asked != served. A question that comes as the thread is ending is seen by the main thread, which looks every frame (space_poll). */
 #define SP_DEVS 3 /* ms0:, ef0: and room for one more name */
 static struct {
     char dev[8];
-    volatile int want;       /* ask (again) */
-    volatile unsigned seq;   /* odd: the numbers are being written */
-    volatile int known;      /* the numbers are from the PSP */
+    volatile unsigned asked;  /* the main thread: counts the questions */
+    volatile unsigned served; /* the thread: the number of questions that were asked when it began to count */
+    volatile unsigned seq;    /* odd: the numbers are being written */
+    volatile int known;       /* the numbers are from the PSP */
     u64 free_b, total_b;
 } s_sp[SP_DEVS];
-static SceUID s_sp_thread = -1;     /* the thread of the last question (it is reaped by the next one: a thread that has ended is only freed by the system when it is deleted) */
-static volatile int s_sp_run;       /* 1 while a thread (or the caller, when there is no thread) is asking the PSP: only one at a time, so the numbers are written by one */
-static unsigned s_sp_seen[SP_DEVS]; /* the last numbers the screen took */
+static SceUID s_sp_thread = -1;      /* the last thread (the main thread reaps it: a thread that has ended is only freed by the system when it is deleted) */
+static volatile int s_sp_done;       /* the thread has nothing more to do and is ending */
+static unsigned s_sp_seen[SP_DEVS];  /* the last numbers the screen took */
 
 static int space_slot(const char *path, int make)
 {
@@ -237,14 +242,21 @@ static int space_slot(const char *path, int make)
     return free_slot;
 }
 
-/* asks the PSP for what is wanted (one storage at a time) */
-static int space_work(void)
+static int space_wanted(void)
 {
-    int did = 0;
+    for (int i = 0; i < SP_DEVS; i++)
+        if (s_sp[i].asked != s_sp[i].served)
+            return 1;
+    return 0;
+}
+
+/* asks the PSP for what is wanted (one storage at a time), until nothing is */
+static void space_work(void)
+{
     for (int i = 0; i < SP_DEVS; i++) {
-        if (!s_sp[i].want)
+        unsigned a = s_sp[i].asked;
+        if (a == s_sp[i].served)
             continue;
-        s_sp[i].want = 0;
         u64 f = 0, t = 0;
         unsigned long long t0 = PERF_START();
         int ok = dev_space(s_sp[i].dev, &f, &t);
@@ -258,31 +270,40 @@ static int space_work(void)
             __sync_synchronize();
             s_sp[i].seq++;
         }
-        did = 1;
+        s_sp[i].served = a;
+        i = -1; /* (and again from the first: a question may have come meanwhile) */
     }
-    return did;
-}
-
-static int space_wanted(void)
-{
-    for (int i = 0; i < SP_DEVS; i++)
-        if (s_sp[i].want)
-            return 1;
-    return 0;
 }
 
 static int space_thread(SceSize args, void *argp)
 {
-    for (;;) {
-        while (space_work())
-            ;
-        s_sp_run = 0;
-        __sync_synchronize();
-        /* a question that came as this thread was ending: the one who claims `run` (this thread or the asker) takes it */
-        if (!space_wanted() || !__sync_bool_compare_and_swap(&s_sp_run, 0, 1))
-            break;
-    }
+    space_work();
+    __sync_synchronize();
+    s_sp_done = 1;
     return 0;
+}
+
+/* starts the thread when there is something to ask and none is at it (the main thread only: every frame, and when a question is asked) */
+static void space_kick(void)
+{
+    if (!space_wanted())
+        return;
+    if (s_sp_thread >= 0) {
+        if (!s_sp_done)
+            return; /* it is at it, and looks again before it ends */
+        sceKernelWaitThreadEnd(s_sp_thread, NULL);
+        sceKernelDeleteThread(s_sp_thread);
+        s_sp_thread = -1;
+    }
+    s_sp_done = 0;
+    SceUID th = sceKernelCreateThread("psp5_files_space", space_thread, 0x30, 0x4000, PSP_THREAD_ATTR_USER, NULL);
+    if (th >= 0 && sceKernelStartThread(th, 0, NULL) >= 0) {
+        s_sp_thread = th;
+        return;
+    }
+    if (th >= 0)
+        sceKernelDeleteThread(th);
+    space_work(); /* no thread: the PSP is asked here, as it used to be */
 }
 
 /* asks for the numbers of the storage `path` (again, when they are known already) */
@@ -291,25 +312,9 @@ static void space_ask(const char *path)
     int i = space_slot(path, 1);
     if (i < 0)
         return;
-    s_sp[i].want = 1;
+    s_sp[i].asked++;
     __sync_synchronize();
-    if (!__sync_bool_compare_and_swap(&s_sp_run, 0, 1))
-        return; /* a thread is at it and will see this one before it ends */
-    if (s_sp_thread >= 0) { /* the one that ended (or is ending) */
-        sceKernelWaitThreadEnd(s_sp_thread, NULL);
-        sceKernelDeleteThread(s_sp_thread);
-        s_sp_thread = -1;
-    }
-    SceUID th = sceKernelCreateThread("psp5_files_space", space_thread, 0x30, 0x4000, PSP_THREAD_ATTR_USER, NULL);
-    if (th >= 0 && sceKernelStartThread(th, 0, NULL) >= 0) {
-        s_sp_thread = th;
-        return;
-    }
-    if (th >= 0)
-        sceKernelDeleteThread(th);
-    while (space_work()) /* no thread: the PSP is asked here, as it used to be */
-        ;
-    s_sp_run = 0;
+    space_kick();
 }
 
 /* the numbers of the storage `path` is on, when there are some; *changed is set when they are new since the last call for this storage */
@@ -895,6 +900,7 @@ static void space_poll(void)
 {
     u64 f, t;
     int changed = 0;
+    space_kick(); /* (a question that came as the thread was ending) */
     if (s_path[0]) {
         if (space_get(s_path, &f, &t, &changed) && changed) {
             s_free = f;
