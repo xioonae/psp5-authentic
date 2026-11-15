@@ -127,7 +127,7 @@ VideoPlayer *videoplay_open(const char *dir, const MusicEntry *files, int count,
     v->count = count;
     v->index = index;
     music_stop(); /* the sound is the video's now */
-    sys_fast(1); /* the processor at its fastest while the video plays */
+    sys_fast_now(1); /* the processor at its fastest while the video plays */
     load_current(v);
     return v;
 }
@@ -138,7 +138,7 @@ void videoplay_close(VideoPlayer *v)
         return;
     remember(v);
     drop(v);
-    sys_fast(0);
+    sys_fast_now(0);
     free(v);
 }
 

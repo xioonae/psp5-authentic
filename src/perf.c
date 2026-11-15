@@ -32,6 +32,10 @@ static int s_nmarks;
 static Event s_events[MAX_EVENTS]; /* the last MAX_EVENTS, a ring */
 static volatile unsigned s_nevents;
 static Stat s_stat[PF_COUNT];
+static unsigned s_state;     /* what the caller said the screen was doing during the frame that has just ended (perf_state) */
+static unsigned s_nslow;     /* the slow frames written down (at most SLOW_MAX: a long copy must not push every other event out of the list) */
+#define SLOW_MS 40           /* a frame of at least this many milliseconds is written down in the list of events as "slow frame" (3 refreshes of the screen: the 33 ms ones of a screen that just misses 60 a second are not) */
+#define SLOW_MAX 24
 
 static const char *const SCREEN[PF_COUNT] = { "Games", "Media", "Library", "Music", "Settings", "Information", "Saved Data", "File Manager", "FTP" };
 
@@ -76,14 +80,26 @@ void perf_event(const char *what, unsigned a, unsigned b, unsigned long long sta
     e->at = now;
 }
 
+void perf_state(unsigned bits)
+{
+    s_state = bits;
+}
+
 void perf_frame(int screen, float seconds)
 {
+    unsigned state = s_state;
+    s_state = 0;
     if (screen < 0 || screen >= PF_COUNT)
         return;
     Stat *s = &s_stat[screen];
     if (seconds > STALL_S) {
         s->stalls++;
         return;
+    }
+    if (seconds * 1000.0f >= SLOW_MS && s_nslow < SLOW_MAX) { /* (the screen, and what it was doing: perf_state) */
+        s_nslow++;
+        unsigned long long now = sceKernelGetSystemTimeWide();
+        perf_event("slow frame", (unsigned)screen, state, now - (unsigned)(int)(seconds * 1000000.0f));
     }
     s->frames++;
     s->sum += seconds;

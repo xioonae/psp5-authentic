@@ -22,6 +22,7 @@
 #include "launch.h"
 #include "arkcfg.h"
 #include "netlink.h"
+#include "perf.h"
 
 #define USBSTOR_EF_DRIVERNAME "USBStorEFlash_Driver"
 /* finns när launcherläget är pausat för att psp5 gick till XMB */
@@ -410,6 +411,65 @@ void sys_fast(int on)
     if (saved_cpu > 0 && saved_bus > 0)
         scePowerSetClockFrequency(saved_cpu, saved_cpu, saved_bus);
     saved_cpu = 0;
+}
+
+/* sys_fast() in a thread of its own (sys_fast_later). The queue has one writer for each end: the screen's thread writes `head`, the clock thread `tail`; no atomic operation (see files.c). */
+static SceUID s_clock_thread = -1;
+static volatile signed char s_clock_req[16];
+static volatile unsigned s_clock_head, s_clock_tail;
+
+static int clock_thread(SceSize args, void *argp)
+{
+    for (;;) {
+        while (s_clock_tail != s_clock_head) {
+            int on = s_clock_req[s_clock_tail % 16];
+            unsigned long long t0 = PERF_START();
+            sys_fast(on);
+            PERF_END("clock: set", on, scePowerGetCpuClockFrequencyInt(), t0); /* (PSP5/perf.txt: what the call costs, for 1 and for 0) */
+            __sync_synchronize();
+            s_clock_tail++;
+        }
+        sceKernelSleepThread(); /* (sys_fast_later wakes it: a wake-up that comes before the sleep is counted by the PSP and not lost) */
+    }
+    return 0;
+}
+
+void sys_fast_flush(void)
+{
+    while (s_clock_tail != s_clock_head)
+        sceKernelDelayThread(1000);
+}
+
+void sys_fast_now(int on)
+{
+    sys_fast_flush(); /* (what the thread was given goes first) */
+    unsigned long long t0 = PERF_START();
+    sys_fast(on);
+    PERF_END("clock: set", on + 2, scePowerGetCpuClockFrequencyInt(), t0); /* (2 and 3: made by the caller, not the thread) */
+}
+
+void sys_fast_later(int on)
+{
+    if (s_clock_thread < 0) {
+        SceUID th = sceKernelCreateThread("psp5_clock", clock_thread, 0x30, 0x2000, PSP_THREAD_ATTR_USER, NULL);
+        if (th >= 0 && sceKernelStartThread(th, 0, NULL) >= 0)
+            s_clock_thread = th;
+        else {
+            if (th >= 0)
+                sceKernelDeleteThread(th);
+            sys_fast_now(on); /* no thread: here, as it was */
+            return;
+        }
+    }
+    unsigned h = s_clock_head;
+    if (h - s_clock_tail >= 16) { /* (it cannot be: a picture is opened and closed a few times a minute) */
+        sys_fast_now(on);
+        return;
+    }
+    s_clock_req[h % 16] = (signed char)on;
+    __sync_synchronize();
+    s_clock_head = h + 1;
+    sceKernelWakeupThread(s_clock_thread);
 }
 int sys_ms_is_ef(void) { return s_ms_is_ef; }
 int sys_is_psp1000(void) { return s_model == 0; }

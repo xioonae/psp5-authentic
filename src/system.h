@@ -59,6 +59,13 @@ int sys_model(void);
 /* The processor at its fastest (333 MHz, the bus 166) for as long as a picture or a video is on the screen: 1 asks for it, 0 gives back what it was. They are counted, so every 1 needs its 0.
  * Nothing changes when the PSP is already that fast (or has no such call, as an emulator). */
 void sys_fast(int on);
+/* The same, for a caller that must not wait: a thread of its own makes the change. The call itself takes 0.17 to 0.7 seconds on a PSP-1000 (the frames of 684, 167 and 167 ms of the picture viewer in
+ * PSP5/perf.txt), and the screen's thread stood still for all of it. The requests are done in the order they are made. sys_fast_now() is sys_fast() for the others (the video player): it first waits
+ * for the requests that are not done yet, so that the two never run together. */
+void sys_fast_later(int on);
+void sys_fast_now(int on);
+/* waits until the requests of sys_fast_later() are done (before the program is let go: a game that is started, the way out to the XMB) */
+void sys_fast_flush(void);
 /* 1 om ms0: och ef0: är samma lagring (ARK pekar om ms0: till internminnet) – skanna då bara ms0: */
 int sys_ms_is_ef(void);
 /* PSP-1000 saknar extra minne och USB-laddning */

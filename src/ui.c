@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include "perf.h"
 #include "ui.h"
 #include "sound.h"
 #include "lang.h"
@@ -850,6 +851,7 @@ void ui_free(Ui *ui)
         imageview_close(ui->iv);
     if (ui->vp)
         videoplay_close(ui->vp);
+    sys_fast_flush(); /* (the clock is given back before a game starts or psp5 ends: the viewer's close left that to a thread) */
     ui->iv = NULL;
     ui->vp = NULL;
     musicui_free(&ui->mu);
@@ -978,10 +980,12 @@ static void open_viewer(Ui *ui)
     const char *dir = musicui_file(screen_mu(ui), &files, &count, &index);
     if (index < 0 || index >= count)
         return;
+    unsigned long long t_open = PERF_START();
     if (ui->mscreen == 2)
         ui->iv = imageview_open(dir, files, count, index);
     else if (ui->mscreen == 1)
         ui->vp = videoplay_open(dir, files, count, index);
+    PERF_END(ui->mscreen == 2 ? "view: open" : "video: open", count, ui->iv || ui->vp, t_open); /* (PSP5/perf.txt: what opening the viewer or the player costs on the screen's thread) */
     if (!ui->iv && !ui->vp) {
         ui_toast(ui, L(ui->mscreen == 2 ? S_IMG_CANT : S_VID_CANT)); /* (no memory for it) */
         sound_play(SND_ERROR);
@@ -1299,10 +1303,13 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
             return UI_NONE;
         int done = ui->iv ? imageview_update(ui->iv, in->pressed, in->held, in->lx, in->ly, dt) : videoplay_update(ui->vp, in->pressed, in->held, in->lx, in->ly, dt);
         if (done) {
+            unsigned long long t_close = PERF_START();
+            const char *what = ui->iv ? "view: close" : "video: close";
             if (ui->iv)
                 imageview_close(ui->iv);
             else
                 videoplay_close(ui->vp);
+            PERF_END(what, 0, 0, t_close); /* (the viewer's close waits for the thread that reads the pictures) */
             ui->iv = NULL;
             ui->vp = NULL;
             sound_play(SND_BACK);

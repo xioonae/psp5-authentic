@@ -784,6 +784,7 @@ int main(int argc, char *argv[])
         float dt = (now - last) / 1000000.0f;
         last = now;
         perf_frame(in_saves ? PF_SAVES : in_settings ? PF_SETTINGS : in_info ? PF_INFO : ui.tab >= 0 && ui.tab < TAB_COUNT ? ui.tab : PF_GAMES, dt);
+        perf_state((ui.tab & 15) | (ui.mscreen & 3) << 4 | (ui.iv != NULL) << 6 | (ui.vp != NULL) << 7 | (ui.menu_open != 0) << 8 | (ui.mu.mini != 0) << 9 | (music_state() & 3) << 10 | (in_settings != 0) << 12 | (in_saves != 0) << 13 | (in_info != 0) << 14);
         if (dt > 0.05f)
             dt = 0.05f;
         osd_update(dt);

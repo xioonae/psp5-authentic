@@ -218,7 +218,7 @@ ImageView *imageview_open(const char *dir, const MusicEntry *files, int count, i
         free(v);
         return NULL;
     }
-    sys_fast(1);
+    sys_fast_later(1); /* (the change of the clock takes some 0.2 to 0.7 s: not on the screen's thread) */
     ImageView *self = v;
     sceKernelStartThread(v->thread, sizeof(self), &self);
     return v;
@@ -231,7 +231,7 @@ void imageview_close(ImageView *v)
     v->quit = 1;
     sceKernelWaitThreadEnd(v->thread, NULL);
     sceKernelDeleteThread(v->thread);
-    sys_fast(0);
+    sys_fast_later(0);
     img_free(&v->img);
     for (int i = 0; i < CACHE; i++)
         tex_free(v->cache[i].tex);

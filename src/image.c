@@ -347,7 +347,10 @@ static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(voi
     return 1;
 }
 
-static int load_png_fit(FILE *fp, int mw, int mh, Image *out)
+static u32 box_mean(u32 rb, u32 ga, int n);
+
+/* a PNG at its full size by the simple interface of libpng, all in one call (cannot be stopped): for the PNGs that are not read a row at a time (interlaced ones) */
+static int load_png_simple(FILE *fp, int mw, int mh, Image *out)
 {
     png_image png;
     memset(&png, 0, sizeof(png));
@@ -369,6 +372,128 @@ static int load_png_fit(FILE *fp, int mw, int mh, Image *out)
         return 0;
     }
     if (!png_image_finish_read(&png, NULL, out->px, 0, NULL) || !shrink_to_fit(out, mw, mh)) {
+        img_free(out);
+        return 0;
+    }
+    return 1;
+}
+
+static void png_fail(png_structp png, png_const_charp msg)
+{
+    longjmp(png_jmpbuf(png), 1);
+}
+
+static void png_quiet(png_structp png, png_const_charp msg) {}
+
+/* A PNG for the viewer: read a row at a time, so that `cancel` (when it is not NULL) is asked now and then and a viewer that is closed, or has been asked for another picture, does not wait for a
+ * whole picture to be decoded (the simple interface of libpng cannot be stopped: 0.5 s for a PNG of a million pixels on a PSP-1000, with the screen's thread waiting at the close), and the picture
+ * is made smaller as it is read: no full-size copy of 4 bytes a pixel (3 MB for a PNG of 783 000 pixels) is made and gone through again. The pixels are the very ones the simple interface and
+ * img_resize() give (a test compares them: every colour type and depth, tRNS, gAMA). Interlaced PNGs and shrinks with a box of over 256 pixels take the other ways. */
+static int load_png_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(void *), void *arg)
+{
+    out->px = NULL;
+    out->w = out->h = 0;
+    png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, png_fail, png_quiet);
+    png_infop info = png ? png_create_info_struct(png) : NULL;
+    if (!png || !info) {
+        png_destroy_read_struct(&png, &info, NULL);
+        return 0;
+    }
+    u8 *volatile row = NULL;
+    u32 *volatile acc = NULL;
+    int *volatile xb = NULL;
+    if (setjmp(png_jmpbuf(png))) {
+        png_destroy_read_struct(&png, &info, NULL);
+        free((void *)row);
+        free((void *)acc);
+        free((void *)xb);
+        img_free(out);
+        return 0;
+    }
+    png_init_io(png, fp);
+    png_read_info(png, info);
+    png_uint_32 w = 0, h = 0;
+    int depth = 0, ctype = 0, inter = 0;
+    png_get_IHDR(png, info, &w, &h, &depth, &ctype, &inter, NULL, NULL);
+    s_src_w = (int)w;
+    s_src_h = (int)h;
+    if (w == 0 || h == 0 || (u64)w * h > MAX_VIEW_PNG_PIXELS) {
+        png_destroy_read_struct(&png, &info, NULL);
+        return 0;
+    }
+    if (inter != PNG_INTERLACE_NONE) { /* (the rows of an interlaced PNG come in seven passes: all of it is read) */
+        png_destroy_read_struct(&png, &info, NULL);
+        if (fseek(fp, 0, SEEK_SET))
+            return 0;
+        return load_png_simple(fp, mw, mh, out);
+    }
+    /* the same pixels as PNG_FORMAT_RGBA of the simple interface: sRGB, 8 bits, a colour channel each and an alpha (255 when the file has none) */
+    png_set_alpha_mode(png, PNG_ALPHA_PNG, PNG_DEFAULT_sRGB);
+    if (depth == 16 && !png_get_valid(png, info, PNG_INFO_gAMA))
+        png_set_gamma_fixed(png, PNG_DEFAULT_sRGB, PNG_GAMMA_LINEAR); /* (the simple interface takes a 16-bit file that says nothing of its gamma for linear light: the same numbers) */
+    png_set_expand(png);
+    png_set_scale_16(png);
+    png_set_gray_to_rgb(png);
+    png_set_add_alpha(png, 0xFF, PNG_FILLER_AFTER);
+    png_read_update_info(png, info);
+    if (png_get_rowbytes(png, info) != (size_t)w * 4)
+        png_error(png, "not RGBA");
+
+    int fw, fh;
+    img_fit_down((int)w, (int)h, mw, mh, &fw, &fh);
+    float sx = (float)w / fw, sy = (float)h / fh;
+    int stream = (fw != (int)w || fh != (int)h) && ((int)sx + 2) * ((int)sy + 2) <= 256; /* the picture is made smaller as it is read */
+    out->w = stream ? fw : (int)w;
+    out->h = stream ? fh : (int)h;
+    out->px = malloc((size_t)out->w * out->h * 4);
+    row = malloc((size_t)w * 4);
+    if (stream) {
+        acc = calloc((size_t)fw * 2, sizeof(u32)); /* red and blue, green and alpha: the sums of the output row that is being made */
+        xb = malloc((size_t)(fw + 1) * sizeof(int));
+    }
+    if (!out->px || !row || (stream && (!acc || !xb)))
+        png_error(png, "no memory");
+    if (stream)
+        for (int x = 0; x <= fw; x++)
+            xb[x] = (int)(x * sx); /* (the same numbers as resize_down_fast and the first version of img_resize) */
+    int dy = 0;
+    for (int y = 0; y < (int)h; y++) {
+        if (cancel && (y & 15) == 0 && cancel(arg))
+            png_error(png, "stopped");
+        png_read_row(png, row, NULL);
+        if (!stream) {
+            memcpy(out->px + (size_t)y * w, row, (size_t)w * 4);
+            continue;
+        }
+        int y0 = (int)(dy * sy), y1 = (int)((dy + 1) * sy);
+        const u32 *p = (const u32 *)row;
+        u32 *rb = acc, *ga = acc + fw;
+        for (int x = 0; x < fw; x++) {
+            int x1 = xb[x + 1] < (int)w ? xb[x + 1] : (int)w;
+            u32 a = rb[x], b = ga[x]; /* (in registers while the box is added: the arrays may be the row for all the compiler knows) */
+            for (int xx = xb[x]; xx < x1; xx++) {
+                u32 c = p[xx];
+                a += c & 0x00FF00FFu;
+                b += (c >> 8) & 0x00FF00FFu;
+            }
+            rb[x] = a;
+            ga[x] = b;
+        }
+        if (y == y1 - 1) { /* the last row of this output row: its mean */
+            for (int x = 0; x < fw; x++) {
+                int x1 = xb[x + 1] < (int)w ? xb[x + 1] : (int)w;
+                out->px[(size_t)dy * fw + x] = box_mean(rb[x], ga[x], (x1 - xb[x]) * (y1 - y0));
+                rb[x] = ga[x] = 0;
+            }
+            if (++dy >= fh)
+                break; /* (the rows after the last box are not used, as before: they are not read) */
+        }
+    }
+    png_destroy_read_struct(&png, &info, NULL);
+    free((void *)row);
+    free((void *)acc);
+    free((void *)xb);
+    if (!stream && !shrink_to_fit(out, mw, mh)) {
         img_free(out);
         return 0;
     }
@@ -520,7 +645,7 @@ int img_load_fit_cancel(const char *path, int max_w, int max_h, Image *out, int 
     if (jpeg)
         ok = load_jpeg_fit(fp, max_w, max_h, out, cancel, arg);
     else if (png)
-        ok = load_png_fit(fp, max_w, max_h, out);
+        ok = load_png_fit(fp, max_w, max_h, out, cancel, arg);
     else
         ok = load_bmp_fit(fp, max_w, max_h, out, cancel, arg);
     fclose(fp);
@@ -540,6 +665,24 @@ void img_free(Image *img)
 
 #define CH(c, s) (((c) >> (s)) & 0xFF)
 
+/* The mean of a box of pixels from the two sums of resize_down_fast() (red and blue, green and alpha, a 16-bit lane each) and the number of pixels n (1 to 256): the multiplication by the reciprocal
+ * that stands for the division, exact for every sum that can happen. Also the streaming shrink of the PNG reader. */
+static u32 box_mean(u32 rb, u32 ga, int n)
+{
+    static u32 recip[257]; /* about 2^32 / n (filled by the first call: two threads may both do it, with the same numbers) */
+    if (n == 1)
+        return (rb & 0x00FF00FFu) | ((ga & 0x00FF00FFu) << 8);
+    if (!recip[2])
+        for (int k = 2; k <= 256; k++)
+            recip[k] = 0xFFFFFFFFu / k + 1; /* (the same as floor(2^32 / k) + 1 for every k that is not a power of two, and 2^32 / k for those: exact too; no 64-bit division) */
+    u32 m = recip[n];
+    u32 r = (u32)(((u64)(rb & 0xFFFFu) * m) >> 32);
+    r |= (u32)(((u64)(rb >> 16) * m) >> 32) << 16;
+    r |= (u32)(((u64)(ga & 0xFFFFu) * m) >> 32) << 8;
+    r |= (u32)(((u64)(ga >> 16) * m) >> 32) << 24;
+    return r;
+}
+
 /* The shrink: every output pixel is the mean of the box of source pixels it covers. This is the same mean, number for number, as the loop in img_resize() below makes (a test compares them on random
  * pictures), made faster: the two channels of a pair are added in one 32-bit number (a box of up to 256 pixels, so no 16-bit half overflows), and the division by the number of pixels is a
  * multiplication by its reciprocal (exact for every sum of at most 255 * 256: checked for all of them). On a PSP-1000 the divisions (four a pixel, 35 cycles each) were most of the time of the
@@ -554,10 +697,6 @@ static int resize_down_fast(const Image *src, int dw, int dh, u32 *dst)
         return 0;
     for (int x = 0; x <= dw; x++)
         xb[x] = (int)(x * sx);
-    static u32 recip[257]; /* about 2^32 / n */
-    if (!recip[2])
-        for (int n = 2; n <= 256; n++)
-            recip[n] = 0xFFFFFFFFu / n + 1; /* (the same as floor(2^32 / n) + 1 for every n that is not a power of two, and 2^32 / n for those: exact too; no 64-bit division) */
     for (int y = 0; y < dh; y++) {
         int y0 = (int)(y * sy), y1 = (int)((y + 1) * sy);
         if (y1 <= y0)
@@ -584,18 +723,7 @@ static int resize_down_fast(const Image *src, int dw, int dh, u32 *dst)
                     ga += (c >> 8) & 0x00FF00FFu;
                 }
             }
-            u32 r;
-            if (n == 1) {
-                r = rb & 0x00FF00FFu;
-                r |= (ga & 0x00FF00FFu) << 8;
-            } else {
-                u32 m = recip[n];
-                r = (u32)(((u64)(rb & 0xFFFFu) * m) >> 32);
-                r |= (u32)(((u64)(rb >> 16) * m) >> 32) << 16;
-                r |= (u32)(((u64)(ga & 0xFFFFu) * m) >> 32) << 8;
-                r |= (u32)(((u64)(ga >> 16) * m) >> 32) << 24;
-            }
-            dst[y * dw + x] = r;
+            dst[y * dw + x] = box_mean(rb, ga, n);
         }
     }
     free(xb);

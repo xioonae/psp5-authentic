@@ -9,6 +9,8 @@ enum { PF_GAMES, PF_MEDIA, PF_LIBRARY, PF_MUSIC, PF_SETTINGS, PF_INFO, PF_SAVES,
 
 /* a point in time: a step of the start, the opening of a screen (the name is cut at 23 letters; at most 96 are kept) */
 void perf_mark(const char *what);
+/* what the screen is doing (bits of the caller's choosing), kept for the next perf_frame(): a slow frame is written down with it. Cleared by perf_frame(). */
+void perf_state(unsigned bits);
 /* one frame of a screen: seconds from the start of the frame before to the start of this one (the wait for the screen's refresh is in it: 0.0167 is the best there is) */
 void perf_frame(int screen, float seconds);
 /* writes dir/perf.txt when that file exists (see above), else does nothing */
