@@ -23,6 +23,9 @@ void perf_event(const char *what, unsigned a, unsigned b, unsigned long long sta
 /* 1 when dir/perf.txt is there (asked once): a measurement that costs work of its own (reading a file a second time to tell the reading from the decoding) is made only then */
 int perf_wanted(const char *dir) __attribute__((weak));
 #define PERF_START() (perf_clock ? perf_clock() : 0ull)
+/* The same as PERF_END, written down only when the work took 40 ms or more: for what happens often and is mostly quick (the icons of the cards, the listing of a folder), so that it does not push
+ * the rare long things out of the list of the last 128 (the third real file lost its seconds-long Settings frames that way). */
+#define PERF_END_SLOW(what, a, b, t0) do { if (perf_event && perf_clock && perf_clock() - (t0) >= 40000ull) perf_event((what), (unsigned)(a), (unsigned)(b), (t0)); } while (0)
 #define PERF_END(what, a, b, t0) do { if (perf_event) perf_event((what), (unsigned)(a), (unsigned)(b), (t0)); } while (0)
 
 #endif

@@ -402,11 +402,13 @@ static int load_png_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(void
     u8 *volatile row = NULL;
     u32 *volatile acc = NULL;
     int *volatile xb = NULL;
+    int *volatile yb = NULL;
     if (setjmp(png_jmpbuf(png))) {
         png_destroy_read_struct(&png, &info, NULL);
         free((void *)row);
         free((void *)acc);
         free((void *)xb);
+        free((void *)yb);
         img_free(out);
         return 0;
     }
@@ -443,47 +445,74 @@ static int load_png_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(void
     img_fit_down((int)w, (int)h, mw, mh, &fw, &fh);
     float sx = (float)w / fw, sy = (float)h / fh;
     int stream = (fw != (int)w || fh != (int)h) && ((int)sx + 2) * ((int)sy + 2) <= 256; /* the picture is made smaller as it is read */
+    if (stream) {
+        xb = malloc((size_t)(fw + 1) * sizeof(int));
+        yb = malloc((size_t)(fh + 1) * sizeof(int));
+        acc = calloc((size_t)fw * 2, sizeof(u32)); /* red and blue, green and alpha: the sums of the output row that is being made */
+        if (!xb || !yb || !acc)
+            png_error(png, "no memory");
+        for (int x = 0; x <= fw; x++) /* (the same numbers as resize_down_fast and the first version of img_resize, kept inside the picture) */
+            xb[x] = (int)(x * sx) < (int)w ? (int)(x * sx) : (int)w;
+        for (int y = 0; y <= fh; y++)
+            yb[y] = (int)(y * sy) < (int)h ? (int)(y * sy) : (int)h;
+        for (int x = 0; x < fw; x++) /* (the boxes follow each other with a pixel at least: when float rounding would make one empty, the first version moved its end by a pixel and the boxes overlapped: that is read the other way) */
+            if (xb[x + 1] <= xb[x])
+                stream = 0;
+        for (int y = 0; y < fh; y++)
+            if (yb[y + 1] <= yb[y])
+                stream = 0;
+        if (!stream) {
+            free((void *)xb);
+            free((void *)yb);
+            free((void *)acc);
+            xb = NULL;
+            yb = NULL;
+            acc = NULL;
+        }
+    }
     out->w = stream ? fw : (int)w;
     out->h = stream ? fh : (int)h;
     out->px = malloc((size_t)out->w * out->h * 4);
     row = malloc((size_t)w * 4);
-    if (stream) {
-        acc = calloc((size_t)fw * 2, sizeof(u32)); /* red and blue, green and alpha: the sums of the output row that is being made */
-        xb = malloc((size_t)(fw + 1) * sizeof(int));
-    }
-    if (!out->px || !row || (stream && (!acc || !xb)))
+    if (!out->px || !row)
         png_error(png, "no memory");
-    if (stream)
-        for (int x = 0; x <= fw; x++)
-            xb[x] = (int)(x * sx); /* (the same numbers as resize_down_fast and the first version of img_resize) */
+    u8 *const rowp = row; /* (the volatile pointers above are for the longjmp: in the loop they would be read again at every use) */
+    u32 *const accp = acc;
+    const int *const xbp = xb, *const ybp = yb;
     int dy = 0;
     for (int y = 0; y < (int)h; y++) {
         if (cancel && (y & 15) == 0 && cancel(arg))
             png_error(png, "stopped");
-        png_read_row(png, row, NULL);
+        png_read_row(png, rowp, NULL);
         if (!stream) {
-            memcpy(out->px + (size_t)y * w, row, (size_t)w * 4);
+            memcpy(out->px + (size_t)y * w, rowp, (size_t)w * 4);
             continue;
         }
-        int y0 = (int)(dy * sy), y1 = (int)((dy + 1) * sy);
-        const u32 *p = (const u32 *)row;
-        u32 *rb = acc, *ga = acc + fw;
-        for (int x = 0; x < fw; x++) {
-            int x1 = xb[x + 1] < (int)w ? xb[x + 1] : (int)w;
-            u32 a = rb[x], b = ga[x]; /* (in registers while the box is added: the arrays may be the row for all the compiler knows) */
-            for (int xx = xb[x]; xx < x1; xx++) {
-                u32 c = p[xx];
-                a += c & 0x00FF00FFu;
-                b += (c >> 8) & 0x00FF00FFu;
+        /* the row is added to the sums of the output row: one pass over its pixels, a column's sums in registers while its box goes by */
+        const u32 *p = (const u32 *)rowp;
+        u32 *rb = accp, *ga = accp + fw;
+        int x = 0, next = xbp[1], end = xbp[fw];
+        u32 a = rb[0], b = ga[0];
+        for (int xx = xbp[0]; xx < end; xx++) {
+            if (xx == next) {
+                rb[x] = a;
+                ga[x] = b;
+                x++;
+                a = rb[x];
+                b = ga[x];
+                next = xbp[x + 1];
             }
-            rb[x] = a;
-            ga[x] = b;
+            u32 c = p[xx];
+            a += c & 0x00FF00FFu;
+            b += (c >> 8) & 0x00FF00FFu;
         }
-        if (y == y1 - 1) { /* the last row of this output row: its mean */
-            for (int x = 0; x < fw; x++) {
-                int x1 = xb[x + 1] < (int)w ? xb[x + 1] : (int)w;
-                out->px[(size_t)dy * fw + x] = box_mean(rb[x], ga[x], (x1 - xb[x]) * (y1 - y0));
-                rb[x] = ga[x] = 0;
+        rb[x] = a;
+        ga[x] = b;
+        if (y == ybp[dy + 1] - 1) { /* the last row of this output row: its mean */
+            int n_rows = ybp[dy + 1] - ybp[dy];
+            for (int k = 0; k < fw; k++) {
+                out->px[(size_t)dy * fw + k] = box_mean(rb[k], ga[k], (xbp[k + 1] - xbp[k]) * n_rows);
+                rb[k] = ga[k] = 0;
             }
             if (++dy >= fh)
                 break; /* (the rows after the last box are not used, as before: they are not read) */
@@ -493,6 +522,7 @@ static int load_png_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(void
     free((void *)row);
     free((void *)acc);
     free((void *)xb);
+    free((void *)yb);
     if (!stream && !shrink_to_fit(out, mw, mh)) {
         img_free(out);
         return 0;

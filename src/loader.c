@@ -53,7 +53,7 @@ static int load_icon_near(int range)
             int round = s_round;
             unsigned long long t0 = PERF_START();
             Texture *t = round ? art_load_icon(&s_list->items[i]) : art_load_icon_square(&s_list->items[i]);
-            PERF_END("icon: card, found", i, t != NULL, t0);
+            PERF_END_SLOW("icon: card, found", i, t != NULL, t0);
             s_slots[i].tex = t;
             s_slots[i].round = round;
             s_slots[i].shown = 0;
@@ -73,7 +73,7 @@ static int load_bg(void)
         return 0;
     unsigned long long t0 = PERF_START();
     s_bg_tex = art_load_bg(&s_list->items[want]);
-    PERF_END("bg: card, found", want, s_bg_tex != NULL, t0);
+    PERF_END_SLOW("bg: card, found", want, s_bg_tex != NULL, t0);
     s_bg_index = want;
     s_bg_done = 1;
     return 1;
@@ -93,7 +93,7 @@ static int load_cover(void)
         return 0;
     unsigned long long t0 = PERF_START();
     s_cov_tex = art_load_cover(path, album);
-    PERF_END("cover: song, found", want, s_cov_tex != NULL, t0);
+    PERF_END_SLOW("cover: song, found", want, s_cov_tex != NULL, t0);
     s_cov_index = want;
     s_cov_done = 1;
     return 1;

@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "perf.h"
 #include "videoplay.h"
 #include "video.h"
 #include "videomem.h"
@@ -94,7 +95,9 @@ static void load_current(VideoPlayer *v)
     v->overlay = OVERLAY_SHOW;
     char path[300];
     snprintf(path, sizeof(path), "%s/%s", v->dir, current_name(v));
+    unsigned long long t_v = PERF_START();
     v->vid = video_open(path);
+    PERF_END("video: file", 0, v->vid != NULL, t_v); /* (the MP4's boxes read and the decoder chosen) */
     if (!v->vid) {
 #ifdef VIDEO_DEBUG
         vlog("open failed: %s\n", path);
@@ -111,8 +114,10 @@ static void load_current(VideoPlayer *v)
         v->resume_at = at;
         return;
     }
+    t_v = PERF_START();
     if (!video_play(v->vid, 0))
         FAIL(v);
+    PERF_END("video: start", 0, 0, t_v); /* (the decoder started: the modules, the Media Engine, the first samples) */
 }
 
 VideoPlayer *videoplay_open(const char *dir, const MusicEntry *files, int count, int index)
@@ -127,7 +132,7 @@ VideoPlayer *videoplay_open(const char *dir, const MusicEntry *files, int count,
     v->count = count;
     v->index = index;
     music_stop(); /* the sound is the video's now */
-    sys_fast_now(1); /* the processor at its fastest while the video plays */
+    sys_fast_later(1); /* the processor at its fastest while the video plays (a thread changes it: the opening takes longer than the change, and the screen must not wait for it) */
     load_current(v);
     return v;
 }
@@ -138,7 +143,7 @@ void videoplay_close(VideoPlayer *v)
         return;
     remember(v);
     drop(v);
-    sys_fast_now(0);
+    sys_fast_later(0);
     free(v);
 }
 
