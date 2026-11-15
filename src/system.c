@@ -22,7 +22,6 @@
 #include "launch.h"
 #include "arkcfg.h"
 #include "netlink.h"
-#include "perf.h"
 
 #define USBSTOR_EF_DRIVERNAME "USBStorEFlash_Driver"
 /* finns när launcherläget är pausat för att psp5 gick till XMB */
@@ -423,9 +422,7 @@ static int clock_thread(SceSize args, void *argp)
     for (;;) {
         while (s_clock_tail != s_clock_head) {
             int on = s_clock_req[s_clock_tail % 16];
-            unsigned long long t0 = PERF_START();
             sys_fast(on);
-            PERF_END("clock: set", on, scePowerGetCpuClockFrequencyInt(), t0); /* (PSP5/perf.txt: what the call costs, for 1 and for 0) */
             __sync_synchronize();
             s_clock_tail++;
         }
@@ -443,9 +440,7 @@ void sys_fast_flush(void)
 void sys_fast_now(int on)
 {
     sys_fast_flush(); /* (what the thread was given goes first) */
-    unsigned long long t0 = PERF_START();
     sys_fast(on);
-    PERF_END("clock: set", on + 2, scePowerGetCpuClockFrequencyInt(), t0); /* (2 and 3: made by the caller, not the thread) */
 }
 
 void sys_fast_later(int on)

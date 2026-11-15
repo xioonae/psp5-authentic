@@ -12,7 +12,6 @@
 #include <string.h>
 #include <strings.h>
 #include "files.h"
-#include "perf.h"
 #include "kbd.h"
 #include "media.h"
 #include "music.h"
@@ -205,7 +204,7 @@ static int dev_space(const char *path, u64 *free_b, u64 *total_b)
 }
 
 /* The free space of a storage is asked of the PSP in a thread of its own: the first time after a start the Memory Stick counts the free clusters of its whole table, and on the maintainer's PSP-1000 that
- * took 1.8 seconds (PSP5/perf.txt: the File Manager opened in 1868 ms the first time, 70 ms the second), during which the screen showed nothing. Now the list is there at once and the bar at the top
+ * took 1.8 seconds (the PSP-1000 timings: the File Manager opened in 1868 ms the first time, 70 ms the second), during which the screen showed nothing. Now the list is there at once and the bar at the top
  * (and the "free" of a storage in the list of storages) comes when the numbers do; the numbers of the last time are shown meanwhile. The thread only writes the numbers below (a sequence number, odd while
  * it writes, makes the reader take a whole set), so it can go on after the File Manager is closed.
  *
@@ -258,9 +257,7 @@ static void space_work(void)
         if (a == s_sp[i].served)
             continue;
         u64 f = 0, t = 0;
-        unsigned long long t0 = PERF_START();
         int ok = dev_space(s_sp[i].dev, &f, &t);
-        PERF_END_SLOW("files: free space", i, ok, t0); /* (PSP5/perf.txt: the first time after a start took 1.8 s on a PSP-1000) */
         if (ok) { /* (when the PSP does not answer, the numbers of the last time stay) */
             s_sp[i].seq++; /* odd */
             __sync_synchronize();
@@ -317,7 +314,7 @@ static void space_ask(const char *path)
     space_kick();
 }
 
-/* At the start of psp5: both storages are asked in the background, so that the first count after a start (1.8 to 2.6 s on a PSP-1000, per PSP5/perf.txt) is over before a screen asks for it on the screen's
+/* At the start of psp5: both storages are asked in the background, so that the first count after a start (1.8 to 2.6 s on a PSP-1000, per the PSP-1000 timings) is over before a screen asks for it on the screen's
  * thread: Settings > Storage > Console Storage asked for it itself and stood still for two frames of 1.85 s and 1.76 s (one for each storage), the game information does the same. The PSP keeps the
  * number once it has counted (0.2 ms the next time). A storage that is not there answers with an error at once. */
 void files_warm_space(void)
@@ -945,9 +942,7 @@ static void load(const char *select, int fallback)
             s_count++;
         }
     } else {
-        unsigned long long t0 = PERF_START();
         int n = read_dir(s_path, &s_items);
-        PERF_END_SLOW("files: list, items", n < 0 ? 0 : n, 0, t0); /* (the folder is read, not sorted or cut to fit yet) */
         s_count = n < 0 ? 0 : n;
         if (s_pick) { /* folders, and the plugins (.prx) in them */
             int w = 0;

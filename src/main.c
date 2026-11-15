@@ -13,7 +13,6 @@
 #include "scan.h"
 #include "art.h"
 #include "loader.h"
-#include "perf.h"
 #include "ui.h"
 #include "launch.h"
 #include "settings.h"
@@ -247,24 +246,18 @@ static void mode_music_sleep(void)
 /* Bygger upp allt: grafik, typsnitt, spellista, laddartråd. */
 static void app_start(EntryList *list, Ui *ui, int boot)
 {
-    perf_mark("app_start");
     gfx_init();
-    perf_mark("gfx_init");
     font_init(lang_needs_cjk());
-    perf_mark("font_init");
     sound_init();
-    perf_mark("sound_init");
     if (!s_safe)
         umd_start(); /* skivan hinner snurra upp under startskärmen */
     if (boot)
         files_warm_space(); /* (the free space of the storages is counted in the background while the start screen plays: the first count takes seconds) */
     if (boot && g_boot_anim && !s_safe) {
         boot_run(&s_running); /* startskärmen, innan spelen läses in */
-        perf_mark("boot_anim");
     }
     s_scan_start = sceKernelGetSystemTimeWide();
     scan_all(list, s_self, s_list_cache, scan_progress);
-    perf_mark("scan_all");
     Entry disc;
     int has_disc;
     if (umd_poll(&disc, &has_disc) && has_disc)
@@ -272,13 +265,10 @@ static void app_start(EntryList *list, Ui *ui, int boot)
     if (has_non_ascii(list))
         font_ensure_cjk(); /* t.ex. japanska speltitlar */
     loader_start(list);
-    perf_mark("loader_start");
     if (!s_safe)
         music_init(); /* loads the decoders and starts the player thread (the songs of a folder are listed when the Music screen opens it) */
-    perf_mark("music_init");
     controls_psp_assignment(sys_confirm_is_circle()); /* what the PSP's own setting says; Settings > Controls may have other buttons do the jobs */
     ui_init(ui, list, launch_supported());
-    perf_mark("ui_init");
     s_mini_mu = &ui->mu;
     osd_set_overlay(mini_overlay);
 }
@@ -331,7 +321,6 @@ static void sleep_and_wake(Ui *ui)
  * memory of the music, and the songs are played from the same card they work on). */
 static void app_stop_ex(EntryList *list, Ui *ui, int keep_music)
 {
-    perf_dump(DATA_DIR); /* (the way out of every screen that leaves the menu: a game, a visit, the end: what was timed so far, if PSP5/perf.txt is there) */
     umd_stop();
     osd_set_overlay(NULL);
     s_mini_mu = NULL;
@@ -496,7 +485,6 @@ static int usb_mode(void)
     s_sleeping = s_resumed = 0; /* viloläge under USB-läget: ingen startskärm efteråt */
     font_term();
     gfx_term();
-    perf_dump(DATA_DIR); /* (a visit is over: what was timed so far) */
     return pending;
 }
 
@@ -531,7 +519,6 @@ static int ftp_mode(void)
         u64 now = sceKernelGetSystemTimeWide();
         float dt = (now - last) / 1000000.0f;
         last = now;
-        perf_frame(PF_FTP, dt);
         if (dt > 0.05f)
             dt = 0.05f;
         osd_update(dt);
@@ -564,7 +551,6 @@ static int ftp_mode(void)
     s_sleeping = s_resumed = 0;
     font_term();
     gfx_term();
-    perf_dump(DATA_DIR); /* (a visit is over: what was timed so far) */
     return pending;
 }
 
@@ -572,18 +558,15 @@ static int ftp_mode(void)
  * psp5 (SA_SHUTDOWN, SA_RESTART, SA_RECOVERY), else 0: the File Manager is closed first, and the caller does it (Sleep is done on the spot, as with the PSP's own switch). */
 static int files_mode(int pick)
 {
-    perf_mark("files_mode");
     gfx_init();
     font_init(lang_needs_cjk());
     sound_init();
-    perf_mark("files: gfx, font, sound");
     if (pick) /* Manage Plugins: only to choose a plugin file (files_picked() has it when this returns) */
         files_open_pick();
     else
         files_open();
     mode_music_begin();
     power_reset();
-    perf_mark("files: opened");
     int pending = SA_NONE;
     u32 old = ~0u; /* ignore the button that opened it, whichever it is (the confirm button) */
     u64 last = sceKernelGetSystemTimeWide();
@@ -600,7 +583,6 @@ static int files_mode(int pick)
             wakes_seen = s_wakes;
             files_woke();
         }
-        perf_frame(PF_FILES, dt);
         if (dt > 0.05f)
             dt = 0.05f;
         osd_update(dt);
@@ -627,7 +609,6 @@ static int files_mode(int pick)
     s_sleeping = s_resumed = 0;
     font_term();
     gfx_term();
-    perf_dump(DATA_DIR); /* (a visit is over: what was timed so far) */
     return pending;
 }
 
@@ -717,7 +698,6 @@ static int run_action(int action, EntryList *list, Ui *ui)
 
 int main(int argc, char *argv[])
 {
-    perf_mark("main");
     setup_callbacks();
     snprintf(s_self, sizeof(s_self), "%s", argc > 0 && argv[0] ? argv[0] : "ms0:/PSP/GAME/PSP5/EBOOT.PBP");
     sys_set_root(s_self);
@@ -732,7 +712,6 @@ int main(int argc, char *argv[])
     sys_init(s_self);
     if (g_backlight_off)
         sys_set_backlight_off(g_backlight_off); /* the time chosen in Settings: the PSP forgets it at a restart */
-    perf_mark("sys_init");
     osd_init(); /* volymindikatorn behöver ARK */
     testrun_init();
 
@@ -801,8 +780,6 @@ int main(int argc, char *argv[])
         u64 now = sceKernelGetSystemTimeWide();
         float dt = (now - last) / 1000000.0f;
         last = now;
-        perf_frame(in_saves ? PF_SAVES : in_settings ? PF_SETTINGS : in_info ? PF_INFO : ui.tab >= 0 && ui.tab < TAB_COUNT ? ui.tab : PF_GAMES, dt);
-        perf_state((ui.tab & 15) | (ui.mscreen & 3) << 4 | (ui.iv != NULL) << 6 | (ui.vp != NULL) << 7 | (ui.menu_open != 0) << 8 | (ui.mu.mini != 0) << 9 | (music_state() & 3) << 10 | (in_settings != 0) << 12 | (in_saves != 0) << 13 | (in_info != 0) << 14);
         if (dt > 0.05f)
             dt = 0.05f;
         osd_update(dt);

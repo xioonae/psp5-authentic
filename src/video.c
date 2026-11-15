@@ -8,7 +8,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "perf.h"
 #include "video.h"
 #include "mp4.h"
 #include "mpegps.h"
@@ -1121,25 +1120,17 @@ static void hw_start(Video *v)
         }
     }
     hwavc_log(hw_log);
-    unsigned long long t_hw = PERF_START();
     if (!game_lib_unload())
         return;
-    PERF_END("hw: lib unload", 0, 0, t_hw); /* (PSP5/perf.txt: where the seconds of opening a video go on a PSP-1000) */
-    t_hw = PERF_START();
     if (hwlib_up() < 0)
         return;
-    PERF_END("hw: modules", 0, 0, t_hw);
-    t_hw = PERF_START();
     int br = meboot_start(boot);
-    PERF_END("hw: ME boot", (unsigned)boot, br < 0, t_hw);
     crumbh("hw-boot", (unsigned)br, meboot_nid(), (unsigned)boot, (unsigned)meboot_current());
     if (br < 0) {
         hwlib_down();
         return;
     }
-    t_hw = PERF_START();
     HwAvc *h = hwavc_open(sps, sl, pps, pl, mp4_nal_size(v->mp4));
-    PERF_END("hw: decoder", 0, h != NULL, t_hw);
     unsigned char *buf = h ? memalign(64, (size_t)(v->au_cap + 63) & ~63u) : NULL;
     unsigned char *rgb = h ? memalign(64, (size_t)FRAME_W * (size_t)((v->h + 15) & ~15) * 4) : NULL;
     int ok = 0;

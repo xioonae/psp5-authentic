@@ -60,7 +60,7 @@ int sys_model(void);
  * Nothing changes when the PSP is already that fast (or has no such call, as an emulator). */
 void sys_fast(int on);
 /* The same, for a caller that must not wait: a thread of its own makes the change. The call itself takes 0.17 to 0.7 seconds on a PSP-1000 (the frames of 684, 167 and 167 ms of the picture viewer in
- * PSP5/perf.txt), and the screen's thread stood still for all of it. The requests are done in the order they are made. sys_fast_now() is sys_fast() for the others (the video player): it first waits
+ * the PSP-1000 timings), and the screen's thread stood still for all of it. The requests are done in the order they are made. sys_fast_now() is sys_fast() for the others (the video player): it first waits
  * for the requests that are not done yet, so that the two never run together (sys_fast_later() does it itself when it cannot make a thread). */
 void sys_fast_later(int on);
 void sys_fast_now(int on);

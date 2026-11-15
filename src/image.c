@@ -8,7 +8,6 @@
 #include <math.h>
 #include <string.h>
 #include "image.h"
-#include "perf.h"
 
 #define NTX_MAGIC 0x3158544E /* "NTX1" */
 #define MAX_PNG_PIXELS (512 * 512)
@@ -262,12 +261,6 @@ static int shrink_to_fit(Image *img, int mw, int mh)
     return 1;
 }
 
-static volatile int s_src_w, s_src_h; /* what the last picture was in the file (perf.txt only: another thread's loading may mix two, which only makes a line of it wrong) */
-void img_last_source(int *w, int *h)
-{
-    *w = s_src_w;
-    *h = s_src_h;
-}
 
 static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(void *), void *arg)
 {
@@ -284,7 +277,6 @@ static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(voi
         img_free(out);
         return 0;
     }
-    unsigned long long t0 = PERF_START();
     jpeg_create_decompress(&cinfo);
     jpeg_stdio_src(&cinfo, fp);
     jpeg_save_markers(&cinfo, JPEG_APP0 + 1, 0xFFFF); /* the camera's EXIF: which way up the picture is */
@@ -292,9 +284,6 @@ static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(voi
         jpeg_destroy_decompress(&cinfo);
         return 0;
     }
-    s_src_w = (int)cinfo.image_width;
-    s_src_h = (int)cinfo.image_height;
-    PERF_END("jpg: header", cinfo.progressive_mode, cinfo.num_components, t0); /* (PSP5/perf.txt: the numbers are "progressive" and the number of colour components) */
     int orient = 1;
     for (jpeg_saved_marker_ptr mk = cinfo.marker_list; mk; mk = mk->next)
         if (mk->marker == JPEG_APP0 + 1) {
@@ -312,9 +301,7 @@ static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(voi
     cinfo.dct_method = JDCT_IFAST; /* the fast one: the picture is made smaller to the screen's size, where the small difference is not seen, and a PSP is slow */
     cinfo.do_fancy_upsampling = FALSE;
     cinfo.do_block_smoothing = FALSE;
-    t0 = PERF_START();
     jpeg_start_decompress(&cinfo);
-    PERF_END("jpg: start", cinfo.scale_denom, cinfo.progressive_mode ? cinfo.input_scan_number : 0, t0); /* (the whole of a progressive file is read here: the numbers are the 1/n scale and the scans read) */
     int w = cinfo.output_width, h = cinfo.output_height;
     if ((u64)w * h > 4000000ull || cinfo.output_components != 3)
         longjmp(err.jump, 1);
@@ -324,7 +311,6 @@ static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(voi
     row = malloc(w * 3);
     if (!out->px || !row)
         longjmp(err.jump, 1);
-    t0 = PERF_START();
     while (cinfo.output_scanline < cinfo.output_height) {
         int y = cinfo.output_scanline;
         if (cancel && (y & 15) == 0 && cancel(arg))
@@ -334,16 +320,13 @@ static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(voi
         for (int x = 0; x < w; x++)
             out->px[y * w + x] = RGBA(row[x * 3], row[x * 3 + 1], row[x * 3 + 2], 255);
     }
-    PERF_END("jpg: rows", w, h, t0);
     jpeg_finish_decompress(&cinfo);
     jpeg_destroy_decompress(&cinfo);
     free((void *)row);
-    t0 = PERF_START();
     if (!shrink_to_fit(out, bw, bh) || !orient_image(out, orient)) {
         img_free(out);
         return 0;
     }
-    PERF_END("jpg: fit, turn", out->w, out->h, t0);
     return 1;
 }
 
@@ -357,8 +340,6 @@ static int load_png_simple(FILE *fp, int mw, int mh, Image *out)
     png.version = PNG_IMAGE_VERSION;
     if (!png_image_begin_read_from_stdio(&png, fp))
         return 0;
-    s_src_w = (int)png.width;
-    s_src_h = (int)png.height;
     if ((u64)png.width * png.height > MAX_VIEW_PNG_PIXELS) {
         png_image_free(&png);
         return 0;
@@ -417,8 +398,6 @@ static int load_png_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(void
     png_uint_32 w = 0, h = 0;
     int depth = 0, ctype = 0, inter = 0;
     png_get_IHDR(png, info, &w, &h, &depth, &ctype, &inter, NULL, NULL);
-    s_src_w = (int)w;
-    s_src_h = (int)h;
     if (w == 0 || h == 0 || (u64)w * h > MAX_VIEW_PNG_PIXELS) {
         png_destroy_read_struct(&png, &info, NULL);
         return 0;
@@ -563,8 +542,6 @@ static int load_bmp_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(void
         return 0;
     if (bpp != 1 && bpp != 4 && bpp != 8 && bpp != 16 && bpp != 24 && bpp != 32)
         return 0;
-    s_src_w = w;
-    s_src_h = h;
     unsigned char pal[256][3] = { { 0 } }; /* r, g, b */
     if (bpp <= 8) {
         unsigned n = colors ? colors : 1u << bpp, esz = dib == 12 ? 3 : 4;
@@ -716,7 +693,7 @@ static u32 box_mean(u32 rb, u32 ga, int n)
 /* The shrink: every output pixel is the mean of the box of source pixels it covers. This is the same mean, number for number, as the loop in img_resize() below makes (a test compares them on random
  * pictures), made faster: the two channels of a pair are added in one 32-bit number (a box of up to 256 pixels, so no 16-bit half overflows), and the division by the number of pixels is a
  * multiplication by its reciprocal (exact for every sum of at most 255 * 256: checked for all of them). On a PSP-1000 the divisions (four a pixel, 35 cycles each) were most of the time of the
- * shrink of a picture, which took about as long as decoding it (PSP5/perf.txt, `jpg: fit, turn`). Returns 0 when it cannot (a box over 256 pixels, no memory): the caller then does it the slow way. */
+ * shrink of a picture, which took about as long as decoding it (the PSP-1000 timings, `jpg: fit, turn`). Returns 0 when it cannot (a box over 256 pixels, no memory): the caller then does it the slow way. */
 static int resize_down_fast(const Image *src, int dw, int dh, u32 *dst)
 {
     float sx = (float)src->w / dw, sy = (float)src->h / dh;

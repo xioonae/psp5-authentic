@@ -2,7 +2,6 @@
 #include <pspkernel.h>
 #include <intraFont.h>
 #include "gfx.h"
-#include "perf.h"
 
 static SceUID s_thread = -1;
 static intraFont *volatile s_loaded;
@@ -10,9 +9,7 @@ static volatile int s_state; /* 0 nothing, 1 loading, 2 loaded (fontasync_poll t
 
 static int load_thread(SceSize args, void *argp)
 {
-    unsigned long long t0 = PERF_START();
     intraFont *f = intraFontLoad("flash0:/font/jpn0.pgf", INTRAFONT_STRING_UTF8);
-    PERF_END("font: jpn, thread", 0, f != NULL, t0);
     s_loaded = f;
     __sync_synchronize();
     s_state = f ? 2 : 3;

@@ -7,7 +7,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "perf.h"
 #include "videoplay.h"
 #include "video.h"
 #include "videomem.h"
@@ -90,7 +89,7 @@ static void drop(VideoPlayer *v)
     v->vid = NULL;
 }
 
-/* What opening a video costs on a PSP-1000 (PSP5/perf.txt: 2.2 s to open, 0.5 s to close the one before; the start of the decoder, the modules and the Media Engine, and a line written to the Memory
+/* What opening a video costs on a PSP-1000 (the PSP-1000 timings: 2.2 s to open, 0.5 s to close the one before; the start of the decoder, the modules and the Media Engine, and a line written to the Memory
  * Stick for every step of it) was a screen that stood still. It is done by a thread of its own (`psp5_vload`), one job at a time in the order they are given; while v->busy the screen's thread only
  * shows the wheel and answers ○. The jobs: open (and start, or ask) the video of v->index, start it at a place, close a player that was left while it was loading. */
 static void do_load(VideoPlayer *v)
@@ -101,9 +100,7 @@ static void do_load(VideoPlayer *v)
     v->overlay = OVERLAY_SHOW;
     char path[300];
     snprintf(path, sizeof(path), "%s/%s", v->dir, current_name(v));
-    unsigned long long t_v = PERF_START();
     v->vid = video_open(path);
-    PERF_END("video: file", 0, v->vid != NULL, t_v); /* (the MP4's boxes read and the decoder chosen) */
     if (!v->vid) {
 #ifdef VIDEO_DEBUG
         vlog("open failed: %s\n", path);
@@ -120,18 +117,14 @@ static void do_load(VideoPlayer *v)
         v->resume_at = at;
         return;
     }
-    t_v = PERF_START();
     if (!video_play(v->vid, 0))
         FAIL(v);
-    PERF_END("video: start", 0, 0, t_v); /* (the decoder started: the modules, the Media Engine, the first samples) */
 }
 
 static void do_play(VideoPlayer *v, float at)
 {
-    unsigned long long t_v = PERF_START();
     if (!video_play(v->vid, at))
         FAIL(v);
-    PERF_END("video: start", 1, 0, t_v);
 }
 
 enum { JOB_LOAD, JOB_PLAY, JOB_CLOSE };
@@ -151,11 +144,9 @@ static int load_thread(SceSize args, void *argp)
             } else if (j.kind == JOB_PLAY) {
                 do_play(v, j.at);
             } else { /* the player was left while it was loading: it is the thread's now */
-                unsigned long long t_c = PERF_START();
                 drop(v);
                 free(v);
                 v = NULL;
-                PERF_END("video: close", 1, 0, t_c);
             }
             __sync_synchronize();
             if (v)
@@ -243,15 +234,13 @@ void videoplay_close(VideoPlayer *v)
     sys_fast_later(0);
     if (!v->busy)
         remember(v);
-    /* The thread closes the video, in its own time: closing takes 0.5 s on a PSP-1000 (PSP5/perf.txt) and the screen does not wait for it; a player that is still being opened is closed when the thread
+    /* The thread closes the video, in its own time: closing takes 0.5 s on a PSP-1000 (the PSP-1000 timings) and the screen does not wait for it; a player that is still being opened is closed when the thread
      * is done with it (the jobs are done in the order they were given). The player is the thread's from here: ui_free() and files_close() wait for it (videoplay_flush) before psp5 is let go. */
     if (submit(JOB_CLOSE, v, 0))
         return;
     while (v->busy) /* (no thread to be had: here, as it was) */
         sceKernelDelayThread(2000);
-    unsigned long long t_c = PERF_START();
     drop(v);
-    PERF_END("video: close", 0, 0, t_c);
     free(v);
 }
 

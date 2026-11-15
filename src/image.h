@@ -18,8 +18,6 @@ int img_decode_png(const void *data, u32 size, Image *out);
 int img_load_fit(const char *path, int max_w, int max_h, Image *out);
 /* the same, and `cancel` (when it is not NULL) is asked now and then while a JPEG or a BMP is read: when it says 1 the reading stops and the answer is 0 (a viewer that is closed does not wait for a big picture) */
 int img_load_fit_cancel(const char *path, int max_w, int max_h, Image *out, int (*cancel)(void *), void *arg);
-/* the size in the file of the picture that img_load_fit_cancel() read last (for PSP5/perf.txt: what a decode of a picture of that size costs; 0 x 0 before the first) */
-void img_last_source(int *w, int *h);
 /* the largest size with the proportions of w x h that is inside mw x mh and not bigger than w x h */
 void img_fit_down(int w, int h, int mw, int mh, int *ow, int *oh);
 /* Omslag (JPEG eller PNG, efter innehållet). JPEG skalas ner i avkodaren men blir minst

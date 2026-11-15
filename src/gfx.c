@@ -14,7 +14,6 @@
 #include "diacritic.h"
 #include "icons.h"
 #include "testrun.h"
-#include "perf.h"
 
 /* the Japanese font loaded in a thread (fontasync.c, see font_ensure_cjk_later below): weak, so that the programs of the tests on a PC, which do not have it, still link */
 void fontasync_start(void) __attribute__((weak));
@@ -1225,7 +1224,7 @@ void gfx_button(float cx, float cy, float r, int kind, u32 plate, u32 mark)
 /* --- text --- */
 
 /* The fonts stay loaded from one screen to the next: psp5 builds itself up again after every visit (File Manager, USB Mode, FTP, Wi-Fi) and every one of them used to load both fonts twice, 0.39 to 0.44
- * seconds each time on a PSP-1000 (PSP5/perf.txt, `font_init`). Their pictures are in memory (intraFont does not use video memory), so they also survive gfx_term(); font_init() takes what is loaded
+ * seconds each time on a PSP-1000 (the PSP-1000 timings, `font_init`). Their pictures are in memory (intraFont does not use video memory), so they also survive gfx_term(); font_init() takes what is loaded
  * and font_term() only forgets the widths. font_unload() is the real end of them (nothing in psp5 needs it: the program ends or starts a game). */
 void font_init(int need_jpn)
 {
@@ -1236,12 +1235,8 @@ void font_init(int need_jpn)
     }
     widths_forget();
     intraFontInit();
-    unsigned long long t0 = PERF_START();
     s_font = intraFontLoad("flash0:/font/ltn0.pgf", INTRAFONT_CACHE_LARGE | INTRAFONT_CACHE_ALL);
-    PERF_END("font: ltn0 regular", 0, s_font != NULL, t0);
-    t0 = PERF_START();
     s_bold = intraFontLoad("flash0:/font/ltn4.pgf", INTRAFONT_CACHE_LARGE | INTRAFONT_CACHE_ALL);
-    PERF_END("font: ltn4 bold", 0, s_bold != NULL, t0);
     if (!s_bold)
         s_bold = s_font;
     if (need_jpn)
@@ -1266,7 +1261,7 @@ static void cjk_attach(intraFont *j)
         intraFontSetAltFont(s_bold, s_jpn);
 }
 
-/* The Japanese font is a large file: loading it takes some 0.7 seconds on a PSP-1000, which was a frozen picture the first time a song with a Cyrillic or Japanese title was shown (PSP5/perf.txt: a
+/* The Japanese font is a large file: loading it takes some 0.7 seconds on a PSP-1000, which was a frozen picture the first time a song with a Cyrillic or Japanese title was shown (the PSP-1000 timings: a
  * frame of 667 ms in the Music screen). font_ensure_cjk_later() has fontasync.c load it in a thread of its own; the frame after it is loaded (gfx_begin) it is put in use, and the letters that are not in
  * the Latin font come with it. font_ensure_cjk() is still the one that has the font when it returns (it waits for the thread when one is at it). fontasync.c is not in the programs of the tests
  * on a PC: the four functions below are weak, and without it the font is loaded here, at once. */
@@ -1295,9 +1290,7 @@ void font_ensure_cjk(void)
         fontasync_wait(); /* (a font that the thread is loading is waited for and taken, and not loaded twice) */
     if (s_jpn || !s_font)
         return;
-    unsigned long long t0 = PERF_START();
     intraFont *j = intraFontLoad("flash0:/font/jpn0.pgf", INTRAFONT_STRING_UTF8);
-    PERF_END("font: jpn, here", 0, j != NULL, t0);
     if (!j)
         return;
     cjk_attach(j);
