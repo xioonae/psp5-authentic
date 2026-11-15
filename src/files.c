@@ -1259,7 +1259,7 @@ static void play_song(const FileEntry *e)
         sound_play(SND_ERROR);
         return;
     }
-    music_play_folder(s_path, list, n, idx); /* (it keeps its own copy of the names) */
+    music_play_folder_once(s_path, list, n, idx); /* (it keeps its own copy of the names; the song plays to its end and the music stops, unless the player popup of the sound button is opened) */
     free(list);
     char msg[160], shown[96];
     text_ellipsis(shown, sizeof(shown), e->shown, 0.5f, 220);

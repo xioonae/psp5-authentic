@@ -1331,6 +1331,7 @@ static Queue s_queue;                    /* the songs that play (the player thre
 static Queue s_stage;                    /* a new folder that the screen has made ready, not taken by the thread yet */
 static volatile int s_stage_ready;
 static SceUID s_lock = -1;
+static volatile int s_once; /* a song that the File Manager started: it plays to its end and stops, the folder does not go on until the player popup has been opened (music_release_once) */
 static unsigned short s_order[MAX_ENTRIES]; /* the order the songs play in: s_order[s_pos] is the one that plays now */
 static int s_pos;
 static unsigned s_rng = 0x1d872b41u;
@@ -1423,6 +1424,8 @@ static void start_at(int pos, int step)
             s_state = MUSIC_PLAYING;
             return;
         }
+        if (s_once)
+            break; /* (a song of the File Manager that cannot be played: no other song starts in its place) */
         pos = step_pos(pos, step);
     }
     close_track();
@@ -1461,6 +1464,8 @@ static void song_over(void)
 {
     if (s_repeat == MUSIC_REPEAT_ONE)
         start_at(s_pos, 1);
+    else if (s_once)
+        stop_playback(); /* (started from the File Manager: no next song of its own accord) */
     else
         go_next();
 }
@@ -1652,7 +1657,7 @@ void music_term(void)
     s_elapsed = s_duration = 0;
 }
 
-void music_play_folder(const char *dir, const MusicEntry *entries, int n, int index)
+static void play_folder(const char *dir, const MusicEntry *entries, int n, int index, int once)
 {
     if (s_thread < 0 || !dir || !entries || index < 0 || index >= n || entries[index].dir)
         return;
@@ -1678,8 +1683,24 @@ void music_play_folder(const char *dir, const MusicEntry *entries, int n, int in
     s_stage.name = names;
     s_stage.n = songs;
     s_stage_ready = 1;
+    s_once = once;
     unlock();
     push(CMD_LOAD, start);
+}
+
+void music_play_folder(const char *dir, const MusicEntry *entries, int n, int index)
+{
+    play_folder(dir, entries, n, index, 0);
+}
+
+void music_play_folder_once(const char *dir, const MusicEntry *entries, int n, int index)
+{
+    play_folder(dir, entries, n, index, 1);
+}
+
+void music_release_once(void)
+{
+    s_once = 0;
 }
 
 void music_toggle_pause(void) { push(CMD_PAUSE, 0); }

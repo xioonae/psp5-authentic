@@ -867,6 +867,7 @@ static void swap_player(MusicUi *m)
 
 void musicui_mini_open(MusicUi *m)
 {
+    music_release_once(); /* (a song that the File Manager started goes on with the folder from now on: the player is in hand) */
     swap_player(m);
     m->pbtn = MU_PLAY;
     m->popup = 0;

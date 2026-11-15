@@ -49,6 +49,11 @@ void *music_cover_data(const char *path, u32 *size);
 /* Plays the songs of the folder `dir` from entries[index] on (entries are the lines of music_list_dir; the songs among them are what plays). */
 void music_play_folder(const char *dir, const MusicEntry *entries, int n, int index);
 
+/* The same, for a song that is started from the File Manager: it plays to its end and then the music stops; the folder does not go on with the next song of its own accord. (Repeat one still plays
+ * it again, as the player was set.) The folder goes on, as after music_play_folder, from the moment music_release_once() is called: the player popup of the sound button is opened while it plays. */
+void music_play_folder_once(const char *dir, const MusicEntry *entries, int n, int index);
+void music_release_once(void);
+
 void music_toggle_pause(void);
 void music_stop(void);
 void music_next(void);
