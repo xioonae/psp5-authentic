@@ -17,6 +17,7 @@
 #include "launch.h"
 #include "settings.h"
 #include "system.h"
+#include "logs.h"
 #include "testrun.h"
 #include "sound.h"
 #include "lang.h"
@@ -321,6 +322,7 @@ static void sleep_and_wake(Ui *ui)
  * memory of the music, and the songs are played from the same card they work on). */
 static void app_stop_ex(EntryList *list, Ui *ui, int keep_music)
 {
+    logs_flush(); /* (what the logs have been given is on the card before a game starts or psp5 ends) */
     umd_stop();
     osd_set_overlay(NULL);
     s_mini_mu = NULL;
@@ -380,6 +382,8 @@ static void delete_finished(EntryList *list, Ui *ui, int index, int result)
         ui_toast(ui, L(S_DELETED));
         sound_play(SND_SELECT);
     } else {
+        if (result != DEL_CANCELLED)
+            logs_fail(LOG_SYSTEM, "A game or app could not be deleted: some of its files could not be removed (the answer was %d).", result);
         ui_toast(ui, L(result == DEL_CANCELLED ? S_F_CANCELLED : S_F_FAILED));
         sound_play(SND_ERROR);
     }
@@ -706,7 +710,10 @@ int main(int argc, char *argv[])
     snprintf(s_cache_dir, sizeof(s_cache_dir), "%s/cache", DATA_DIR);
     snprintf(s_list_cache, sizeof(s_list_cache), "%s/cache/list.bin", DATA_DIR);
     sceIoMkdir(DATA_DIR, 0777);
+    logs_init(); /* the logs of the parts of the program (PSP5/logs): what a run that did not end left (logs.h) becomes an entry now */
     int failed = start_begin(); /* först av allt – före allt som kan hänga sig */
+    if (failed > 0)
+        logs_fail(LOG_SYSTEM, "The last start of psp5 did not finish (%d start%s in a row that did not): this start is a safe start (the cache is cleared, the start sound is left out)%s.", failed, failed == 1 ? "" : "s", failed >= 2 ? ", and the PSP is given back to the XMB" : "");
     art_init(DATA_DIR);
     config_load(DATA_DIR); /* ljud och språk */
     sys_init(s_self);
@@ -842,9 +849,10 @@ int main(int argc, char *argv[])
                     app_start(&list, &ui, 0);
                     if (settings_is_visit(action)) { /* the PSP's own screen, the File Manager, USB Mode: back in Settings, on the same row (not the main screen) */
                         char plugin[512];
-                        if (action == SA_WIFI && s_wifi_failed)
+                        if (action == SA_WIFI && s_wifi_failed) {
+                            logs_fail(LOG_FTP, "The PSP's Wi-Fi screen of Settings reported a failure: no connection was made.");
                             settings_notice(L(S_WIFI_FAILED));
-                        else if (action == SA_PLUGIN_PICK && files_picked(plugin, sizeof(plugin)))
+                        } else if (action == SA_PLUGIN_PICK && files_picked(plugin, sizeof(plugin)))
                             settings_plugin_new(plugin); /* the File Manager gave a plugin: the page for installing it */
                     } else {
                         in_settings = 0;
@@ -933,6 +941,7 @@ int main(int argc, char *argv[])
             if (gameops_delete_start(&list.items[index])) {
                 deleting = index;
             } else {
+                logs_fail(LOG_SYSTEM, "A game or app could not be deleted: the deleting could not start (no thread or no memory).");
                 loader_start(&list);
                 ui_relist(&ui, 0, 0);
                 ui_toast(&ui, L(S_F_FAILED));
@@ -952,6 +961,7 @@ int main(int argc, char *argv[])
             /* hit kommer vi bara om starten misslyckades */
             sceIoRemove(INGAME_MARK);
             app_start(&list, &ui, 0);
+            logs_fail(LOG_SYSTEM, "A game or app could not be started: the PSP did not load it.");
             ui_toast(&ui, L(S_LAUNCH_FAILED));
             continue;
         }

@@ -14,6 +14,7 @@
 #include <string.h>
 #include <strings.h>
 #include "music.h"
+#include "logs.h"
 #include "system.h"
 #include "aac.h"
 #include "downmix.h"
@@ -1263,21 +1264,39 @@ static int rate_ok(int rate)
 }
 
 /* Opens the song at `path` (the file, the codec, its tags): 0 = ready to play */
-static int open_track(const char *path)
+/* the kind of a file, from its name's ending (".mp3"): the log says the kind, never the name */
+static const char *kind_of(const char *path)
+{
+    static char k[8];
+    const char *dot = strrchr(path, '.');
+    int n = 0;
+    if (dot)
+        for (dot++; *dot && n < 5; dot++)
+            k[n++] = (char)((*dot >= 'A' && *dot <= 'Z') ? *dot + 32 : (*dot >= 'a' && *dot <= 'z') || (*dot >= '0' && *dot <= '9') ? *dot : '_');
+    k[n] = 0;
+    return k;
+}
+
+static int open_track_inner(const char *path)
 {
     close_track();
     const Codec *c = codec_for(path);
-    if (!c)
+    if (!c) {
+        logs_fail(LOG_MUSIC, "A song could not be played: there is no decoder for a '.%s' file.", kind_of(path));
         return -1;
+    }
     s_fd = sceIoOpen(path, PSP_O_RDONLY, 0777);
-    if (s_fd < 0)
+    if (s_fd < 0) {
+        logs_fail(LOG_MUSIC, "A song could not be played: the file could not be opened (the PSP said 0x%08x).", (unsigned)s_fd);
         return -1;
+    }
     snprintf(s_path, sizeof(s_path), "%s", path);
     s_size = sceIoLseek32(s_fd, 0, PSP_SEEK_END);
     s_start = stream_start();
     s_codec = c;
     s_decoded = 0;
     if (c->open() < 0 || !rate_ok(s_rate)) {
+        logs_fail(LOG_MUSIC, "A song could not be played: the decoder could not start a '.%s' file of %d KB (%d Hz, %d channels).", kind_of(path), (int)(s_size / 1024), s_rate, s_channels);
         close_track();
         return -1;
     }
@@ -1286,6 +1305,15 @@ static int open_track(const char *path)
     read_song_tags(path, &t);
     publish_track(&t);
     return 0;
+}
+
+/* The start of a song is marked on the card (logs.h) while it goes on: the decoders of the PSP are what can stop a PSP. Playing the song is not marked: a PSP that is turned off while the music plays is not a stop. */
+static int open_track(const char *path)
+{
+    logs_step_later(LOG_MUSIC, "starting a song");
+    int r = open_track_inner(path);
+    logs_done(LOG_MUSIC);
+    return r;
 }
 
 /* Decodes a frame and plays it. 1 = go on, 0 = the song is over, -1 = an error */
@@ -1547,7 +1575,10 @@ static int player_thread(SceSize args, void *argp)
             continue;
         }
         /* over, or an error: the next song (after the last: stop) */
+        if (r < 0)
+            logs_fail(LOG_MUSIC, "A song stopped on a decoder error after %d seconds (a '.%s' file, %d Hz): the next song is started.", (int)s_decoded, kind_of(s_path), s_rate);
         if (r < 0 && ++failures >= (s_queue.n < 8 ? s_queue.n : 8)) {
+            logs_fail(LOG_MUSIC, "The music stopped: %d songs in a row could not be played.", failures);
             stop_playback();
             continue;
         }

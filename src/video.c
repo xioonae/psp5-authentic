@@ -26,6 +26,7 @@
 #endif
 #include "music.h"
 #include "system.h"
+#include "logs.h"
 
 #ifdef VIDEO_DEBUG
 #include <stdarg.h>
@@ -47,121 +48,14 @@ void vlog(const char *fmt, ...)
 #define VLOG(...) ((void)0)
 #endif
 
-/* A video that crashes the PSP leaves nothing behind but what was written before it: so the stage the player has reached is written to a small file (video-crash.txt in the PSP5 folder) before each
- * step that could hang the PSP, and the file is removed when the video is closed the right way. When the next video is opened and the file is there, it is the last one's stage: it is kept as
- * video-crash-last.txt (to be looked at, or sent to the developer) and a new one is started. No file names or other personal things are written into it. */
-static void crumb_path(char *out, size_t n, const char *name) { snprintf(out, n, "%s/%s", PSP5_DATA_DIR, name); }
+/* What the video code says about its way (a "crumb": the name of a step and up to four numbers) is kept in memory (logs.c) and goes into PSP5/logs/Video.log only when something fails, together with a
+ * sentence that says what (video_close writes it). A step that can stop a PSP (the Media Engine, the games' library, the closing) is marked on the card before it begins (logs_step), and the mark is
+ * taken away when the video has been closed the right way: when the PSP stops in it, the next start of psp5 turns the mark into an entry of the log. No file names or other personal things are written. */
+static void crumb_path(char *out, size_t n, const char *name) { snprintf(out, n, "%s/%s", PSP5_DATA_DIR, name); } /* (video-skip.txt: what the closing leaves out) */
 
-/* The signs of life (a few lines every two seconds while a video plays) cost the screen's thread 30 ms each to write: open, append, close, five times, which is the stop of a few pictures in the
- * video every two seconds (the fifth real perf.txt had five slow frames of 50-150 ms in 11 s of playing; the emulator showed one of 83 ms at each sign of life). They are put in a small queue and
- * written by a thread of their own (one open, the lines, one close for the lot). The queue has one writer (the screen's thread) and one reader (the thread), no atomic instruction: head is written
- * by the first, tail by the second; tail moves after the file is closed, so "tail == head" means everything has reached the file. Every other crumb waits for the queue to empty first, so the
- * lines stay in order, and a crash file never lacks a line that was written before the one that ends it. */
-#define CL_N 16
-static char s_cl_line[CL_N][140];
-static volatile unsigned s_cl_head, s_cl_tail;
-static SceUID s_cl_thread = -1;
-
-static void crumb_flush(void)
-{
-    for (int i = 0; s_cl_tail != s_cl_head && i < 3000; i++) /* (3 s at most: the thread is alive, it only waits for the card) */
-        sceKernelDelayThread(1000);
-}
-
-static int crumb_thread(SceSize args, void *argp)
-{
-    (void)args;
-    (void)argp;
-    for (;;) {
-        while (s_cl_tail != s_cl_head) {
-            unsigned h = s_cl_head, t = s_cl_tail;
-            char path[96];
-            crumb_path(path, sizeof(path), "video-crash.txt");
-            SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_APPEND, 0777);
-            if (fd >= 0) {
-                for (; t != h; t++)
-                    sceIoWrite(fd, s_cl_line[t % CL_N], (int)strlen(s_cl_line[t % CL_N]));
-                sceIoClose(fd);
-            }
-            __sync_synchronize();
-            s_cl_tail = h; /* (also when the file would not open: nothing waits for a line that cannot be written) */
-        }
-        sceKernelSleepThread(); /* (a wake-up that came before this is counted: nothing is lost) */
-    }
-    return 0;
-}
-
-static void crumb_thread_start(void)
-{
-    if (s_cl_thread >= 0)
-        return;
-    SceUID th = sceKernelCreateThread("psp5_crumb", crumb_thread, 0x22, 0x2000, 0, NULL); /* (just below the screen's thread, above the decoder: it waits for the card, it does not use the processor) */
-    if (th >= 0 && sceKernelStartThread(th, 0, NULL) >= 0)
-        s_cl_thread = th;
-    else if (th >= 0)
-        sceKernelDeleteThread(th);
-}
-
-static void crumb(const char *what, int a, int b)
-{
-    char path[96], line[120];
-    crumb_flush();
-    crumb_path(path, sizeof(path), "video-crash.txt");
-    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_APPEND, 0777);
-    if (fd < 0)
-        return;
-    int n = snprintf(line, sizeof(line), "%s %d %d\n", what, a, b);
-    sceIoWrite(fd, line, n > 0 && n < (int)sizeof(line) ? n : 0);
-    sceIoClose(fd);
-}
-
-static void crumb4(const char *what, int a, int b, int c, int d)
-{
-    char path[96], line[140];
-    crumb_flush();
-    crumb_path(path, sizeof(path), "video-crash.txt");
-    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_APPEND, 0777);
-    if (fd < 0)
-        return;
-    int n = snprintf(line, sizeof(line), "%s %d %d %d %d\n", what, a, b, c, d);
-    sceIoWrite(fd, line, n > 0 && n < (int)sizeof(line) ? n : 0);
-    sceIoClose(fd);
-}
-
-static void crumbh(const char *what, unsigned a, unsigned b, unsigned c, unsigned d)
-{
-    char path[96], line[140];
-    crumb_flush();
-    crumb_path(path, sizeof(path), "video-crash.txt");
-    SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_APPEND, 0777);
-    if (fd < 0)
-        return;
-    int n = snprintf(line, sizeof(line), "%s %08x %08x %08x %08x\n", what, a, b, c, d);
-    sceIoWrite(fd, line, n > 0 && n < (int)sizeof(line) ? n : 0);
-    sceIoClose(fd);
-}
-
-/* a sign of life: it is put in the queue and written by the thread (the screen's thread does not wait for the card); here when there is no thread or the queue is full. crumb_go() wakes the thread
- * after the lines of a round have been put in. */
-static void crumb4_later(const char *what, int a, int b, int c, int d)
-{
-    unsigned h = s_cl_head;
-    if (s_cl_thread < 0 || h - s_cl_tail >= CL_N) {
-        crumb4(what, a, b, c, d);
-        return;
-    }
-    int n = snprintf(s_cl_line[h % CL_N], sizeof(s_cl_line[0]), "%s %d %d %d %d\n", what, a, b, c, d);
-    if (n <= 0 || n >= (int)sizeof(s_cl_line[0]))
-        s_cl_line[h % CL_N][0] = 0;
-    __sync_synchronize();
-    s_cl_head = h + 1;
-}
-
-static void crumb_go(void)
-{
-    if (s_cl_thread >= 0 && s_cl_tail != s_cl_head)
-        sceKernelWakeupThread(s_cl_thread);
-}
+static void crumb(const char *what, int a, int b) { logs_note(LOG_VIDEO, "%s %d %d", what, a, b); }
+static void crumb4(const char *what, int a, int b, int c, int d) { logs_note(LOG_VIDEO, "%s %d %d %d %d", what, a, b, c, d); }
+static void crumbh(const char *what, unsigned a, unsigned b, unsigned c, unsigned d) { logs_note(LOG_VIDEO, "%s %08x %08x %08x %08x", what, a, b, c, d); }
 
 /* the first 16 bytes at an address, as four words (only an address in the user's memory is read: it comes from the PSP's library and nothing says it is one) */
 static void crumb_mem(const char *what, unsigned addr)
@@ -176,7 +70,7 @@ static void crumb_mem(const char *what, unsigned addr)
            (unsigned)b[12] << 24 | b[13] << 16 | b[14] << 8 | b[15]);
 }
 
-/* The steps of the closing that crashed a PSP are never made again on it: when the crash file that a video left behind ends in the line of one of them, that step is written into video-skip.txt, and
+/* The steps of the closing that crashed a PSP are never made again on it: when the mark that a video left behind (logs.h: the PSP stopped in it) names one of them, that step is written into video-skip.txt, and
  * the closing leaves it out from then on (the memory it would have freed is left to the PSP until psp5 ends). */
 enum { TD_STOP, TD_FLUSH, TD_FREE_ES, TD_UNREG, TD_DELETE, TD_RING, TD_FINISH, TD_N };
 static const char *const TD_NAME[TD_N] = { "td-stop", "td-flush", "td-free-es", "td-unregist", "td-delete", "td-ring", "td-finish" };
@@ -218,81 +112,29 @@ static void skip_save(void)
 
 static void crumb_start(void)
 {
-    char path[96], last[96], buf[512];
-    crumb_flush();
-    crumb_thread_start();
-    crumb_path(path, sizeof(path), "video-crash.txt");
-    crumb_path(last, sizeof(last), "video-crash-last.txt");
     skip_load();
-    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
-    if (fd >= 0) {
-        int n = sceIoRead(fd, buf, sizeof(buf) - 1);
-        sceIoClose(fd);
-        if (n > 0) { /* the last line of the file of a video that did not end the right way: a step of the closing, when that is where it was */
-            buf[n] = 0;
-            int e = n;
-            while (e > 0 && (buf[e - 1] == '\n' || buf[e - 1] == ' '))
-                buf[--e] = 0;
-            const char *ln = strrchr(buf, '\n');
-            ln = ln ? ln + 1 : buf;
-            for (int i = 0; i < TD_N; i++)
-                if (!strncmp(ln, TD_NAME[i], strlen(TD_NAME[i])) && (ln[strlen(TD_NAME[i])] == ' ' || ln[strlen(TD_NAME[i])] == 0)) {
-                    s_skip |= 1u << i;
-                    skip_save();
-                }
+    const char *stopped = logs_stopped(LOG_VIDEO); /* the step an earlier run of psp5 was in when the PSP stopped: one of the closing's is never made again (see TD_NAME) */
+    for (int i = 0; i < TD_N; i++)
+        if (!strcmp(stopped, TD_NAME[i])) {
+            s_skip |= 1u << i;
+            skip_save();
         }
-        SceUID o = n > 0 ? sceIoOpen(last, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777) : -1;
-        if (o >= 0) {
-            sceIoWrite(o, buf, (int)strlen(buf));
-            sceIoWrite(o, "\n", 1);
-            sceIoClose(o);
-        }
-        sceIoRemove(path);
-    }
+    logs_forget_stop(LOG_VIDEO);
+    logs_step(LOG_VIDEO, "opening the video");
 }
 
-static void crumb_end(void)
+/* the video was closed the right way and played: nothing to leave behind */
+static void crumb_end(void) { logs_done(LOG_VIDEO); }
+
+/* A video that did not play (it could not be opened, the decoder gave errors, it was given up) is closed the right way too: its entry goes into Video.log, with the sentence that says what and the steps
+ * before it. */
+static void crumb_keep(const char *why)
 {
-    char path[96];
-    crumb_flush();
-    crumb_path(path, sizeof(path), "video-crash.txt");
-    sceIoRemove(path);
+    logs_fail(LOG_VIDEO, "%s", why);
+    logs_done(LOG_VIDEO);
 }
 
-/* A video that did not play (it could not be opened, the decoder gave errors, it was given up) is closed the right way, so nothing would be left of its crash file: it is kept as video-failed.txt, to
- * be sent to the developer. The lines of the videos that follow are added to it, each after a line "---" (a round of test videos leaves one file, not the last one's); when the file has grown past 32 KB
- * the next one starts it again. */
-static void crumb_keep(void)
-{
-    char path[96], kept[96];
-    crumb_flush();
-    crumb_path(path, sizeof(path), "video-crash.txt");
-    crumb_path(kept, sizeof(kept), "video-failed.txt");
-    SceIoStat st;
-    memset(&st, 0, sizeof(st));
-    int have = sceIoGetstat(kept, &st) >= 0 && st.st_size > 0 && st.st_size < 32768;
-    if (!have) {
-        sceIoRemove(kept);
-        if (sceIoRename(path, kept) < 0)
-            sceIoRemove(path);
-        return;
-    }
-    SceUID in = sceIoOpen(path, PSP_O_RDONLY, 0);
-    SceUID out = in >= 0 ? sceIoOpen(kept, PSP_O_WRONLY | PSP_O_APPEND, 0777) : -1;
-    if (out >= 0) {
-        char buf[512];
-        int n;
-        sceIoWrite(out, "---\n", 4);
-        while ((n = sceIoRead(in, buf, sizeof(buf))) > 0)
-            sceIoWrite(out, buf, n);
-        sceIoClose(out);
-    }
-    if (in >= 0)
-        sceIoClose(in);
-    sceIoRemove(path);
-}
-
-/* The PSP's own AAC decoder (sceAudiocodec, codec 0x1003) crashed a real PSP on its first frame (the crash file of an early test ended with "first-sound", written just before that call), and what
+/* The PSP's own AAC decoder (sceAudiocodec, codec 0x1003) crashed a real PSP on its first frame (the log of an early test ended with "first-sound", written just before that call), and what
  * its parameter block wants cannot be found out without crashing more of them: the sound of an MP4 is made by a decoder of psp5's own (aac.c, AAC-LC in software, checked against ffmpeg). */
 
 #define PKT 2048
@@ -332,9 +174,10 @@ struct Video {
     HwAvc *hwd;   /* the PSP's own decoder, when this stream is decoded by it: the pictures are RGBA (GU_PSM_8888) in fbuf, made by the worker thread like the ones of the software decoder */
     unsigned char *hwbuf; /* a sample as that decoder takes it (aligned to 64 bytes) */
     int hw_boot;          /* the Engine's image the PSP's own decoder runs with (MEBOOT_BASELINE, MEBOOT_MAIN), 0 when it does not */
-    int hw_tried;         /* the PSP's own decoder was tried (the function that starts the Engine's image was found): when it did not play to the end, the crash file stays */
+    int hw_tried;         /* the PSP's own decoder was tried (the function that starts the Engine's image was found): when it did not play to the end, the log gets an entry */
     int hw_first;         /* the next sample is given to it as a first one (mode 3, after a jump) */
     volatile int hw_err;  /* it did not take a sample: the screen's thread goes back to the software decoder */
+    const char *why;      /* what stopped the video, in words (a static text), for the entry of the log */
     volatile int read_err; /* the card did not give a sample (a file that was open before the PSP slept does not read after it): the video ends, no other way is tried: it reads the same file */
     HwPipe hwp;           /* what goes to the PSP's decoder and when a picture is shown (hwpipe.c) */
     int hw_from;          /* the first sample of this play */
@@ -409,12 +252,12 @@ struct Video {
     int ended, failed, no_data, dec_errors, audio_dry;
     int stream_error;
     int decoded;                      /* the picture decoder has been asked for a picture in this session (it is only stopped then) */
-    int n_put, n_au, n_dec;           /* packets fed, units given, pictures asked for (for the crash file) */
-    int err_total;                    /* errors of the library in all (feeding, units, decoding): the crash file is kept when there were any */
-    unsigned seen[6];                 /* the first different answers of sceMpegGetAvcAu (for the crash file) */
+    int n_put, n_au, n_dec;           /* packets fed, units given, pictures asked for (for the log) */
+    int err_total;                    /* errors of the library in all (feeding, units, decoding): the log gets an entry when there were any */
+    unsigned seen[6];                 /* the first different answers of sceMpegGetAvcAu (for the log) */
     int n_seen, hb_lines;
-    float hb, since;                  /* the time to the next sign of life in the crash file, and the time this session has gone without a picture */
-    int stage; /* what this session has done already, for the crash file (bits): 1 = fed, 2 = first picture asked for, 4 = first sound asked for, 8 = first put answered, 16 = first unit seen */
+    float hb, since;                  /* the time to the next sign of life in the log's steps, and the time this session has gone without a picture */
+    int stage; /* what this session has done already, for the log (bits): 1 = fed, 2 = first picture asked for, 4 = first sound asked for, 8 = first put answered, 16 = first unit seen */
 };
 
 /* the PSP's decoders are loaded once, the first time a video is opened */
@@ -447,16 +290,6 @@ static unsigned long long now_us(void) { return sceKernelGetSystemTimeWide(); }
 /* the memory of the planes of one picture for the graphics chip: Y rows of 512, U and V rows of 256, each plane a multiple of 64 bytes */
 static size_t ysz_of(int h) { return ((size_t)512 * (size_t)h + 63) & ~(size_t)63; }
 static size_t csz_of(int h) { return ((size_t)256 * (size_t)((h + 1) / 2) + 63) & ~(size_t)63; }
-/* the processor time a thread has used, in milliseconds (for the log) */
-static unsigned thread_ms(SceUID th)
-{
-    SceKernelThreadRunStatus st;
-    memset(&st, 0, sizeof(st));
-    st.size = sizeof(st);
-    if (th <= 0 || sceKernelReferThreadRunStatus(th, &st) < 0)
-        return 0;
-    return (unsigned)((((unsigned long long)st.runClocks.hi << 32) | st.runClocks.low) / 1000);
-}
 static int soft_start(Video *v);
 static void soft_stop(Video *v);
 static float soft_pick_start(Video *v, float at);
@@ -814,8 +647,8 @@ static void make_header(Video *v, unsigned char *h)
     h[0x8F] = (unsigned char)((v->h + 15) / 16);
 }
 
-/* one step of the closing: its line goes into the crash file first, and it is left out when it crashed this PSP before (see TD_NAME) */
-#define TD_STEP(step) (crumb(TD_NAME[step], 0, 0), (s_skip & (1u << (step))) ? (crumb("td-skipped", step, 0), VLOG("closing: %s left out\n", TD_NAME[step]), 0) : 1)
+/* one step of the closing: its mark goes onto the card first (logs_step), and it is left out when it stopped this PSP before (see TD_NAME) */
+#define TD_STEP(step) (logs_step(LOG_VIDEO, TD_NAME[step]), (s_skip & (1u << (step))) ? (crumb("td-skipped", step, 0), VLOG("closing: %s left out\n", TD_NAME[step]), 0) : 1)
 
 static void session_destroy(Video *v)
 {
@@ -861,6 +694,7 @@ static int session_create(Video *v)
     if (!v->ring_data || !v->mpeg_mem)
         return 0;
     crumb("session", 0, 0);
+    logs_step(LOG_VIDEO, "the games' library: a session opens");
     int rc = sceMpegRingbufferConstruct(RING(v), RING_PACKETS, v->ring_data, v->ring_size, ring_cb, v);
     VLOG("construct %08x\n", rc);
     if (rc < 0) {
@@ -931,6 +765,7 @@ static void feed(Video *v)
     if (!(v->stage & 1)) {
         v->stage |= 1;
         crumb("first-feed", want, free_packets);
+        logs_step(LOG_VIDEO, "the games' library: the first sample goes in");
     }
     int r = sceMpegRingbufferPut(RING(v), want, free_packets);
     if (!(v->stage & 8)) {
@@ -988,6 +823,7 @@ static int soft_prepare(Video *v)
     if (!v->dec) {
         crumb4("stream", v->um.nref, v->um.wmb * 1000 + v->um.hmb, v->um.cabac * 100 + v->um.weighted * 10 + v->um.to_main, v->um.nref0);
         crumb4("soft-refused", why, v->um.unsupported, v->um.profile, v->um.cabac);
+        v->why = "the software decoder cannot take this stream";
         return 0;
     }
     v->soft = 1;
@@ -1120,22 +956,27 @@ static void hw_start(Video *v)
         }
     }
     hwavc_log(hw_log);
+    logs_step(LOG_VIDEO, "the PSP's own decoder: the games' library is let go");
     if (!game_lib_unload())
         return;
+    logs_step(LOG_VIDEO, "the PSP's own decoder: its modules load");
     if (hwlib_up() < 0)
         return;
+    logs_step(LOG_VIDEO, "the PSP's own decoder: the Media Engine boots");
     int br = meboot_start(boot);
     crumbh("hw-boot", (unsigned)br, meboot_nid(), (unsigned)boot, (unsigned)meboot_current());
     if (br < 0) {
         hwlib_down();
         return;
     }
+    logs_step(LOG_VIDEO, "the PSP's own decoder: a session opens");
     HwAvc *h = hwavc_open(sps, sl, pps, pl, mp4_nal_size(v->mp4));
     unsigned char *buf = h ? memalign(64, (size_t)(v->au_cap + 63) & ~63u) : NULL;
     unsigned char *rgb = h ? memalign(64, (size_t)FRAME_W * (size_t)((v->h + 15) & ~15) * 4) : NULL;
     int ok = 0;
     if (h && buf && rgb) { /* the first samples decoded as a test (the decoder is some samples behind: the first gives no picture): every error of the library shows here, before a picture is wanted */
         void *rgbs[HWAVC_PICS] = { rgb, NULL, NULL };
+        logs_step(LOG_VIDEO, "the PSP's own decoder: the first samples go in");
         for (int i = 0; i < 12 && i < mp4_video_count(v->mp4); i++) {
             int size = mp4_video_read(v->mp4, i, buf, v->au_cap), pics = 0, w = 0, hh = 0;
             unsigned err = 0;
@@ -1170,6 +1011,7 @@ static int old_route_up(Video *v)
 {
     if (s_poisoned)
         return -1;
+    logs_step(LOG_VIDEO, "the games' library: its modules load");
     if (!load_modules()) {
         crumb("open-fail", __LINE__, 0);
         return 0;
@@ -1258,7 +1100,7 @@ Video *video_open(const char *path)
     Video *v = calloc(1, sizeof(*v));
     if (!v) {
         crumb("open-fail", __LINE__, 0);
-        crumb_keep();
+        crumb_keep("A video could not be opened: not enough memory for the player.");
         return NULL;
     }
     v->opt_soft = -1;
@@ -1266,7 +1108,7 @@ Video *video_open(const char *path)
     v->opt_slow = 1;
     v->opt_hw = 1; /* (the PSP's own decoder for a stream it may take; hw=0 in video-opts.txt leaves it out) */
     v->speed = 1.0f;
-    v->speed_min = 1.0f; /* (a video that was only opened and left has not slowed down: with 0 here its crash file was kept every time) */
+    v->speed_min = 1.0f; /* (a video that was only opened and left has not slowed down: with 0 here its log got an entry every time) */
     const char *dot = strrchr(path, '.');
     int pmf = dot && (!strcasecmp(dot, ".pmf") || !strcasecmp(dot, ".psmf"));
     v->frame_dur = 1001.0 / 30000.0; /* (a PMF: the usual 29.97; an MP4 sets its own below) */
@@ -1377,6 +1219,7 @@ Video *video_open(const char *path)
         else if (v->um.unsupported) { /* (soft=0) refused before the decoder sees it: a stream it cannot take gives its fatal error and breaks it for every video after */
             crumb4("stream", v->um.nref, v->um.wmb * 1000 + v->um.hmb, v->um.cabac * 100 + v->um.weighted * 10 + v->um.to_main, v->um.nref0);
             crumb4("unsupported", v->um.unsupported, v->um.profile, v->um.cabac, 0);
+            v->why = v->um.unsupported == 2 ? "a High profile video (8x8 transform) is not played" : "a CAVLC video that the PSP's own decoder was not asked to take";
             goto fail;
         }
 #endif
@@ -1398,8 +1241,11 @@ Video *video_open(const char *path)
         crumb4("timing", v->um.synth, v->um.inband, (int)v->um.tick.num_units, (int)v->um.tick.time_scale); /* synth 1 = the PSP's timing is written into the stream */
         crumb4("stream", v->um.nref, v->um.wmb * 1000 + v->um.hmb, v->um.cabac * 100 + v->um.weighted * 10 + v->um.to_main, v->um.nref0); /* reference frames, size in macroblocks, CABAC / weighted prediction / relabelled, default reference pictures */
     }
-    if (v->w <= 0 || v->h <= 0 || v->w > FRAME_W || v->h > 512)
-        { crumb("open-fail", __LINE__, 0); goto fail; }
+    if (v->w <= 0 || v->h <= 0 || v->w > FRAME_W || v->h > 512) {
+        crumb("open-fail", __LINE__, 0);
+        v->why = "the picture is bigger than 512 x 512";
+        goto fail;
+    }
     if (!v->soft) { /* the games' library: its modules, its memory (not touched by a video that is decoded in software or by the PSP's own decoder) */
 #ifndef PSP5_ANY_STREAM
         /* The games' library breaks on a stream with three or more reference frames (the maintainer's tests of 2026-11-08: one or two played, three failed; the log of 2026-11-15, a 4-reference x264 stream the
@@ -1407,6 +1253,7 @@ Video *video_open(const char *path)
          * the library sees it: "can't be played", and the next video plays. (An SPS that is not given to the decoder, nref 0, is not judged; force=1 in video-opts.txt tries it anyway.) */
         if (v->kind == VK_MP4 && v->um.nref > 2 && !v->um.force) {
             crumb4("old-route-refused", v->um.nref, v->um.cabac, v->um.weighted, v->um.nref0);
+            v->why = "the PSP's own decoder did not take a stream with so many reference frames, and the games' library cannot play it either";
             goto fail;
         }
 #endif
@@ -1474,6 +1321,8 @@ void video_close(Video *v)
         crumb("closing", 0, 0);
     soft_stop(v);
     int hw_good = v->hwd != NULL && !v->hw_err; /* (the PSP's decoder played it to the end: nothing to look at) */
+    if (v->hwd)
+        logs_step(LOG_VIDEO, "closing: the PSP's own decoder is let go");
     hw_stop(v);
     v->started = 0;
     audio_stop(v);
@@ -1490,10 +1339,27 @@ void video_close(Video *v)
         crumb_end();
     } else {
         crumb4("end", v->n_put, v->n_au, v->n_dec, v->err_total);
-        if (v->failed || v->err_total > 0 || (v->hw_tried && !hw_good) || (hw_good && v->hw_boot == MEBOOT_MAIN) || (v->soft && (v->soft_late_n * 5 > (unsigned)v->n_dec + 5 || v->speed_min < 0.97f)))
-            crumb_keep(); /* it did not play right (or a video in software was late with more than one picture in five, or had to slow down: how fast the PSP is; or the PSP's own decoder was tried and did not play to the end, or ran in its Main mode, which no PSP has shown yet): the file stays (video-failed.txt) */
-        else
+        int slow = v->soft && (v->soft_late_n * 5 > (unsigned)v->n_dec + 5 || v->speed_min < 0.97f); /* (a video in software that was late with more than one picture in five, or had to slow down: how fast the PSP is) */
+        if (v->failed || v->err_total > 0 || (v->hw_tried && !hw_good) || slow) {
+            char facts[100], why[360];
+            if (v->kind == VK_MP4 && v->w > 0)
+                snprintf(facts, sizeof(facts), "MP4 %dx%d, profile %d, %d reference frames, %s", v->w, v->h, v->um.profile, v->um.nref, v->um.cabac ? "CABAC" : "CAVLC");
+            else if (v->kind == VK_MP4)
+                snprintf(facts, sizeof(facts), "the file could not be read as an MP4");
+            else
+                snprintf(facts, sizeof(facts), "PMF / PSMF");
+            if (v->failed)
+                snprintf(why, sizeof(why), "The video could not be played%s%s (%s).", v->why ? ": " : "", v->why ? v->why : "", facts);
+            else if (v->err_total > 0)
+                snprintf(why, sizeof(why), "The video played, but the decoder gave %d errors (%s).", v->err_total, facts);
+            else if (v->hw_tried && !hw_good)
+                snprintf(why, sizeof(why), "The PSP's own decoder was tried and did not play the video to the end (%s).", facts);
+            else
+                snprintf(why, sizeof(why), "The software decoder was too slow for this video: %u of %d pictures were late and the speed went down to %d%% (%s).", v->soft_late_n, v->n_dec, (int)(v->speed_min * 100.0f), facts);
+            crumb_keep(why);
+        } else {
             crumb_end(); /* it was closed the right way and played: nothing to leave behind */
+        }
     }
     if (v->dump && v->dump_n) {
         char path[96];
@@ -1611,7 +1477,9 @@ int video_play(Video *v, float at)
     int ok = v->soft ? soft_start(v) : session_create(v);
     VLOG("play at %.2f: session %d\n", at, ok);
     if (!ok)
-        v->failed = 1; /* (the crash file is kept) */
+        v->failed = 1; /* (the log gets an entry when the video is closed) */
+    else
+        logs_step_later(LOG_VIDEO, "playing"); /* (what the mark of a PSP that stops now says: not the step of the start, which has ended well) */
     return ok;
 }
 
@@ -1714,6 +1582,7 @@ static void hw_discontinuity(Video *v)
 {
     hwp_clear(&v->hwp);
     v->hw_first = 1;
+    logs_step_later(LOG_VIDEO, "a jump: the PSP's own decoder starts again");
     int rr = hwavc_reset(v->hwd);
     crumbh("hw-reset", (unsigned)rr, 1, 0, 0);
     if (rr != 0)
@@ -1988,31 +1857,16 @@ int video_update(Video *v, float dt)
     else
         v->idle += dt;
     v->clock_ms = (int)(v->clock * 1000.0);
-    /* signs of life in the crash file, a few seconds apart, and the end of a session that gives no picture at all (the screen would stay black for ever) */
+    /* signs of life, ten seconds apart: a note or two in memory (they come with the entry of a failure), and the mark of the step that is going on is made new (written by the thread: the screen's thread
+     * does not wait for the card), so that a PSP that stops while a video plays leaves how far it had come; and the end of a session that gives no picture at all (the screen would stay black for ever) */
     v->hb += dt;
-    if (v->hb >= 2.0f && v->hb_lines < 40) {
+    if (v->hb >= 10.0f) {
         v->hb = 0;
         v->hb_lines++;
-        crumb4_later("alive", v->n_put, v->n_au, v->n_dec, (int)(v->clock * 1000));
-        if (v->soft) {
-            crumb4_later("soft-ms", (int)(v->t_io / 1000), (int)(v->t_conv / 1000), (int)(v->t_aud / 1000), (int)v->underruns); /* milliseconds reading the file, making the picture ready, decoding sound; times the sound ran dry */
-            crumb4_later("soft-spd", (int)(v->speed * 1000), (int)(v->speed_min * 1000), (int)v->soft_late_n, (int)v->soft_skip_n); /* how fast the video plays now and at the slowest (1000 = as it is), pictures that were late, pictures made without the loop filter */
-            crumb4_later("soft-aud", v->aud_errors, aac_error_line(), (int)v->gap_late, (int)(v->gap_max / 1000)); /* sound frames that could not be decoded, the line of aac.c that said so, blocks of sound given to the output more than 34 ms after the one before, the longest time between two (23 ms is right) */
-            if (v->hb_lines == 1) { /* the priorities the threads run at (once) */
-                SceKernelThreadInfo ti;
-                int pr[3] = { 0, 0, 0 };
-                SceUID th[3] = { sceKernelGetThreadId(), v->wthread, v->athread };
-                for (int i = 0; i < 3; i++) {
-                    memset(&ti, 0, sizeof(ti));
-                    ti.size = sizeof(ti);
-                    if (th[i] > 0 && sceKernelReferThreadStatus(th[i], &ti) == 0)
-                        pr[i] = ti.currentPriority;
-                }
-                crumb4_later("soft-prio", pr[0], pr[1], pr[2], 0); /* the screen's thread, the decoder's, the sound's (the lower the number the sooner it runs) */
-            }
-            crumb4_later("soft-cpu", (int)thread_ms(sceKernelGetThreadId()), (int)thread_ms(v->wthread), (int)thread_ms(v->athread), (int)((now_us() - v->t_play0) / 1000)); /* processor time of the screen's thread, the decoder's and the sound's, and the time since the video was started: all in milliseconds */
-        }
-        crumb_go();
+        crumb4("alive", v->n_put, v->n_au, v->n_dec, (int)(v->clock * 1000));
+        if (v->soft)
+            crumb4("soft-spd", (int)(v->speed * 1000), (int)(v->speed_min * 1000), (int)v->soft_late_n, (int)v->soft_skip_n); /* how fast the video plays now and at the slowest (1000 = as it is), pictures that were late, pictures made without the loop filter */
+        logs_step_later(LOG_VIDEO, "playing");
     }
     if (!v->have_pic && (v->since += dt) > 8.0f) {
         crumb4("no-picture", v->n_put, v->n_au, v->n_dec, v->src_eof);
@@ -2020,12 +1874,14 @@ int video_update(Video *v, float dt)
             hw_fallback(v, -4);
             return 0;
         }
+        v->why = "no picture came in eight seconds";
         v->failed = 1;
         return 0;
     }
     if (v->soft) { /* the thread makes the pictures: what is ready goes on the screen */
         if (v->read_err && v->hwd) { /* the file cannot be read: the video ends here (the thread is stopped first: it uses the decoder) */
             soft_stop(v);
+            v->why = "a sample could not be read from the card (the card was taken out, or the PSP slept)";
             v->failed = 1;
             return 0;
         }
@@ -2108,6 +1964,8 @@ int video_update(Video *v, float dt)
             crumbh("frame", (unsigned)(uintptr_t)v->frame, FRAME_W, 0, 0);
         }
         v->decoded = 1;
+        if (v->n_dec == 0)
+            logs_step(LOG_VIDEO, "the games' library: the first picture is decoded");
         int r = sceMpegAvcDecode(&v->mpeg, &v->au_avc, FRAME_W, &buf, &got);
         v->have_au = 0;
         v->n_dec++;

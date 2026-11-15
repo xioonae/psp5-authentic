@@ -25,6 +25,7 @@
 #include <string.h>
 #include <strings.h>
 #include "saves.h"
+#include "logs.h"
 #include "art.h"
 #include "controls.h"
 #include "gameops.h"
@@ -628,6 +629,8 @@ static void finish_delete(void)
     W.index = NULL;
     W.n = 0;
     refresh_space();
+    if (r != DEL_OK && r != DEL_CANCELLED)
+        logs_fail(LOG_SYSTEM, "Saved data could not be deleted: some of it could not be removed (the answer was %d).", r);
     toast(L(r == DEL_OK ? S_DELETED : r == DEL_CANCELLED ? S_F_CANCELLED : S_F_FAILED));
     sound_play(r == DEL_OK ? SND_SELECT : SND_ERROR);
 }
@@ -665,6 +668,7 @@ static void start_delete(void)
         W.paths = NULL;
         W.index = NULL;
         W.n = 0;
+        logs_fail(LOG_SYSTEM, "Saved data could not be deleted: the deleting could not start (no thread or nothing chosen).");
         toast(L(S_F_FAILED));
         sound_play(SND_ERROR);
     }

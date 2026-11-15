@@ -625,25 +625,36 @@ static int load_bmp_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(void
     return 1;
 }
 
+/* what went wrong with the last picture (a static text, for the log of the picture viewer: it asks right after a load that returned 0, in the thread that made the load) */
+static char s_why[120];
+const char *img_last_error(void) { return s_why[0] ? s_why : "no reason noted"; }
+
 int img_load_fit_cancel(const char *path, int max_w, int max_h, Image *out, int (*cancel)(void *), void *arg)
 {
     out->px = NULL;
     out->w = out->h = 0;
+    s_why[0] = 0;
     /* what kind of file it is: read from a first opening of it, so that the second can have the buffer that suits the decoder before anything is read from it */
     FILE *fp = fopen(path, "rb");
-    if (!fp)
+    if (!fp) {
+        snprintf(s_why, sizeof(s_why), "the file could not be opened");
         return 0;
+    }
     unsigned char b[8];
     size_t got = fread(b, 1, sizeof(b), fp);
     fclose(fp);
     int jpeg = got >= 4 && b[0] == 0xFF && b[1] == 0xD8;
     int png = got >= 8 && b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G';
     int bmp = got >= 2 && b[0] == 'B' && b[1] == 'M';
-    if (!jpeg && !png && !bmp)
+    if (!jpeg && !png && !bmp) {
+        snprintf(s_why, sizeof(s_why), "it is not a JPEG, PNG or BMP picture (it starts with %02x %02x)", got > 0 ? b[0] : 0, got > 1 ? b[1] : 0);
         return 0;
+    }
     fp = fopen(path, "rb");
-    if (!fp)
+    if (!fp) {
+        snprintf(s_why, sizeof(s_why), "the file could not be opened a second time");
         return 0;
+    }
     /* The Memory Stick is slow to be asked for a few kilobytes at a time, and a JPEG and a PNG are read in pieces of 4 KB or less: a buffer of 64 KB makes one request of sixteen. (Not for a BMP: it is
      * read a row at a time, the bottom row first, and each of those jumps would read the whole buffer again.) */
     if (!bmp)
@@ -656,6 +667,8 @@ int img_load_fit_cancel(const char *path, int max_w, int max_h, Image *out, int 
     else
         ok = load_bmp_fit(fp, max_w, max_h, out, cancel, arg);
     fclose(fp);
+    if (!ok)
+        snprintf(s_why, sizeof(s_why), "the %s could not be decoded (damaged, a kind that is not supported, or not enough memory)", jpeg ? "JPEG" : png ? "PNG" : "BMP");
     return ok;
 }
 

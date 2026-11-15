@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "ftpscreen.h"
+#include "logs.h"
 #include "ftp.h"
 #include "netlink.h"
 #include "wifi.h"
@@ -33,8 +34,9 @@ FtpScreenPhase ftpscreen_phase(void)
     return s_phase;
 }
 
-static void fail(StrId msg)
+static void fail(StrId msg, const char *why)
 {
+    logs_fail(LOG_FTP, "The FTP server could not be used: %s.", why);
     ftp_stop();
     netlink_stop();
     s_phase = FTPS_FAILED;
@@ -64,7 +66,7 @@ static void window(void)
         s_phase = FTPS_SWITCH_OFF;
         s_switch_wait = 0;
     } else if (r < 0) {
-        fail(S_WIFI_FAILED);
+        fail(S_WIFI_FAILED, "the PSP's Wi-Fi window gave an error and no connection was made");
     } else {
         s_phase = FTPS_STOPPED;
     }
@@ -112,9 +114,9 @@ int ftpscreen_update(const UiInput *in, float dt, unsigned now_ms)
                 s_phase = FTPS_RUNNING;
                 s_power_save = netlink_power_save();
             } else
-                fail(S_FTP_START_FAILED);
+                fail(S_FTP_START_FAILED, "the connection is up but the server could not start on it");
         } else if (st == LINK_FAILED) {
-            fail(S_FTP_CONN_FAILED);
+            fail(S_FTP_CONN_FAILED, "the connection to the network failed");
         }
         break;
     }
@@ -122,7 +124,7 @@ int ftpscreen_update(const UiInput *in, float dt, unsigned now_ms)
         ftp_step(now_ms);
         ftp_status(&s_status);
         if (netlink_state(now_ms) == LINK_FAILED)
-            fail(S_FTP_LOST);
+            fail(S_FTP_LOST, "the Wi-Fi connection was lost while the server ran");
         break;
     }
     return 0;

@@ -17,6 +17,7 @@
 #include "music.h"
 #include "imageview.h"
 #include "videoplay.h"
+#include "logs.h"
 #include "textedit.h"
 #include "textbuf.h"
 #include "controls.h"
@@ -525,6 +526,18 @@ static void tree_size(const char *path, int is_dir, u64 bytes, u64 *total_bytes,
     free(list);
 }
 
+/* The first step that failed in this operation and what the PSP answered (the worker sets them once, the screen's thread reads them when the operation is over, for the log). */
+static const char *s_fail_what;
+static int s_fail_code;
+static int fail_at(int r, const char *what, int code)
+{
+    if (!s_fail_what) {
+        s_fail_what = what;
+        s_fail_code = code;
+    }
+    return r;
+}
+
 /* R_NO_SPACE instead of R_FAILED when the card is (nearly) full */
 static int write_failed(const char *dst)
 {
@@ -541,11 +554,11 @@ static int copy_file(const char *src, const char *dst)
         return R_NO_SPACE; /* (a big file that cannot fit is known before a byte is written: what is there already may be replaced or skipped, so the size of everything is not asked at the start) */
     SceUID in = sceIoOpen(src, PSP_O_RDONLY, 0);
     if (in < 0)
-        return R_FAILED;
+        return fail_at(R_FAILED, "opening the file to copy", in);
     SceUID out = sceIoOpen(dst, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (out < 0) {
         sceIoClose(in);
-        return R_FAILED;
+        return fail_at(R_FAILED, "making the new file", out);
     }
     int r = R_OK;
     for (;;) {
@@ -555,13 +568,14 @@ static int copy_file(const char *src, const char *dst)
         }
         int got = sceIoRead(in, W.buf, COPY_BUF);
         if (got < 0) {
-            r = R_FAILED;
+            r = fail_at(R_FAILED, "reading a file", got);
             break;
         }
         if (got == 0)
             break;
-        if (sceIoWrite(out, W.buf, got) != got) {
-            r = write_failed(dst);
+        int put = sceIoWrite(out, W.buf, got);
+        if (put != got) {
+            r = fail_at(write_failed(dst), "writing a file", put);
             break;
         }
         W.done += got;
@@ -579,10 +593,11 @@ static int copy_tree(const char *src, const char *dst, int is_dir)
 {
     if (!is_dir)
         return copy_file(src, dst);
-    if (sceIoMkdir(dst, 0777) < 0)
-        return R_FAILED;
+    int mk = sceIoMkdir(dst, 0777);
+    if (mk < 0)
+        return fail_at(R_FAILED, "making a folder", mk);
     FileEntry *list;
-    int n = read_dir(src, &list), r = n < 0 ? R_FAILED : R_OK;
+    int n = read_dir(src, &list), r = n < 0 ? fail_at(R_FAILED, "reading a folder", n) : R_OK;
     for (int i = 0; i < n && r == R_OK; i++) {
         char s[MAX_PATH], d[MAX_PATH];
         join(s, sizeof(s), src, list[i].name);
@@ -844,6 +859,7 @@ static void start_op(int op, char **paths, int n, const char *dest)
     W.current[0] = 0;
     W.cancel = 0;
     W.result = R_OK;
+    s_fail_what = NULL;
     W.idx = W.partial = 0;
     W.ask = 0;
     W.all_dd = W.all_other = CF_NONE;
@@ -852,6 +868,8 @@ static void start_op(int op, char **paths, int n, const char *dest)
     W.thread = (op == OP_DELETE || W.buf)
                    ? sceKernelCreateThread("psp5_files", worker, 0x28, 0x10000, PSP_THREAD_ATTR_USER, NULL)
                    : -1;
+    if (W.thread >= 0)
+        logs_step_later(LOG_FILES, op == OP_COPY ? "a copy" : op == OP_MOVE ? "a move" : "a delete"); /* (taken away by finish_op) */
     if (W.thread >= 0 && sceKernelStartThread(W.thread, 0, NULL) < 0) {
         sceKernelDeleteThread(W.thread);
         W.thread = -1;
@@ -862,6 +880,7 @@ static void start_op(int op, char **paths, int n, const char *dest)
             free(W.src[i]);
         free(W.buf);
         W.buf = NULL;
+        logs_fail(LOG_FILES, "A copy, move or delete could not start: no thread or no memory for the copy buffer.");
         toast(L(S_F_FAILED));
         sound_play(SND_ERROR);
     }
@@ -1161,6 +1180,8 @@ static int make_folder(const char *dir, const char *name)
 
 static void name_problem(int rn)
 {
+    if (rn == RN_FAILED)
+        logs_fail(LOG_FILES, "A rename or a new folder was refused by the card (the name was fine and free).");
     toast(L(rn == RN_BAD ? S_F_BAD_NAME : rn == RN_EXISTS ? S_F_EXISTS : S_F_FAILED));
     sound_play(SND_ERROR);
 }
@@ -1235,6 +1256,7 @@ static void open_viewer(const FileEntry *e, int video)
     if (!s_iv && !s_vp) {
         free(s_mfiles);
         s_mfiles = NULL;
+        logs_fail(video ? LOG_VIDEO : LOG_PICTURE, "%s could not be opened from the File Manager: no memory for the %s.", video ? "A video" : "A picture", video ? "player" : "viewer");
         toast(L(video ? S_VID_CANT : S_IMG_CANT));
         sound_play(SND_ERROR);
         return;
@@ -1501,10 +1523,18 @@ static void finish_op(void)
 {
     int op = W.op, r = W.result;
     stop_op();
+    logs_done(LOG_FILES);
     s_cf = 0;
     if (op == OP_MOVE && r == R_OK)
         clear_clip();
     static const StrId msg[] = { S_F_DONE, S_F_FAILED, S_F_NO_SPACE, S_F_CANCELLED, S_F_NOT_DELETED, S_F_INTO_ITSELF };
+    if (r == R_FAILED || r == R_NO_SPACE || r == R_NOT_DELETED) {
+        char how[140] = "";
+        if (s_fail_what)
+            snprintf(how, sizeof(how), " The first thing that failed: %s, the PSP said 0x%08x.", s_fail_what, (unsigned)s_fail_code);
+        logs_fail(LOG_FILES, "A %s %s.%s", op == OP_COPY ? "copy" : op == OP_MOVE ? "move" : "delete",
+                  r == R_NO_SPACE ? "stopped: the card is full" : r == R_NOT_DELETED ? "was done, but the originals could not all be removed" : "did not finish", how);
+    }
     toast(L(msg[r]));
     sound_play(r == R_OK ? SND_SELECT : SND_ERROR);
     char keep[256] = "";

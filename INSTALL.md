@@ -221,6 +221,7 @@ If you replaced ARK's Custom Launcher with psp5 authentic (see above), copy `ARK
 ## Help!
 
 - **Stuck, or something is broken?** Hold **SELECT** while you turn on the PSP. You'll land in the normal XMB.
+- **Something failed and you want to know why?** Look in the folder `PSP5/logs` of your Memory Stick (`Music.log`, `Video.log`, `Picture.log`, `File Manager.log`, `FTP.log`, `System.log`): a file is only there when something went wrong in that part, with the date, what happened and the steps before it. A log keeps its newest 16 KB. Attach the file when you open an issue. You can delete the folder at any time.
 - **A game is missing?** Check that it's in the right folder (see *Where your games go*). ISO files can be one
   sub-folder deep, not more.
 - **Wrong or missing pictures?** Settings → *psp5 authentic* → *Clear image cache*.

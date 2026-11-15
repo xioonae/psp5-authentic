@@ -11,6 +11,7 @@
 #include "controls.h"
 #include "gfx.h"
 #include "lang.h"
+#include "logs.h"
 #include "sound.h"
 #include "theme.h"
 #include "osd.h"
@@ -165,25 +166,35 @@ static int move_verified(const char *src, const char *dst)
     return 0;
 }
 
+static const char *s_save_fail; /* the step of the last save that failed, and what the PSP said (for the log) */
+static int s_save_code;
+static int save_failed(const char *what, int code)
+{
+    s_save_fail = what;
+    s_save_code = code;
+    return 0;
+}
+
 /* Writes the file under a temporary name, then puts it in place of the old one (which is kept until the new one is there): a failure leaves the old file as it was. */
 static int save_file(TextEdit *t)
 {
     int len = 0;
     unsigned char *buf = tb_serialize(t->tb, &len);
     if (!buf)
-        return 0;
+        return save_failed("making the text ready (no memory)", 0);
     char tmp[MAX_PATH], old[MAX_PATH];
     snprintf(tmp, sizeof(tmp), "%s.psp5tmp", t->path);
     snprintf(old, sizeof(old), "%s.psp5old", t->path);
     SceUID fd = sceIoOpen(tmp, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (fd < 0) {
         free(buf);
-        return 0;
+        return save_failed("making the temporary file", fd);
     }
-    int ok = 1;
+    int ok = 1, wrote = 0;
     for (int off = 0; off < len;) {
         int n = len - off > 32768 ? 32768 : len - off;
-        if (sceIoWrite(fd, buf + off, n) != n) {
+        wrote = sceIoWrite(fd, buf + off, n);
+        if (wrote != n) {
             ok = 0;
             break;
         }
@@ -193,18 +204,18 @@ static int save_file(TextEdit *t)
     free(buf);
     if (!ok || file_size(tmp) != len) {
         sceIoRemove(tmp);
-        return 0;
+        return save_failed(ok ? "the temporary file has the wrong size" : "writing the temporary file (the card may be full)", ok ? 0 : wrote);
     }
     if (path_exists(old))
         sceIoRemove(old);
     if (!move_verified(t->path, old)) {
         sceIoRemove(tmp);
-        return 0;
+        return save_failed("putting the old file aside", 0);
     }
     if (!move_verified(tmp, t->path)) {
         move_verified(old, t->path); /* (the old file back) */
         sceIoRemove(tmp);
-        return 0;
+        return save_failed("putting the new file in place", 0);
     }
     sceIoRemove(old);
     tb_mark_saved(t->tb);
@@ -648,6 +659,7 @@ static void do_save(TextEdit *t, int *closed)
         toast(t, L(S_TE_SAVED));
         sound_play(SND_SELECT);
     } else {
+        logs_fail(LOG_FILES, "The text editor could not save a file: %s (%d lines, the PSP said 0x%08x). The old file is as it was.", s_save_fail ? s_save_fail : "no step noted", tb_count(t->tb), (unsigned)s_save_code);
         toast(t, L(S_TE_SAVE_FAILED));
         sound_play(SND_ERROR);
         if (closed)

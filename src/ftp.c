@@ -7,6 +7,7 @@
 #include <string.h>
 #include <strings.h>
 #include "ftp.h"
+#include "logs.h"
 #include "netsock.h"
 
 #define MAX_SESSIONS 3        /* computers at the same time (a few clients open two connections) */
@@ -357,7 +358,9 @@ static void xfer_step(Session *s)
                 xfer_end(s, NULL);
                 return;
             }
-            if (sceIoWrite(s->fd, s->buf, n) != n) {
+            int put = sceIoWrite(s->fd, s->buf, n);
+            if (put != n) {
+                logs_fail(LOG_FTP, "An upload stopped: the card did not take %d bytes (the PSP said 0x%08x). Is the storage full?", n, (unsigned)put);
                 xfer_end(s, "552 The file could not be written (is the storage full?)");
                 return;
             }
@@ -369,6 +372,7 @@ static void xfer_step(Session *s)
             if (s->kind == X_RETR) {
                 int n = sceIoRead(s->fd, s->buf, CHUNK);
                 if (n < 0) {
+                    logs_fail(LOG_FTP, "A download stopped: the file could not be read from the card (the PSP said 0x%08x).", (unsigned)n);
                     xfer_end(s, "451 The file could not be read");
                     return;
                 }
@@ -631,6 +635,7 @@ static void cmd_retr(Session *s, char *arg)
     }
     SceUID fd = sceIoOpen(real, PSP_O_RDONLY, 0);
     if (fd < 0) {
+        logs_fail(LOG_FTP, "A download could not start: the file could not be opened (the PSP said 0x%08x).", (unsigned)fd);
         xfer_fail(s, "550 The file cannot be opened");
         return;
     }
@@ -665,6 +670,7 @@ static void store(Session *s, char *arg, int append)
     int keep = append || rest; /* the old content stays */
     SceUID fd = sceIoOpen(real, PSP_O_WRONLY | PSP_O_CREAT | (keep ? 0 : PSP_O_TRUNC), 0777);
     if (fd < 0) {
+        logs_fail(LOG_FTP, "An upload could not start: the file could not be made (the PSP said 0x%08x).", (unsigned)fd);
         xfer_fail(s, "550 The file cannot be written here");
         return;
     }
@@ -959,12 +965,15 @@ int ftp_start(unsigned short port, unsigned fallback_ip)
 {
     ftp_stop();
     s_listen = netsock_listen(port);
-    if (s_listen < 0)
+    if (s_listen < 0) {
+        logs_fail(LOG_FTP, "The FTP server could not listen on port %u (the answer was %d): the port may be taken, or no socket could be made.", (unsigned)port, s_listen);
         return 0;
+    }
     s_port = netsock_port(s_listen);
     if (!s_port)
         s_port = port;
     s_fallback_ip = fallback_ip;
+    logs_step_later(LOG_FTP, "the FTP server runs"); /* (taken away by ftp_stop) */
     return 1;
 }
 
@@ -995,6 +1004,7 @@ void ftp_step(unsigned now_ms)
 
 void ftp_stop(void)
 {
+    logs_done(LOG_FTP);
     for (int i = 0; i < MAX_SESSIONS; i++)
         session_close(&s_sess[i]);
     if (s_listen >= 0)

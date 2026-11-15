@@ -74,7 +74,7 @@ wherever it can, but it doesn't copy the console in everything.
 
 ## What you get
 
-Jump to: [Games](#games) · [Media](#media-music-videos-and-images) · [File Manager and FTP Server](#file-manager-and-ftp-server) · [Settings](#settings) · [Themes and startup](#themes-and-startup) · [Top bar and power menu](#top-bar-and-power-menu) · [Sounds, languages, speed](#sounds-languages-and-speed)
+Jump to: [Games](#games) · [Media](#media-music-videos-and-images) · [File Manager and FTP Server](#file-manager-and-ftp-server) · [Settings](#settings) · [Themes and startup](#themes-and-startup) · [Top bar and power menu](#top-bar-and-power-menu) · [Sounds, languages, speed](#sounds-languages-and-speed) · [If something goes wrong](#if-something-goes-wrong)
 
 ### Games
 
@@ -128,7 +128,7 @@ Each one opens a list over the whole width of the screen; folders show as folder
 
 How it decodes: psp5 asks the PSP's own H.264 decoder (the one on its second processor, the Media Engine) first, for every video it may take; there is no setting for this, `hw=0` in `PSP5/video-opts.txt` leaves it out.
 Only when that decoder cannot be started, or stops while a video plays, psp5 goes on with its own software decoder (for Baseline / CAVLC videos). The details are in [docs/DEVELOPER-NOTES.md](docs/DEVELOPER-NOTES.md).
-(If a video ever crashes the PSP, the next one you open leaves `PSP5/video-crash-last.txt` that says how far it got.)
+If a video does not play, or the PSP stops while one plays, `PSP5/logs/Video.log` says what happened (see [If something goes wrong](#if-something-goes-wrong)).
 
 #### Images
 
@@ -190,6 +190,21 @@ Only when that decoder cannot be started, or stops while a video plays, psp5 goe
   Czech are picked under *Settings → System → Language*.
 - **Quick and careful.** Only the cards near your selection are loaded, and artwork is cached, so it opens fast after the
   first start. psp5 authentic never touches flash0 and you can always get back to the XMB.
+
+### If something goes wrong
+
+psp5 authentic keeps a short log for each part of the program in the folder `PSP5/logs` on your Memory Stick (or the internal storage of a PSP Go):
+
+| File | What is in it |
+|---|---|
+| `Music.log` | a song that could not be started or stopped on a decoder error |
+| `Video.log` | a video that could not be played, played badly, or a PSP that stopped while one was opened, played or closed |
+| `Picture.log` | a picture that could not be shown |
+| `File Manager.log` | a copy, move, delete, rename or text-editor save that failed |
+| `FTP.log` | the FTP Server or the Wi-Fi connection that failed |
+| `System.log` | a start that did not finish, a game that could not be started or deleted, saved data or a plugin that could not be removed or installed |
+
+Nothing is written while all goes well, so these files are usually not there. An entry has the date, a sentence that says what happened and the steps before it. No file names are written. A log never grows past 16 KB: when it is full the oldest entries go. If the PSP freezes or crashes while one of the steps that can do that is going on (the start of a video's decoder, closing a video, a copy, the start of a song, the FTP Server), psp5 authentic notices at the next start and writes it down too (*the PSP stopped while ...*). Please attach the file when you [open an issue](https://github.com/xioonae/psp5-authentic/issues).
 
 ## Buttons
 

@@ -12,6 +12,7 @@
 #include "gfx.h"
 #include "lang.h"
 #include "look.h"
+#include "logs.h"
 #include "sound.h"
 #include "system.h"
 #include "music.h"
@@ -158,6 +159,11 @@ static int reader(SceSize args, void *argp)
         if (!ok && v->want != idx) { /* it was stopped, as another one is wanted now (a picture that cannot be read while it is still the wanted one is a failure) */
             img_free(&img);
             continue;
+        }
+        if (!ok) { /* a failure: the log says what the picture was (no name: its size) and what went wrong */
+            SceIoStat st;
+            unsigned kb = sceIoGetstat(path, &st) >= 0 ? (unsigned)(st.st_size / 1024) : 0;
+            logs_fail(LOG_PICTURE, "A picture could not be shown (a file of %u KB): %s.", kb, img_last_error());
         }
         v->img = img;
         v->ok = ok;

@@ -9,6 +9,7 @@
 #include <string.h>
 #include <strings.h>
 #include "settings.h"
+#include "logs.h"
 #include "arkcfg.h"
 #include "plugins.h"
 #include "system.h"
@@ -680,6 +681,8 @@ static void pm_apply(int kind)
                 mask |= 1u << lv;
         ok = plugins_install(PM.src, &PM.locs[PM.loc], mask) == PLUGIN_OK;
     }
+    if (!ok)
+        logs_fail(LOG_SYSTEM, "A plugin could not be %s: the plugin files could not be written or removed.", PM.del_n ? "removed" : "installed");
     settings_notice(L(ok ? S_F_DONE : S_F_FAILED));
     sound_play(ok ? SND_SELECT : SND_ERROR);
     fill_plugins(0); /* the lines have moved: the switches of the page Plugins are made from the files again */
