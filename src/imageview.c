@@ -11,6 +11,7 @@
 #include "image.h"
 #include "gfx.h"
 #include "lang.h"
+#include "look.h"
 #include "sound.h"
 #include "system.h"
 #include "perf.h"
@@ -306,7 +307,7 @@ void imageview_draw(ImageView *v)
         draw_picture(v->tex, v->old ? v->fade : 1);
     }
     if (!v->tex && !v->failed)
-        text_draw(SCREEN_W / 2, SCREEN_H / 2 + 5, 0.7f, 0, RGBA(150, 152, 162, 255), ALIGN_CENTER, L(S_LOADING));
+        look_wheel(SCREEN_W / 2, SCREEN_H / 2, v->time, 1); /* (a picture is being read: the wheel the video player shows too; it said "Loading games", the Games tab's text, before) */
     if (v->failed)
         text_draw(SCREEN_W / 2, SCREEN_H / 2 + 5, 0.7f, 0, RGBA(238, 238, 242, 255), ALIGN_CENTER, L(S_IMG_CANT));
     float a = v->overlay >= OVERLAY_FADE ? 1 : v->overlay > 0 ? v->overlay / OVERLAY_FADE : 0;

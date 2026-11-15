@@ -53,9 +53,60 @@ void vlog(const char *fmt, ...)
  * video-crash-last.txt (to be looked at, or sent to the developer) and a new one is started. No file names or other personal things are written into it. */
 static void crumb_path(char *out, size_t n, const char *name) { snprintf(out, n, "%s/%s", PSP5_DATA_DIR, name); }
 
+/* The signs of life (a few lines every two seconds while a video plays) cost the screen's thread 30 ms each to write: open, append, close, five times, which is the stop of a few pictures in the
+ * video every two seconds (the fifth real perf.txt had five slow frames of 50-150 ms in 11 s of playing; the emulator showed one of 83 ms at each sign of life). They are put in a small queue and
+ * written by a thread of their own (one open, the lines, one close for the lot). The queue has one writer (the screen's thread) and one reader (the thread), no atomic instruction: head is written
+ * by the first, tail by the second; tail moves after the file is closed, so "tail == head" means everything has reached the file. Every other crumb waits for the queue to empty first, so the
+ * lines stay in order, and a crash file never lacks a line that was written before the one that ends it. */
+#define CL_N 16
+static char s_cl_line[CL_N][140];
+static volatile unsigned s_cl_head, s_cl_tail;
+static SceUID s_cl_thread = -1;
+
+static void crumb_flush(void)
+{
+    for (int i = 0; s_cl_tail != s_cl_head && i < 3000; i++) /* (3 s at most: the thread is alive, it only waits for the card) */
+        sceKernelDelayThread(1000);
+}
+
+static int crumb_thread(SceSize args, void *argp)
+{
+    (void)args;
+    (void)argp;
+    for (;;) {
+        while (s_cl_tail != s_cl_head) {
+            unsigned h = s_cl_head, t = s_cl_tail;
+            char path[96];
+            crumb_path(path, sizeof(path), "video-crash.txt");
+            SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_APPEND, 0777);
+            if (fd >= 0) {
+                for (; t != h; t++)
+                    sceIoWrite(fd, s_cl_line[t % CL_N], (int)strlen(s_cl_line[t % CL_N]));
+                sceIoClose(fd);
+            }
+            __sync_synchronize();
+            s_cl_tail = h; /* (also when the file would not open: nothing waits for a line that cannot be written) */
+        }
+        sceKernelSleepThread(); /* (a wake-up that came before this is counted: nothing is lost) */
+    }
+    return 0;
+}
+
+static void crumb_thread_start(void)
+{
+    if (s_cl_thread >= 0)
+        return;
+    SceUID th = sceKernelCreateThread("psp5_crumb", crumb_thread, 0x22, 0x2000, 0, NULL); /* (just below the screen's thread, above the decoder: it waits for the card, it does not use the processor) */
+    if (th >= 0 && sceKernelStartThread(th, 0, NULL) >= 0)
+        s_cl_thread = th;
+    else if (th >= 0)
+        sceKernelDeleteThread(th);
+}
+
 static void crumb(const char *what, int a, int b)
 {
     char path[96], line[120];
+    crumb_flush();
     crumb_path(path, sizeof(path), "video-crash.txt");
     SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_APPEND, 0777);
     if (fd < 0)
@@ -68,6 +119,7 @@ static void crumb(const char *what, int a, int b)
 static void crumb4(const char *what, int a, int b, int c, int d)
 {
     char path[96], line[140];
+    crumb_flush();
     crumb_path(path, sizeof(path), "video-crash.txt");
     SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_APPEND, 0777);
     if (fd < 0)
@@ -80,6 +132,7 @@ static void crumb4(const char *what, int a, int b, int c, int d)
 static void crumbh(const char *what, unsigned a, unsigned b, unsigned c, unsigned d)
 {
     char path[96], line[140];
+    crumb_flush();
     crumb_path(path, sizeof(path), "video-crash.txt");
     SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_APPEND, 0777);
     if (fd < 0)
@@ -87,6 +140,28 @@ static void crumbh(const char *what, unsigned a, unsigned b, unsigned c, unsigne
     int n = snprintf(line, sizeof(line), "%s %08x %08x %08x %08x\n", what, a, b, c, d);
     sceIoWrite(fd, line, n > 0 && n < (int)sizeof(line) ? n : 0);
     sceIoClose(fd);
+}
+
+/* a sign of life: it is put in the queue and written by the thread (the screen's thread does not wait for the card); here when there is no thread or the queue is full. crumb_go() wakes the thread
+ * after the lines of a round have been put in. */
+static void crumb4_later(const char *what, int a, int b, int c, int d)
+{
+    unsigned h = s_cl_head;
+    if (s_cl_thread < 0 || h - s_cl_tail >= CL_N) {
+        crumb4(what, a, b, c, d);
+        return;
+    }
+    int n = snprintf(s_cl_line[h % CL_N], sizeof(s_cl_line[0]), "%s %d %d %d %d\n", what, a, b, c, d);
+    if (n <= 0 || n >= (int)sizeof(s_cl_line[0]))
+        s_cl_line[h % CL_N][0] = 0;
+    __sync_synchronize();
+    s_cl_head = h + 1;
+}
+
+static void crumb_go(void)
+{
+    if (s_cl_thread >= 0 && s_cl_tail != s_cl_head)
+        sceKernelWakeupThread(s_cl_thread);
 }
 
 /* the first 16 bytes at an address, as four words (only an address in the user's memory is read: it comes from the PSP's library and nothing says it is one) */
@@ -145,6 +220,8 @@ static void skip_save(void)
 static void crumb_start(void)
 {
     char path[96], last[96], buf[512];
+    crumb_flush();
+    crumb_thread_start();
     crumb_path(path, sizeof(path), "video-crash.txt");
     crumb_path(last, sizeof(last), "video-crash-last.txt");
     skip_load();
@@ -178,6 +255,7 @@ static void crumb_start(void)
 static void crumb_end(void)
 {
     char path[96];
+    crumb_flush();
     crumb_path(path, sizeof(path), "video-crash.txt");
     sceIoRemove(path);
 }
@@ -187,6 +265,7 @@ static void crumb_end(void)
 static void crumb_keep(void)
 {
     char path[96], kept[96];
+    crumb_flush();
     crumb_path(path, sizeof(path), "video-crash.txt");
     crumb_path(kept, sizeof(kept), "video-failed.txt");
     sceIoRemove(kept);
@@ -1887,11 +1966,11 @@ int video_update(Video *v, float dt)
     if (v->hb >= 2.0f && v->hb_lines < 40) {
         v->hb = 0;
         v->hb_lines++;
-        crumb4("alive", v->n_put, v->n_au, v->n_dec, (int)(v->clock * 1000));
+        crumb4_later("alive", v->n_put, v->n_au, v->n_dec, (int)(v->clock * 1000));
         if (v->soft) {
-            crumb4("soft-ms", (int)(v->t_io / 1000), (int)(v->t_conv / 1000), (int)(v->t_aud / 1000), (int)v->underruns); /* milliseconds reading the file, making the picture ready, decoding sound; times the sound ran dry */
-            crumb4("soft-spd", (int)(v->speed * 1000), (int)(v->speed_min * 1000), (int)v->soft_late_n, (int)v->soft_skip_n); /* how fast the video plays now and at the slowest (1000 = as it is), pictures that were late, pictures made without the loop filter */
-            crumb4("soft-aud", v->aud_errors, aac_error_line(), (int)v->gap_late, (int)(v->gap_max / 1000)); /* sound frames that could not be decoded, the line of aac.c that said so, blocks of sound given to the output more than 34 ms after the one before, the longest time between two (23 ms is right) */
+            crumb4_later("soft-ms", (int)(v->t_io / 1000), (int)(v->t_conv / 1000), (int)(v->t_aud / 1000), (int)v->underruns); /* milliseconds reading the file, making the picture ready, decoding sound; times the sound ran dry */
+            crumb4_later("soft-spd", (int)(v->speed * 1000), (int)(v->speed_min * 1000), (int)v->soft_late_n, (int)v->soft_skip_n); /* how fast the video plays now and at the slowest (1000 = as it is), pictures that were late, pictures made without the loop filter */
+            crumb4_later("soft-aud", v->aud_errors, aac_error_line(), (int)v->gap_late, (int)(v->gap_max / 1000)); /* sound frames that could not be decoded, the line of aac.c that said so, blocks of sound given to the output more than 34 ms after the one before, the longest time between two (23 ms is right) */
             if (v->hb_lines == 1) { /* the priorities the threads run at (once) */
                 SceKernelThreadInfo ti;
                 int pr[3] = { 0, 0, 0 };
@@ -1902,10 +1981,11 @@ int video_update(Video *v, float dt)
                     if (th[i] > 0 && sceKernelReferThreadStatus(th[i], &ti) == 0)
                         pr[i] = ti.currentPriority;
                 }
-                crumb4("soft-prio", pr[0], pr[1], pr[2], 0); /* the screen's thread, the decoder's, the sound's (the lower the number the sooner it runs) */
+                crumb4_later("soft-prio", pr[0], pr[1], pr[2], 0); /* the screen's thread, the decoder's, the sound's (the lower the number the sooner it runs) */
             }
-            crumb4("soft-cpu", (int)thread_ms(sceKernelGetThreadId()), (int)thread_ms(v->wthread), (int)thread_ms(v->athread), (int)((now_us() - v->t_play0) / 1000)); /* processor time of the screen's thread, the decoder's and the sound's, and the time since the video was started: all in milliseconds */
+            crumb4_later("soft-cpu", (int)thread_ms(sceKernelGetThreadId()), (int)thread_ms(v->wthread), (int)thread_ms(v->athread), (int)((now_us() - v->t_play0) / 1000)); /* processor time of the screen's thread, the decoder's and the sound's, and the time since the video was started: all in milliseconds */
         }
+        crumb_go();
     }
     if (!v->have_pic && (v->since += dt) > 8.0f) {
         crumb4("no-picture", v->n_put, v->n_au, v->n_dec, v->src_eof);

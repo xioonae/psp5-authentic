@@ -5,6 +5,7 @@
 #ifndef LOOK_H
 #define LOOK_H
 
+#include <math.h>
 #include "gfx.h"
 
 #define LOOK_BAR_TRACK   RGBA(255, 255, 255, 38)  /* the background of a bar: a trace of white over the screen */
@@ -20,12 +21,26 @@
 #define LOOK_HINT_MARK   RGBA(64, 64, 69, 255)
 #define LOOK_CARD        RGBA(14, 17, 21, 255)    /* a card that has no picture (yet): near black */
 
+#define LOOK_WHEEL       RGBA(238, 238, 242, 255) /* the dots of the loading wheel */
+
 #define LOOK_TICK_SIZE 14 /* a tick is a rounded square of this many pixels */
 
 static inline u32 look_fade(u32 c, float a)
 {
     float k = a < 0 ? 0 : a > 1 ? 1 : a;
     return COLOR_ALPHA(c, (int)(((c >> 24) & 0xFF) * k));
+}
+
+/* The loading wheel: eight dots in a ring around (cx, cy), the light one runs round (`t` is the time in seconds). It stands for "a moment": the picture viewer and the video player show it while a picture
+ * or a video is being read, in place of a text (no word to translate). */
+static inline void look_wheel(float cx, float cy, float t, float a)
+{
+    int head = (int)(t * 9.0f) & 7;
+    for (int i = 0; i < 8; i++) {
+        float ang = (float)i * 0.78539816f;
+        int age = (head - i + 8) & 7;
+        gfx_circle(cx + 16.0f * cosf(ang), cy + 16.0f * sinf(ang), 2.6f, look_fade(COLOR_ALPHA(LOOK_WHEEL, 255 - age * 28), a));
+    }
 }
 
 /* A bar `w` wide: its background, and on it the part that is done, `fill_w` wide (0 = nothing yet) in `fill`. The left end of both is round (`h` / 2) and the end of the

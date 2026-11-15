@@ -407,17 +407,6 @@ static void key_sign(float cx, float cy, const char *label, float a)
     text_draw(cx, cy + 4, 0.5f, 1, RGBA(28, 28, 34, (int)(255 * a)), ALIGN_CENTER, label);
 }
 
-/* the wheel while a video is being opened: eight dots in a ring, the light one runs round */
-static void draw_wheel(float t)
-{
-    int head = (int)(t * 9.0f) & 7;
-    for (int i = 0; i < 8; i++) {
-        float ang = (float)i * 0.78539816f;
-        int age = (head - i + 8) & 7;
-        gfx_circle(SCREEN_W / 2 + 16.0f * cosf(ang), SCREEN_H / 2 + 16.0f * sinf(ang), 2.6f, RGBA(238, 238, 242, 255 - age * 28));
-    }
-}
-
 static void draw_picture(const Texture *t)
 {
     if (!t)
@@ -495,7 +484,7 @@ static void draw_question(const VideoPlayer *v, float a)
 void videoplay_draw(VideoPlayer *v)
 {
     if (v->busy) { /* (vid is the thread's while it works) */
-        draw_wheel(v->time);
+        look_wheel(SCREEN_W / 2, SCREEN_H / 2, v->time, 1);
         char n[24];
         snprintf(n, sizeof(n), "%d/%d", v->index + 1, v->count);
         text_draw(SCREEN_W / 2, 31, 0.8f, 0, RGBA(238, 238, 242, 255), ALIGN_CENTER, n);
