@@ -261,16 +261,36 @@ static void crumb_end(void)
 }
 
 /* A video that did not play (it could not be opened, the decoder gave errors, it was given up) is closed the right way, so nothing would be left of its crash file: it is kept as video-failed.txt, to
- * be sent to the developer. */
+ * be sent to the developer. The lines of the videos that follow are added to it, each after a line "---" (a round of test videos leaves one file, not the last one's); when the file has grown past 32 KB
+ * the next one starts it again. */
 static void crumb_keep(void)
 {
     char path[96], kept[96];
     crumb_flush();
     crumb_path(path, sizeof(path), "video-crash.txt");
     crumb_path(kept, sizeof(kept), "video-failed.txt");
-    sceIoRemove(kept);
-    if (sceIoRename(path, kept) < 0)
-        sceIoRemove(path);
+    SceIoStat st;
+    memset(&st, 0, sizeof(st));
+    int have = sceIoGetstat(kept, &st) >= 0 && st.st_size > 0 && st.st_size < 32768;
+    if (!have) {
+        sceIoRemove(kept);
+        if (sceIoRename(path, kept) < 0)
+            sceIoRemove(path);
+        return;
+    }
+    SceUID in = sceIoOpen(path, PSP_O_RDONLY, 0);
+    SceUID out = in >= 0 ? sceIoOpen(kept, PSP_O_WRONLY | PSP_O_APPEND, 0777) : -1;
+    if (out >= 0) {
+        char buf[512];
+        int n;
+        sceIoWrite(out, "---\n", 4);
+        while ((n = sceIoRead(in, buf, sizeof(buf))) > 0)
+            sceIoWrite(out, buf, n);
+        sceIoClose(out);
+    }
+    if (in >= 0)
+        sceIoClose(in);
+    sceIoRemove(path);
 }
 
 /* The PSP's own AAC decoder (sceAudiocodec, codec 0x1003) crashed a real PSP on its first frame (the crash file of an early test ended with "first-sound", written just before that call), and what
@@ -1389,6 +1409,15 @@ Video *video_open(const char *path)
     if (v->w <= 0 || v->h <= 0 || v->w > FRAME_W || v->h > 512)
         { crumb("open-fail", __LINE__, 0); goto fail; }
     if (!v->soft) { /* the games' library: its modules, its memory (not touched by a video that is decoded in software or by the PSP's own decoder) */
+#ifndef PSP5_ANY_STREAM
+        /* The games' library breaks on a stream with three or more reference frames (the maintainer's tests of 2026-11-08: one or two played, three failed; the log of 2026-11-15, a 4-reference x264 stream the
+         * PSP's own decoder had refused too: first-decode 0x80628002, then 0x80628001, the fatal error that stops every video after it until psp5 is started again). Such a stream is refused here, before
+         * the library sees it: "can't be played", and the next video plays. (An SPS that is not given to the decoder, nref 0, is not judged; force=1 in video-opts.txt tries it anyway.) */
+        if (v->kind == VK_MP4 && v->um.nref > 2 && !v->um.force) {
+            crumb4("old-route-refused", v->um.nref, v->um.cabac, v->um.weighted, v->um.nref0);
+            goto fail;
+        }
+#endif
         int up = old_route_up(v);
         if (up < 0)
             goto refuse;
