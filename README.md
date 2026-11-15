@@ -74,7 +74,11 @@ wherever it can, but it doesn't copy the console in everything.
 
 ## What you get
 
-- **Games (Home).** The games and apps you played last, then the newest you added, and the ones you keep in Home, up to ten cards in one row. The selected card is big, with its
+Jump to: [Games](#games) · [Media](#media-music-videos-and-images) · [File Manager and FTP Server](#file-manager-and-ftp-server) · [Settings](#settings) · [Themes and startup](#themes-and-startup) · [Top bar and power menu](#top-bar-and-power-menu) · [Sounds, languages, speed](#sounds-languages-and-speed)
+
+### Games
+
+- **Home.** The games and apps you played last, then the newest you added, and the ones you keep in Home, up to ten cards in one row. The selected card is big, with its
   artwork behind it. ↓ selects the **Play** and **⋯** (options) buttons. A UMD in the drive shows up first. A name that is too long for the screen scrolls after a moment.
 - **Names.** A game is shown with the title that is in the game. If it has none (or an empty one), you see the name of its folder, or the name of its `.iso`, `.cso`, `.zso`, `.dax` or `.jso` file. A folder that
   has a `PBOOT.PBP` next to its `EBOOT.PBP` (TempGBA's single-game folders) shows the title and the pictures of the `PBOOT.PBP`.
@@ -87,53 +91,105 @@ wherever it can, but it doesn't copy the console in everything.
   folders*; the folders are cards, Confirm opens one, Back goes back). Folders are the ones the Categories Lite plugin makes. The Library
   remembers your sorting and view. The cards are rectangles, as on the console; the selected one has a white frame. Behind it is a background of its own (a drawn
   ribbon of fine lines on black, in your theme's colours); a game's picture is never shown there.
-- **Console Storage** (*Settings → Storage*). The size of the storage, a coloured bar and the free space, and four rows with their sizes: **Games and Apps** (the list of all your games and apps: sort, mark and delete them),
-  Media (music, video and pictures), **Saved Data** (*Manage Saved Data*: the saves of all your games, mark some, delete them and see how much room you get back; ARK's own save folder is locked and can't be deleted) and Other.
-  On a PSP Go with a Memory Stick there are two blocks, one for each storage.
-- **Media, Music, Videos and Images.** The Media tab is a row of cards like the Games tab: **Music**, **Videos** and **Images**, on a drawn background in your theme's colours.
-  Music reads only the `MUSIC` folder of the Memory Stick and of the internal storage and shows its folders as folders; it plays MP3, WAV (PCM), **AAC** (`.m4a`, `.m4b` and raw `.aac`: AAC-LC, made by the same software decoder as the sound of the videos; a sound with more than two channels (5.1, 7.1) is mixed down to stereo; not HE-AAC or Apple Lossless) and ATRAC3 / ATRAC3plus (`.at3`, `.oma`, `.aa3`) files with title, artist and album art (from the file, or a
-  `cover.jpg` / `folder.jpg` in the folder). The player has a progress bar you can jump in (10 seconds a step), volume, shuffle, repeat (off, one song, the whole folder) and the equalizer. The music keeps playing while you browse your games or use the File Manager, and the PSP's ♪ button shows the player as a popup.
-  **Videos** lists the `VIDEO` folder the same way, over the whole width, and plays **MP4** (H.264 video with AAC sound, up to 512 x 512) and **PMF / PSMF** (with sound) on the whole screen: ✕ pauses, ← → jump 10 seconds, L / R play the video before or after, ○ leaves. A video that was left in the middle asks whether to *Continue* from there or start *from the beginning*. **What plays (tried on a PSP-1000):** the HandBrake PSP preset and other **Baseline / CAVLC** videos without B-frames, and **Main profile videos with CABAC whose header asks for one, two or three reference frames**, with or without B-frames and with weighted prediction in the P pictures: all by the PSP's own decoder (its Baseline or its Main mode), at full speed, with jumps and with the last pictures shown. **A Main profile video whose header asks for four or more reference frames is refused ("can't be played")**, and x264's default settings do (its B-pyramid makes it at least four): the PSP's own decoder answered with an error at the first picture of such a stream, and the games' library cannot take it either, so psp5 does not give it to the library (that would stop every video until psp5 is started again). Make such a video again with HandBrake's PSP preset, or with x264 `profile=main`, `b-pyramid=none` and `ref=3` or less. **psp5 asks the PSP's own H.264 decoder first** (the one on its second processor, the Media Engine, started the way the PSP's own movie player starts it) for every video it may take; there is no setting for this, `hw=0` in `PSP5/video-opts.txt` leaves it out. **Only when the PSP's decoder cannot be started, or stops while a video plays, psp5 goes on with the older ways:** a Baseline / CAVLC video is decoded by psp5 itself, in software (checked against ffmpeg picture by picture on a PC; 480 x 272 at 30 pictures a second is the aim, and when the PSP cannot keep up the pictures that are late are made without the loop filter and, if it gets far behind, the video goes on at the next key frame; the sound keeps its time), and a CABAC video goes to the library the PSP's games use. The sound of an MP4 is also decoded by psp5 (AAC-LC, up to 8 channels mixed down to two). Not played: High profile with the 8x8 transform, HE-AAC, CABAC with four or more reference frames, B-frames in CAVLC, and anything bigger than 512 x 512. (If a video ever crashes the PSP, the next one you open leaves `PSP5/video-crash-last.txt` that says how far it got.)
-  **Images** lists the `PICTURE` folder and `PSP/PHOTO` and shows **JPEG** (turned the way the camera says), **PNG** and **BMP** on the whole screen, with L / R for the picture before and after. In both, the little bar with L, the number and R shows when you press a button and goes away after a moment.
+
+Games and apps use their own icon and background automatically. If you want your own covers, see *Covers* in
+[INSTALL.md](INSTALL.md).
+
+### Media: Music, Videos and Images
+
+The Media tab is a row of cards like the Games tab: **Music**, **Videos** and **Images**, on a drawn background in your theme's colours.
+Each one opens a list over the whole width of the screen; folders show as folders.
+
+#### Music
+
+- **Where:** only the `MUSIC` folder of the Memory Stick and of the internal storage.
+- **Plays:** MP3, WAV (PCM), **AAC** (`.m4a`, `.m4b` and raw `.aac`) and ATRAC3 / ATRAC3plus (`.at3`, `.oma`, `.aa3`).
+  AAC is AAC-LC, made by the same software decoder as the sound of the videos; a sound with more than two channels (5.1, 7.1) is mixed down to stereo. Not HE-AAC or Apple Lossless.
+- **Shows:** title, artist and album art (from the file, or a `cover.jpg` / `folder.jpg` in the folder).
+- **Player:** a progress bar you can jump in (10 seconds a step), volume, shuffle, repeat (off, one song, the whole folder) and the equalizer.
+- **Keeps playing** while you browse your games or use the File Manager, and the PSP's ♪ button shows the player as a popup.
+
+#### Videos
+
+- **Where:** the `VIDEO` folder.
+- **Plays:** **MP4** (H.264 video with AAC sound, up to 512 x 512) and **PMF / PSMF** (with sound), on the whole screen.
+- **Buttons:** ✕ pauses, ← → jump 10 seconds, L / R play the video before or after, ○ leaves. The bar, the numbers and L / R show when you press a button and go away after a moment.
+- **Resume:** a video that was left in the middle asks whether to *Continue* from there or start *from the beginning*. If the PSP goes to sleep while a video is open, the player leaves when the PSP wakes (the place is remembered, so the question comes next time).
+- **Sound:** AAC-LC, up to 8 channels, mixed down to two.
+
+**Which videos play** (tried on a PSP-1000):
+
+| The video | Plays? |
+|---|---|
+| **Baseline / CAVLC** without B-frames, such as **HandBrake's PSP preset** | Yes, by the PSP's own decoder, at full speed. |
+| **Main profile** with CABAC, **up to three reference frames** (B-frames and weighted prediction in the P pictures are fine) | Yes, by the PSP's own decoder (its Main mode), at full speed, with jumps and the last pictures shown. |
+| **Main profile** that asks for **four or more reference frames**. x264's default settings do, because of their B-pyramid | **No, it says "can't be played".** Make the video again with HandBrake's PSP preset, or with x264 `profile=main`, `b-pyramid=none` and `ref=3` or less. |
+| High profile with the 8x8 transform, B-frames in CAVLC, HE-AAC sound, anything bigger than 512 x 512 | No. |
+
+How it decodes: psp5 asks the PSP's own H.264 decoder (the one on its second processor, the Media Engine) first, for every video it may take; there is no setting for this, `hw=0` in `PSP5/video-opts.txt` leaves it out.
+Only when that decoder cannot be started, or stops while a video plays, psp5 goes on with its own software decoder (for Baseline / CAVLC videos). The details are in [docs/DEVELOPER-NOTES.md](docs/DEVELOPER-NOTES.md).
+(If a video ever crashes the PSP, the next one you open leaves `PSP5/video-crash-last.txt` that says how far it got.)
+
+#### Images
+
+- **Where:** the `PICTURE` folder and `PSP/PHOTO`.
+- **Shows:** **JPEG** (turned the way the camera says), **PNG** and **BMP**, on the whole screen, with L / R for the picture before and after.
+- **While a picture is read** a small wheel turns. The little bar with L, the number and R shows when you press a button and goes away after a moment.
+
+### File Manager and FTP Server
+
+- **File Manager** (*Settings → Storage*). Browse the Memory Stick (and the internal storage on a PSP Go) and copy, move, rename, delete or make folders (the options are on START).
+  When a name is taken it asks: *Overwrite*, *Skip*, *Merge* (folders), *Rename* or *Cancel*, with *Apply to All* for the rest.
+  - **✕ opens the file:** a video in the video player and a picture in the image viewer (L and R go to the one before and after in the folder), a song starts playing (and the songs of the folder after it; the ♪ button of the PSP has the player),
+    and a file that has no formatting (plain text: `.txt`, `.ini`, `.cfg`, `.log` ... anything that is text, up to 1 MB) opens in the **text editor**, which lets you change it when the file allows it and only read it when not.
+  - **The text editor** works a line at a time, as ARK's does: ↑ ↓ choose a line (held, they go faster the longer they are held), L / R eight lines, ✕ opens the PSP's own keyboard with the line in it, □ adds a line below, and START has *Save*, *New line above*, *Copy line*, *Paste line*, *Delete line*, *Undo* and *Go to line*;
+    ○ leaves and asks whether to save when something was changed. A file is written under a temporary name and put in place, so a full card leaves the old file as it was; the line ending (LF or CRLF), a UTF-8 byte order mark and the end of the last line are kept.
+  - A file that is not UTF-8 text (or has a line over 1000 bytes) is only read (START: *Go to line*, *Copy line*), and a file that is not text (a program, an ISO) says that it cannot be opened.
+- **FTP Server** (*Settings → Network → FTP Server*). Copy files to and from the PSP over Wi-Fi: the PSP's own Wi-Fi window opens so that you choose one of your saved connections, and psp5 authentic shows the address to type
+  into an FTP program or the file manager of your computer. It shows who is connected and the file that is going. There is no password, so use it on your own network.
+  If the computer cannot connect, INSTALL.md has a list of what to check (WLAN Power Save of the PSP, the network), and [docs/FTP-TROUBLESHOOTING.md](docs/FTP-TROUBLESHOOTING.md) has a step-by-step workaround for networks where the computer cannot find the PSP (a static ARP entry; Linux, Windows, macOS).
+
+### Settings
+
 - **Settings** (the cog wheel). One list at a time, like the console's: Confirm opens a page, Back goes back one. The first list has six pages:
   - *psp5 authentic* – boot into psp5 authentic, sounds, startup animation, battery percentage, clear the image cache.
   - *Network* – the PSP's own Wi-Fi screen and the FTP Server.
   - *System* – *Console Information* (nickname, model, system software, the whole version of ARK, MAC address, last IP address, free RAM, battery, and where psp5 authentic comes from), *Appearance* (*Show Game art* and the themes),
     *Language*, *Date and Time* (the date and time that psp5 authentic shows: *Daylight Saving* removes or adds one hour, *Date Format* and *Time Format* choose how they are written; the PSP's own clock is never changed), *ARK-5 Settings* or *ARK-4 Settings* (ARK's own options: USB charge, WPA2, hide pictures, regions ...), *Performance* (CPU speed, extra memory, caches) and *Plugins* (switch each plugin on or off, and *Manage Plugins* to install a new plugin and to install or uninstall one in more or fewer places).
-  - *Storage* – Console Storage (see above), the File Manager and USB Mode.
+  - *Storage* – Console Storage (see below), the File Manager and USB Mode.
   - *Screen and Sound* – the PSP's own brightness, backlight timer (psp5 authentic remembers it), volume, equalizer and AVLS.
   - *Controls* – the PSP's own confirm button, and which buttons confirm, go back, open the options and the power menu.
 
   A setting with several values opens a popup when you press Confirm on it.
   The title of a page is its own name (*Appearance*, not *System > Appearance*).
   The *last IP address* in Console Information is the one that the Wi-Fi window or the FTP Server got last, kept after a restart; it may have changed since.
+- **Console Storage** (*Settings → Storage*). The size of the storage, a coloured bar and the free space, and four rows with their sizes: **Games and Apps** (the list of all your games and apps: sort, mark and delete them),
+  Media (music, video and pictures), **Saved Data** (*Manage Saved Data*: the saves of all your games, mark some, delete them and see how much room you get back; ARK's own save folder is locked and can't be deleted) and Other.
+  On a PSP Go with a Memory Stick there are two blocks, one for each storage.
+
+### Themes and startup
+
 - **Themes.** A theme is the background: the *Default* and the colours of the console covers, each with the same scene behind your games (a beam of light from a lamp
   at the top left and a haze at the bottom) and golden-ish dust that drifts and twinkles in the theme's colour, plus the classic looks of PS1 to PS4 in the colours of those consoles' own themes,
   each with its own moving part: the four symbols for PS1, glowing dots on a turning ring for PS2, a silky ribbon for PS3 and a wave for PS4. Highlight a theme to preview it, Confirm to use it. You can turn *Show Game art*
   off (it is for the Games tab: the Library has its own background), so the theme is always visible.
 - **Startup.** A short intro like a console's, with a health notice, soft circles and golden dust in your theme's colours.
   It plays when the PSP starts and wakes up, not when you come back from a game. Any button skips it, and you can turn it off.
+
+### Top bar and power menu
+
 - **Power menu** (SELECT, on every screen: Games, Media, Library, Music, Settings, Information, Manage Saved Data, the File Manager and the USB screen). Exit to XMB, Sleep, Shut down, Restart, Recovery Menu – Confirm does it at once.
 - **Volume, battery and Wi-Fi.** Pressing the volume buttons slides a volume bar in at the top. The battery has four bars that are lit
   from the right (one for each quarter); while the PSP charges, a bolt is shown left of the battery and the bars above the level come on
   one after the other. You can also show the battery percentage (*Settings → psp5 authentic*). A Wi-Fi sign is shown while the PSP's Wi-Fi switch is
   on. At the very end of the top bar is the cog wheel.
-- **File Manager** (*Settings → Storage*). Browse the Memory Stick (and the internal storage on a PSP Go) and copy,
-  move, rename, delete or make folders (the options are on START). When a name is taken it asks: *Overwrite*, *Skip*, *Merge* (folders), *Rename* or *Cancel*, with *Apply to All* for the rest.
-  **✕ opens the file:** a video in the video player and a picture in the image viewer (L and R go to the one before and after in the folder), a song starts playing (and the songs of the folder after it; the ♪ button of the PSP has the player), and a file that has no
-  formatting (plain text: `.txt`, `.ini`, `.cfg`, `.log` ... anything that is text, up to 1 MB) opens in the **text editor**, which lets you change it when the file allows it and only read it when not.
-  The editor works a line at a time, as ARK's does: ↑ ↓ choose a line (held, they go faster the longer they are held), L / R eight lines, ✕ opens the PSP's own keyboard with the line in it, □ adds a line below, and START has *Save*, *New line above*, *Copy line*, *Paste line*, *Delete line*, *Undo* and *Go to line*;
-  ○ leaves and asks whether to save when something was changed. A file is written under a temporary name and put in place, so a full card leaves the old file as it was; the line ending (LF or CRLF), a UTF-8 byte order mark and the end of the last line are kept.
-  A file that is not UTF-8 text (or has a line over 1000 bytes) is only read (START: *Go to line*, *Copy line*), and a file that is not text (a program, an ISO) says that it cannot be opened.
-- **FTP Server** (*Settings → Network → FTP Server*). Copy files to and from the PSP over Wi-Fi: the PSP's own Wi-Fi window opens so that you choose one of your saved connections, and psp5 authentic shows the address to type
-  into an FTP program or the file manager of your computer. It shows who is connected and the file that is going. There is no password, so use it on your own network. If the computer cannot connect, INSTALL.md has a list of what to check (WLAN Power Save of the PSP, the network), and [docs/FTP-TROUBLESHOOTING.md](docs/FTP-TROUBLESHOOTING.md) has a step-by-step workaround for networks where the computer cannot find the PSP (a static ARP entry; Linux, Windows, macOS).
+
+### Sounds, languages and speed
+
 - **Sounds and languages.** Menu sounds (you can turn them off). 11 languages: psp5 authentic follows the PSP's language; Swedish and
   Czech are picked under *Settings → System → Language*.
 - **Quick and careful.** Only the cards near your selection are loaded, and artwork is cached, so it opens fast after the
   first start. psp5 authentic never touches flash0 and you can always get back to the XMB.
-
-Games and apps use their own icon and background automatically. If you want your own covers, see *Covers* in
-[INSTALL.md](INSTALL.md).
 
 ## Buttons
 
