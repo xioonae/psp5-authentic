@@ -26,5 +26,6 @@ void files_close(void);
 int files_modal(void);
 /* The PSP goes to sleep (1) or wakes up (0): a video that is open is paused and goes on when it wakes. main.c calls it every frame. */
 void files_sleep(int asleep);
+void files_woke(void); /* the PSP has slept and woken: a video that is open leaves */
 
 #endif

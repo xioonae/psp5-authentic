@@ -51,6 +51,7 @@ struct VideoPlayer {
     int seek_pending;
     float seek_target, seek_wait;
     int asleep;          /* the PSP sleeps: the video waits */
+    int woke;            /* the PSP has slept while this video was open (or being opened): the decoder is not given another sample, the player leaves (see videoplay_sleep) */
     int held;            /* a popup of the launcher is over the video: it waits */
     float ask_anim;
     volatile int busy;   /* the loading thread is opening or starting a video of this player: the screen's thread leaves vid and what the thread writes alone, and shows the wheel (written by the screen's thread before a job and by the loading thread as it ends) */
@@ -258,12 +259,22 @@ void videoplay_close(VideoPlayer *v)
 static void apply_pause(VideoPlayer *v)
 {
     if (v->vid && !v->busy)
-        video_pause(v->vid, v->paused || v->ask || v->held || v->asleep);
+        video_pause(v->vid, v->paused || v->ask || v->held || v->asleep || v->woke);
 }
 
 void videoplay_sleep(VideoPlayer *v, int asleep)
 {
     v->asleep = asleep;
+    apply_pause(v);
+}
+
+/* A PSP that has slept does not give a file back that was open before the sleep (the reads fail: the log of 2026-11-15 had hw-error -9 on the first sample after the wake, and the way on from there, the
+ * games' library started on the same file, crashed the PSP), and the Media Engine has been reset. So the video is not taken up again: the decoder stays paused from the wake on, the player leaves at its
+ * next update as if the circle button had been pressed, and the place is remembered like at every leaving: opened again it asks "Continue from". The callers say it (main.c counts the wake-ups of the
+ * PSP's power callback: it does not depend on a frame having seen the PSP go to sleep). */
+void videoplay_woke(VideoPlayer *v)
+{
+    v->woke = 1;
     apply_pause(v);
 }
 
@@ -302,8 +313,10 @@ int videoplay_update(VideoPlayer *v, u32 pressed, u32 held, int lx, int ly, floa
 {
     if (v->busy) { /* the thread is opening or starting a video: the wheel turns, ○ leaves, nothing else is touched */
         v->time += dt;
-        return (pressed & PSP_CTRL_CIRCLE) ? 1 : 0;
+        return (pressed & PSP_CTRL_CIRCLE) || v->woke ? 1 : 0;
     }
+    if (v->woke) /* (the PSP slept: see videoplay_sleep) */
+        return 1;
     if (v->was_busy) { /* it is ready (or has failed) */
         v->was_busy = 0;
         v->overlay = OVERLAY_SHOW;

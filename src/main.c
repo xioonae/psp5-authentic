@@ -68,6 +68,7 @@ static int s_safe;     /* felsäker start: ingen startskärm, musik eller UMD, c
 static int s_start_ok; /* starten är klar och startskyddet borttaget */
 static volatile int s_sleeping; /* PSP:n går in i viloläge – skärmen hålls svart */
 static volatile int s_resumed;  /* PSP:n har vaknat klart – visa startskärmen */
+static volatile unsigned s_wakes; /* how many times the PSP has woken (RESUME_COMPLETE): written by the power callback only (no atomic instruction), read by the loops: an open video player leaves (videoplay_woke) */
 static char s_self[256];
 static char s_list_cache[256];
 static char s_ingame_mark[32], s_start_mark[32], s_cache_dir[32]; /* i DATA_DIR, sätts i main */
@@ -81,9 +82,10 @@ static int exit_callback(int arg1, int arg2, void *common)
 
 static int power_callback(int unknown, int flags, void *common)
 {
-    if (flags & PSP_POWER_CB_RESUME_COMPLETE)
+    if (flags & PSP_POWER_CB_RESUME_COMPLETE) {
         s_resumed = 1;
-    else if (flags & PSP_POWER_CB_SUSPENDING)
+        s_wakes = s_wakes + 1;
+    } else if (flags & PSP_POWER_CB_SUSPENDING)
         s_sleeping = 1;
     return 0;
 }
@@ -585,12 +587,19 @@ static int files_mode(int pick)
     int pending = SA_NONE;
     u32 old = ~0u; /* ignore the button that opened it, whichever it is (the confirm button) */
     u64 last = sceKernelGetSystemTimeWide();
+    unsigned wakes_seen = s_wakes;
     while (s_running) {
         UiInput in;
         read_pad(&in, &old);
         u64 now = sceKernelGetSystemTimeWide();
         float dt = (now - last) / 1000000.0f;
         last = now;
+        if (testrun_take_resume())
+            s_wakes = s_wakes + 1; /* (a test script's "resume") */
+        if (s_wakes != wakes_seen) { /* the PSP has slept and woken: a video that is open leaves */
+            wakes_seen = s_wakes;
+            files_woke();
+        }
         perf_frame(PF_FILES, dt);
         if (dt > 0.05f)
             dt = 0.05f;
@@ -765,11 +774,18 @@ int main(int argc, char *argv[])
     u32 old = 0;
     float up = 0; /* sekunder i menyn – för startskyddet */
     u64 last = sceKernelGetSystemTimeWide();
+    unsigned wakes_seen = s_wakes;
     while (s_running) {
         if (testrun_take_sleep())
             s_sleeping = 1;
-        if (testrun_take_resume())
+        if (testrun_take_resume()) {
             s_resumed = 1;
+            s_wakes = s_wakes + 1; /* (a test script's "resume" is a wake-up too) */
+        }
+        if (s_wakes != wakes_seen) { /* the PSP has slept and woken: a video that was open does not go on (its file does not read any more) */
+            wakes_seen = s_wakes;
+            ui_woke(&ui);
+        }
         if (s_sleeping || s_resumed) {
             if (g_boot_anim && ui.launch < 0 && !s_safe) {
                 sleep_and_wake(&ui);

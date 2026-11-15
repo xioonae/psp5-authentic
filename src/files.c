@@ -1925,6 +1925,12 @@ void files_sleep(int asleep)
         videoplay_sleep(s_vp, asleep);
 }
 
+void files_woke(void)
+{
+    if (s_vp)
+        videoplay_woke(s_vp);
+}
+
 void files_close(void)
 {
     close_viewer();

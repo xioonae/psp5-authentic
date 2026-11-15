@@ -18,6 +18,7 @@ void videoplay_draw(VideoPlayer *v);
 void videoplay_close(VideoPlayer *v);
 /* the PSP goes to sleep / wakes up: the video is paused (and goes on when it wakes if it played) */
 void videoplay_sleep(VideoPlayer *v, int asleep);
+void videoplay_woke(VideoPlayer *v); /* the PSP has slept and woken while the player was open: it stays paused and leaves at its next update */
 /* waits until the loading thread has done what it was given (before psp5 is let go: a game that starts, the way out to the XMB, the end of the File Manager) */
 void videoplay_flush(void);
 /* a popup of the launcher is over the video (the power popup): the video waits, and goes on when it is gone */

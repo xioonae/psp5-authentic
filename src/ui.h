@@ -172,6 +172,7 @@ int ui_selected(const Ui *ui);
 int ui_video_open(const Ui *ui);
 /* the PSP sleeps (1) or wakes (0): an open video is paused / goes on */
 void ui_sleep(Ui *ui, int asleep);
+void ui_woke(Ui *ui); /* the PSP has slept and woken: an open video player leaves (see videoplay_woke) */
 
 /* Enkel skärm under första skanningen. */
 void ui_draw_scanning(int done, const char *name, float time);

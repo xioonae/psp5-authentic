@@ -336,6 +336,7 @@ struct Video {
     int hw_tried;         /* the PSP's own decoder was tried (the function that starts the Engine's image was found): when it did not play to the end, the crash file stays */
     int hw_first;         /* the next sample is given to it as a first one (mode 3, after a jump) */
     volatile int hw_err;  /* it did not take a sample: the screen's thread goes back to the software decoder */
+    volatile int read_err; /* the card did not give a sample (a file that was open before the PSP slept does not read after it): the video ends, no other way is tried: it reads the same file */
     HwPipe hwp;           /* what goes to the PSP's decoder and when a picture is shown (hwpipe.c) */
     int hw_from;          /* the first sample of this play */
     int hw_pub;           /* pictures that went to the screen since the play started (the log of the end says how many of the video's pictures there were) */
@@ -1732,8 +1733,8 @@ static void hw_discontinuity(Video *v)
  * pictures out at the end); this does it. */
 static int hw_step(Video *v)
 {
-    if (v->hw_err)
-        return 0; /* (the screen's thread is about to stop this thread and go on with the software decoder) */
+    if (v->hw_err || v->read_err)
+        return 0; /* (the screen's thread is about to stop this thread and go on with the software decoder, or to end the video) */
     HwPipe *p = &v->hwp;
     int n = mp4_video_count(v->mp4);
     double clock = v->clock_ms / 1000.0;
@@ -1791,6 +1792,12 @@ static int hw_step(Video *v)
     unsigned long long t0 = now_us();
     int sz = mp4_video_read(v->mp4, i, v->hwbuf, v->au_cap);
     v->t_io += (unsigned)(now_us() - t0);
+    if (sz <= 0 && act != HWP_FLUSH) { /* the sample cannot be read: no decoder can do anything with it, and a way on that starts again from the file (the games' library) crashed a PSP that had slept */
+        crumb4("read-error", sz, i, v->n_dec, 0);
+        v->err_total++;
+        v->read_err = 1;
+        return 0;
+    }
     int dst[HWP_PIC], pics = 0, ww = 0, hh = 0, hr = -9;
     unsigned err = 0;
     hwp_plan(p, pts, v->skip_until, v->front, v->rdy, dst);
@@ -2026,6 +2033,11 @@ int video_update(Video *v, float dt)
         return 0;
     }
     if (v->soft) { /* the thread makes the pictures: what is ready goes on the screen */
+        if (v->read_err && v->hwd) { /* the file cannot be read: the video ends here (the thread is stopped first: it uses the decoder) */
+            soft_stop(v);
+            v->failed = 1;
+            return 0;
+        }
         if (v->hw_err && v->hwd) { /* the PSP's decoder did not take a sample: the software decoder goes on from here */
             hw_fallback(v, 1);
             return 0;

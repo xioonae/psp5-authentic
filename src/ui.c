@@ -2213,6 +2213,12 @@ void ui_sleep(Ui *ui, int asleep)
         videoplay_sleep(ui->vp, asleep);
 }
 
+void ui_woke(Ui *ui)
+{
+    if (ui->vp)
+        videoplay_woke(ui->vp);
+}
+
 void ui_draw(Ui *ui)
 {
     if (ui->iv || ui->vp) { /* a picture or a video: nothing else on the screen but the volume bar and the sound button's popup */
