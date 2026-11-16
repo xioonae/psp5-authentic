@@ -87,7 +87,6 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
   A game you played from the XMB moves to the front of Home when psp5 authentic starts.
 - **Library:** six ways to sort (*Name*, *Date added*, *Size*, each both ways), a background of its own (a drawn ribbon of fine lines on black in your theme's colours; a game's picture is not shown behind it), rectangular cards with a straight white frame for the selected one.
   psp5 authentic remembers when you played each game (`lastplayed.txt`; the *Time played* plugin tells it about games started from the XMB).
-- **A game folder with a `PBOOT.PBP` shows the name and the pictures from it** (TempGBA's single-game folders); a game or image with no title is named after its folder or file.
 - **A name that does not fit scrolls** (next to the big card, on the selected Library card and on the highlighted row of the File Manager, *Manage Saved Data* and *Games and Apps*).
 
 ### Themes
@@ -106,13 +105,20 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 - **The launcher leaves memory free again:** 8 MB stay free for ARK's Recovery menu, the MP3 decoder, Wi-Fi and the threads (a PSP-1000 had only 0.6 MB free before). A progressive JPEG album cover that would need more than 5 MB is not decoded.
 - **A damaged `PARAM.SFO` can no longer make the scan of the card read outside its data** (found with a fuzzer for the files psp5 reads from the card).
-- **The overclock and the storage cache are put in force before anything is read**, and the PSP waits 50 ms before it restarts, switches off or goes back to the XMB, so a saved `SETTINGS.TXT` or `PLUGINS.TXT` is not cut off.
 
-### Ideas from the original project's issues
+### Fixed after reports in the original psp5
 
-psp5 authentic is a fork of [psp5](https://github.com/08Weber/psp5) by Mille Weber (08Weber). Two reports in its issues described problems psp5 authentic could have as well:
-[issue 37](https://github.com/08Weber/psp5/issues/37) (TempGBA single-game folders show as grey cards without a name) and [issue 19](https://github.com/08Weber/psp5/issues/19) (unstable overclock and settings on a PSP Go).
-The code is psp5 authentic's own. Thank you to 08Weber, and to the people who reported the problems there.
+psp5 authentic is a fork of [psp5](https://github.com/08Weber/psp5) by Mille Weber (08Weber). We read the issues of the original project and fixed two of its reports here as well:
+
+- **TempGBA's single-game folders have their name and pictures** ([issue 37](https://github.com/08Weber/psp5/issues/37): they showed as grey cards without a name). Such a folder holds an `EBOOT.PBP` that is the same in all of them and a `PBOOT.PBP` with the game's title and pictures,
+  which the XMB shows. psp5 authentic now takes the title, the icon and the picture from the `PBOOT.PBP` (the game is still started from the `EBOOT.PBP`); a game or image with no title at all is named after its folder or its file instead of an empty name.
+  The first start after the update reads your games once more.
+- **The overclock and the settings are safe on a PSP Go** ([issue 19](https://github.com/08Weber/psp5/issues/19): unstable overclock and settings on a PSP Go). The overclock and the storage cache are now put in force before anything is read
+  (psp5 authentic loads and unloads one module first of all, before any thread starts or any file is read), so the PSP should no longer change its clock in the middle of reading files (the original project saw a PSP Go with an overclock of 333 MHz or more lag or hang); and the PSP waits 50 ms before it restarts, switches off or
+  goes back to the XMB, so a `SETTINGS.TXT` or `PLUGINS.TXT` that was just saved is not cut off. If it still happens on your PSP, please open an issue.
+
+The code is psp5 authentic's own; the problems and the ideas are the original project's. Thank you to Mille Weber (08Weber), and to the people who reported them there. The other reports we read were covered already (issue 21, plugins on the other storage, and issue 17, starting
+from the internal storage of a PSP Go, which 1.1.0 handles) or are noted in [docs/DEVELOPER-NOTES.md](docs/DEVELOPER-NOTES.md) (issue 29, USB Mode on a PSP Go).
 
 ### Devices and downloads
 
