@@ -4,21 +4,28 @@
  * 6.60/6.61) och kubridge anropar den i kärnläge. Ändras värdet visas indikatorn. */
 #include <pspkernel.h>
 #include <pspimpose_driver.h>
+#include <pspctrl.h>
+#include <string.h>
 #include <kubridge.h>
 #include <systemctrl.h>
 #include <math.h>
 #include <stdio.h>
 #include "osd.h"
 #include "gfx.h"
+#include "look.h"
 #include "launch.h"
 #include "testrun.h"
 
+#define NID_CTRL_PEEK     0x3A622550 /* sceCtrlPeekBufferPositive, in the kernel it also gives the buttons that a program cannot see: ♪ (PSP_CTRL_NOTE) */
 #define NID_GET_PARAM     0x531C9778 /* sceImposeGetParam (ARK översätter) */
 #define NID_GET_PARAM_660 0xDC3BECFF /* samma i 6.60/6.61, om översättningen saknas */
 #define MAX_VOLUME 30
 #define SHOW_TIME  1.6f /* sekunder efter senaste ändringen */
 
 static void *s_get_param; /* kärnadress, NULL = går inte att läsa (t.ex. PPSSPP) */
+static void *s_ctrl_peek; /* the kernel address of sceCtrlPeekBufferPositive, NULL = the sound button cannot be read */
+static int s_note_was;    /* the sound button was down at the last look */
+static void (*s_overlay)(void);
 static int s_volume = -1, s_muted = -1;
 static float s_shown;     /* tid kvar att visa */
 static float s_anim;      /* 0→1 in-/uttoning */
@@ -35,6 +42,8 @@ void osd_init(void)
     if (!f)
         f = sctrlHENFindFunction("sceImpose_Driver", "sceImpose_driver", NID_GET_PARAM_660);
     s_get_param = (void *)f;
+    s_ctrl_peek = (void *)sctrlHENFindFunction("sceController_Service", "sceCtrl_driver", NID_CTRL_PEEK);
+    s_note_was = 0;
 }
 
 static int get_param(int param)
@@ -46,6 +55,32 @@ static int get_param(int param)
     if (kuKernelCall(s_get_param, &a) < 0)
         return -1;
     return (int)a.ret1;
+}
+
+int osd_note_pressed(void)
+{
+    if (!s_ctrl_peek)
+        return 0;
+    SceCtrlData pad;
+    memset(&pad, 0, sizeof(pad));
+    KernelCallArg a = { 0 };
+    a.arg1 = (u32)&pad;
+    a.arg2 = 1;
+    if (kuKernelCall(s_ctrl_peek, &a) < 0)
+        return 0;
+    int down = (pad.Buttons & PSP_CTRL_NOTE) != 0, press = down && !s_note_was;
+    s_note_was = down;
+    return press;
+}
+
+void osd_set_overlay(void (*draw)(void))
+{
+    s_overlay = draw;
+}
+
+void osd_show_volume(void)
+{
+    s_shown = SHOW_TIME;
 }
 
 void osd_update(float dt)
@@ -95,6 +130,8 @@ static void draw_speaker(float x, float y, float level, int muted, u32 c, u32 di
 
 void osd_draw(void)
 {
+    if (s_overlay)
+        s_overlay(); /* (the player popup is under the volume indicator: turning the volume up with the buttons shows it over the popup) */
     if (s_anim < 0.01f || s_volume < 0)
         return;
     float a = s_anim, w = 196, h = 34;
@@ -103,11 +140,9 @@ void osd_draw(void)
     gfx_round_rect(x, y, w, h, h / 2, RGBA(34, 35, 41, (int)(255 * a)));
     u32 light = RGBA(240, 240, 245, (int)(255 * a)), dim = RGBA(240, 240, 245, (int)(70 * a));
     draw_speaker(x + 16, y + h / 2, s_level, s_muted, light, dim);
-    /* stapeln som på PS5: tunn ljus fyllning på en svag bana */
+    /* the bar is drawn as every bar (look.h): light grey on a trace of white, the end of the level straight */
     float bx = x + 46, bw = w - 46 - 42, by = y + h / 2 - 2;
-    gfx_round_rect(bx, by, bw, 4, 2, RGBA(255, 255, 255, (int)(45 * a)));
-    if (s_level > 0.005f)
-        gfx_round_rect(bx, by, fmaxf(4, bw * s_level), 4, 2, light);
+    look_bar(bx, by, bw, 4, s_level > 0.005f ? fmaxf(4, bw * s_level) : 0, a);
     char num[8];
     snprintf(num, sizeof(num), "%d", s_muted ? 0 : s_volume);
     text_draw(x + w - 18, y + h / 2 + 5, 0.62f, 0, light, ALIGN_RIGHT, num);

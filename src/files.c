@@ -12,6 +12,14 @@
 #include <string.h>
 #include <strings.h>
 #include "files.h"
+#include "kbd.h"
+#include "media.h"
+#include "music.h"
+#include "imageview.h"
+#include "videoplay.h"
+#include "logs.h"
+#include "textedit.h"
+#include "textbuf.h"
 #include "controls.h"
 #include "gfx.h"
 #include "lang.h"
@@ -19,7 +27,9 @@
 #include "system.h"
 #include "theme.h"
 #include "osd.h"
+#include "power.h"
 #include "popup.h"
+#include "look.h"
 
 #define LIST_X   24.0f
 #define LIST_W   432.0f
@@ -32,6 +42,13 @@
 #define MAX_PATH 512
 #define MAX_CLIP 64          /* shortcut: högst 64 markerade objekt åt gången – höj om det inte räcker */
 #define COPY_BUF (128 * 1024)
+#define NAME_MAX_BYTES 255   /* a FAT name has at most 255 characters (UTF-16): 255 bytes is the safe side of it, UTF-8 never has fewer bytes than UTF-16 has units */
+
+#ifndef FIO_CST_CT /* what sceIoChstat is told to change: the times (pspiofilemgr_stat.h) */
+#define FIO_CST_CT 0x0008
+#define FIO_CST_AT 0x0010
+#define FIO_CST_MT 0x0020
+#endif
 
 #define TEXT_MAIN RGBA(238, 238, 242, 255)
 #define TEXT_DIM  RGBA(160, 162, 172, 255)
@@ -57,9 +74,20 @@ static int s_repeat_dir;
 static float s_repeat_timer;
 static char s_toast[96];
 static float s_toast_time;
+static int s_pick;            /* 1 = a place to choose a plugin (files_open_pick): see files.h */
+static char s_picked[512];    /* the file that was chosen, or "" */
+static char s_name_cur[256];  /* the name of the highlighted row, and how long it has been that (a name that does not fit scrolls) */
+static float s_name_t;
 static u64 s_free, s_total;   /* enheten som visas */
 static const char *s_devs[2];
 static int s_ndev;
+
+/* --- what ✕ opened: a video or a picture in its viewer, or a text file in the text editor (✕ on a song starts it) --- */
+static ImageView *s_iv;
+static VideoPlayer *s_vp;
+static MusicEntry *s_mfiles;     /* the videos or pictures of the folder, the lines the viewer steps through (they stay while it is open) */
+static TextEdit *s_te;
+static int s_asleep;             /* the PSP sleeps (files_sleep): a video that plays is paused */
 
 /* --- urklipp --- */
 static char *s_clip[MAX_CLIP];
@@ -77,7 +105,10 @@ static char s_ask_sub[24];   /* size of the one file that goes, else empty */
 
 /* --- arbetstråden --- */
 enum { OP_COPY, OP_MOVE, OP_DELETE };
-enum { R_OK, R_FAILED, R_NO_SPACE, R_CANCELLED };
+enum { R_OK, R_FAILED, R_NO_SPACE, R_CANCELLED, R_NOT_DELETED, R_INTO_ITSELF }; /* R_NOT_DELETED: moved to another card, but the original could not all be removed */
+/* What can be done when a name is taken in the place where a file or a folder is to go (the question of the screen; the worker waits for it). CF_REPLACE is
+ * the choice that the screen calls Overwrite. */
+enum { CF_REPLACE, CF_SKIP, CF_MERGE, CF_RENAME, CF_CANCEL, CF_NONE = -1 };
 static struct {
     SceUID thread;
     volatile int running, cancel, result;
@@ -87,9 +118,22 @@ static struct {
     volatile u64 done, total; /* byte (kopiera/flytta) eller objekt (radera) */
     char current[128];
     unsigned char *buf;
+    int idx;                      /* the item of the list that is being handled */
+    int partial;                  /* something was copied to another card and its original could not be removed */
+    /* a name that is taken: the worker writes what it needs the screen to ask and sets ask = 1, then waits; the screen answers and sets ask = 2 */
+    volatile int ask, answer, answer_all;
+    char ask_name[256], ask_dir[MAX_PATH], answer_name[256];
+    int ask_src_dir, ask_dst_dir, ask_same, ask_more;
+    int all_dd, all_other;        /* an answer given "for all": one for a folder onto a folder, one for the rest (CF_NONE = ask) */
 } W = { .thread = -1 };
 
-static int s_osk_done;
+/* --- the question about a name that is taken (the worker waits for it) --- */
+static int s_cf;                          /* 1 = the question is open */
+static int s_cf_sel, s_cf_n, s_cf_act[5];
+static int s_cf_all, s_cf_show_all;       /* "for all" is on; it is offered at all (more names may be taken) */
+static float s_cf_anim;
+static char s_cf_name[96], s_cf_lines[2][96];
+static int s_cf_nl;
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 static float smooth(float t) { t = clampf(t, 0, 1); return t * t * (3 - 2 * t); }
@@ -160,6 +204,153 @@ static int dev_space(const char *path, u64 *free_b, u64 *total_b)
     return 1;
 }
 
+/* The free space of a storage is asked of the PSP in a thread of its own: the first time after a start the Memory Stick counts the free clusters of its whole table, and on the maintainer's PSP-1000 that
+ * took 1.8 seconds (the PSP-1000 timings: the File Manager opened in 1868 ms the first time, 70 ms the second), during which the screen showed nothing. Now the list is there at once and the bar at the top
+ * (and the "free" of a storage in the list of storages) comes when the numbers do; the numbers of the last time are shown meanwhile. The thread only writes the numbers below (a sequence number, odd while
+ * it writes, makes the reader take a whole set), so it can go on after the File Manager is closed.
+ *
+ * No atomic read-modify-write is used (GCC turns __sync_fetch_and_add and the compare-and-swap into `ll` / `sc`; nothing in psp5 had used one before, and the version that did gave a PSP-1000 no start
+ * screen at all: whether the Allegrex lacks them is not certain, so psp5 does not use them). Every variable has ONE writer: `asked` the main thread (one more for each question), `served` the thread
+ * (the `asked` it read before it counted), `done` the thread (as it ends). There is work while asked != served. A question that comes as the thread is ending is seen by the main thread, which looks every frame (space_poll). */
+#define SP_DEVS 3 /* ms0:, ef0: and room for one more name */
+static struct {
+    char dev[8];
+    volatile unsigned asked;  /* the main thread: counts the questions */
+    volatile unsigned served; /* the thread: the number of questions that were asked when it began to count */
+    volatile unsigned seq;    /* odd: the numbers are being written */
+    volatile int known;       /* the numbers are from the PSP */
+    u64 free_b, total_b;
+} s_sp[SP_DEVS];
+static SceUID s_sp_thread = -1;      /* the last thread (the main thread reaps it: a thread that has ended is only freed by the system when it is deleted) */
+static volatile int s_sp_done;       /* the thread has nothing more to do and is ending */
+static unsigned s_sp_seen[SP_DEVS];  /* the last numbers the screen took */
+
+static int space_slot(const char *path, int make)
+{
+    char dev[8];
+    snprintf(dev, sizeof(dev), "%.4s", path);
+    int free_slot = -1;
+    for (int i = 0; i < SP_DEVS; i++) {
+        if (!strcmp(s_sp[i].dev, dev))
+            return i;
+        if (!s_sp[i].dev[0] && free_slot < 0)
+            free_slot = i;
+    }
+    if (!make || free_slot < 0)
+        return -1;
+    snprintf(s_sp[free_slot].dev, sizeof(s_sp[free_slot].dev), "%s", dev);
+    return free_slot;
+}
+
+static int space_wanted(void)
+{
+    for (int i = 0; i < SP_DEVS; i++)
+        if (s_sp[i].asked != s_sp[i].served)
+            return 1;
+    return 0;
+}
+
+/* asks the PSP for what is wanted (one storage at a time), until nothing is */
+static void space_work(void)
+{
+    for (int i = 0; i < SP_DEVS; i++) {
+        unsigned a = s_sp[i].asked;
+        if (a == s_sp[i].served)
+            continue;
+        u64 f = 0, t = 0;
+        int ok = dev_space(s_sp[i].dev, &f, &t);
+        if (ok) { /* (when the PSP does not answer, the numbers of the last time stay) */
+            s_sp[i].seq++; /* odd */
+            __sync_synchronize();
+            s_sp[i].free_b = f;
+            s_sp[i].total_b = t;
+            s_sp[i].known = 1;
+            __sync_synchronize();
+            s_sp[i].seq++;
+        }
+        s_sp[i].served = a;
+        i = -1; /* (and again from the first: a question may have come meanwhile) */
+    }
+}
+
+static int space_thread(SceSize args, void *argp)
+{
+    space_work();
+    __sync_synchronize();
+    s_sp_done = 1;
+    return 0;
+}
+
+/* starts the thread when there is something to ask and none is at it (the main thread only: every frame, and when a question is asked) */
+static void space_kick(void)
+{
+    if (!space_wanted())
+        return;
+    if (s_sp_thread >= 0) {
+        if (!s_sp_done)
+            return; /* it is at it, and looks again before it ends */
+        sceKernelWaitThreadEnd(s_sp_thread, NULL);
+        sceKernelDeleteThread(s_sp_thread);
+        s_sp_thread = -1;
+    }
+    s_sp_done = 0;
+    SceUID th = sceKernelCreateThread("psp5_files_space", space_thread, 0x30, 0x4000, PSP_THREAD_ATTR_USER, NULL);
+    if (th >= 0 && sceKernelStartThread(th, 0, NULL) >= 0) {
+        s_sp_thread = th;
+        return;
+    }
+    if (th >= 0)
+        sceKernelDeleteThread(th);
+    space_work(); /* no thread: the PSP is asked here, as it used to be */
+}
+
+/* asks for the numbers of the storage `path` (again, when they are known already) */
+static void space_ask(const char *path)
+{
+    int i = space_slot(path, 1);
+    if (i < 0)
+        return;
+    s_sp[i].asked++;
+    __sync_synchronize();
+    space_kick();
+}
+
+/* At the start of psp5: both storages are asked in the background, so that the first count after a start (1.8 to 2.6 s on a PSP-1000, per the PSP-1000 timings) is over before a screen asks for it on the screen's
+ * thread: Settings > Storage > Console Storage asked for it itself and stood still for two frames of 1.85 s and 1.76 s (one for each storage), the game information does the same. The PSP keeps the
+ * number once it has counted (0.2 ms the next time). A storage that is not there answers with an error at once. */
+void files_warm_space(void)
+{
+    space_ask("ms0:/");
+    space_ask("ef0:/");
+}
+
+/* the numbers of the storage `path` is on, when there are some; *changed is set when they are new since the last call for this storage */
+static int space_get(const char *path, u64 *free_b, u64 *total_b, int *changed)
+{
+    int i = space_slot(path, 0);
+    if (i < 0)
+        return 0;
+    unsigned a;
+    u64 f, t;
+    int known;
+    do {
+        a = s_sp[i].seq;
+        __sync_synchronize();
+        f = s_sp[i].free_b;
+        t = s_sp[i].total_b;
+        known = s_sp[i].known;
+        __sync_synchronize();
+    } while ((a & 1) || a != s_sp[i].seq);
+    if (!known)
+        return 0;
+    *free_b = f;
+    *total_b = t;
+    if (changed)
+        *changed = a != s_sp_seen[i];
+    s_sp_seen[i] = a;
+    return 1;
+}
+
 static void fmt_size(char *out, int size, u64 b)
 {
     if (b >= 1024ull * 1024 * 1024)
@@ -174,7 +365,20 @@ static void fmt_size(char *out, int size, u64 b)
 
 static int valid_name(const char *s)
 {
-    return s[0] && strcmp(s, ".") && strcmp(s, "..") && !strpbrk(s, "\\/:*?\"<>|");
+    size_t n = strlen(s);
+    if (!n || n > NAME_MAX_BYTES || !strcmp(s, ".") || !strcmp(s, "..") || strpbrk(s, "\\/:*?\"<>|") || s[n - 1] == '.' || s[n - 1] == ' ')
+        return 0; /* (FAT drops a dot or a space at the end of a name: it would not be the name that was typed) */
+    for (const char *p = s; *p; p++)
+        if ((u8)*p < 0x20 || *p == 0x7F)
+            return 0;
+    return 1;
+}
+
+static int path_exists(const char *path)
+{
+    SceIoStat st;
+    memset(&st, 0, sizeof(st));
+    return sceIoGetstat(path, &st) >= 0;
 }
 
 /* Läser en mapp (utan . och ..). Antal, <0 = gick inte att öppna. *out frigörs av anroparen. */
@@ -213,24 +417,96 @@ static int read_dir(const char *path, FileEntry **out)
 /* ---------------------------------------------------------------------- */
 /* arbetstråden: kopiera, flytta, radera */
 
+/* Where the extension of a name begins: the last dot, or the dot of ".tar" in "a.tar.gz"; NULL for a folder, a name with no dot, and ".hidden" */
+static const char *name_ext(const char *name, int is_dir)
+{
+    const char *dot = is_dir ? NULL : strrchr(name, '.');
+    if (!dot || dot == name)
+        return NULL;
+    if (dot - name >= 5 && !strncasecmp(dot - 4, ".tar", 4) && (!strcasecmp(dot, ".gz") || !strcasecmp(dot, ".bz2") || !strcasecmp(dot, ".xz") || !strcasecmp(dot, ".zst")))
+        dot -= 4;
+    return dot;
+}
+
+/* "name (k).ext", with the name cut short (not in the middle of a character) when the whole would be longer than a FAT name can be */
+static void numbered_name(char *out, int size, const char *name, int is_dir, int k)
+{
+    const char *ext = name_ext(name, is_dir);
+    int stem = ext ? (int)(ext - name) : (int)strlen(name);
+    if (!ext)
+        ext = "";
+    char tag[16];
+    snprintf(tag, sizeof(tag), " (%d)", k);
+    int room = NAME_MAX_BYTES - (int)strlen(tag) - (int)strlen(ext);
+    if (room < 1)
+        room = 1;
+    if (stem > room) {
+        stem = room;
+        while (stem > 0 && ((u8)name[stem] & 0xC0) == 0x80)
+            stem--;
+    }
+    snprintf(out, size, "%.*s%s%s", stem, name, tag, ext);
+}
+
 /* A name for `name` in `dir` that is not taken: the name itself, else "name (2)", "name (3)" ... 1 = `out` is
  * free to write to, 0 = every name up to (999) is taken (then nothing may be written: it would overwrite). */
 static int unique_dest(char *out, int size, const char *dir, const char *name, int is_dir)
 {
     join(out, size, dir, name);
-    const char *dot = is_dir ? NULL : strrchr(name, '.');
-    if (dot == name)
-        dot = NULL;
-    int stem = dot ? (int)(dot - name) : (int)strlen(name);
-    SceIoStat st;
-    for (int k = 2; sceIoGetstat(out, &st) >= 0; k++) {
+    for (int k = 2; path_exists(out); k++) {
         if (k >= 1000)
             return 0;
         char alt[300];
-        snprintf(alt, sizeof(alt), "%.*s (%d)%s", stem, name, k, dot ? dot : "");
+        numbered_name(alt, sizeof(alt), name, is_dir, k);
         join(out, size, dir, alt);
     }
     return 1;
+}
+
+/* A name next to `path` for something that is moved aside for a while: "path.psp5old", "path.psp5old2" ... (0 = none is free) */
+static int side_name(char *out, int size, const char *path, const char *suffix)
+{
+    snprintf(out, size, "%s%s", path, suffix);
+    for (int k = 2; path_exists(out); k++) {
+        if (k >= 100)
+            return 0;
+        snprintf(out, size, "%s%s%d", path, suffix, k);
+    }
+    return 1;
+}
+
+/* A rename inside one folder. What the PSP answers is not trusted: the thing must be there under the new name afterwards. */
+static int rename_checked(const char *from, const char *to)
+{
+    if (sceIoRename(from, to) < 0)
+        return 0;
+    return path_exists(to);
+}
+
+/* Moves `src` to `dst` on the same card by renaming it, or says no (the caller copies instead). The PSP's rename may take only the NAME of its
+ * second argument and rename the thing where it is (PPSSPP, which copies the PSP, does): then it has been renamed in its own folder under
+ * the wrong name and must be put back. A rename that left the thing in two places or in none is no rename. */
+static int move_verified(const char *src, const char *dst)
+{
+    if (sceIoRename(src, dst) < 0)
+        return 0;
+    if (path_exists(dst) && (!path_exists(src) || !strcasecmp(src, dst)))
+        return 1;
+    char parent[MAX_PATH], inplace[MAX_PATH];
+    parent_of(parent, sizeof(parent), src);
+    join(inplace, sizeof(inplace), parent, base_name(dst));
+    if (!path_exists(src) && path_exists(inplace))
+        sceIoRename(inplace, src); /* (back to its own name, in its own folder: a rename that cannot go wrong that way) */
+    return 0;
+}
+
+/* The times of a copy are those of the original (the PSP gives a new file the time of now): ✕ after it is closed */
+static void keep_times(const char *src, const char *dst)
+{
+    SceIoStat st;
+    memset(&st, 0, sizeof(st));
+    if (sceIoGetstat(src, &st) >= 0)
+        sceIoChstat(dst, &st, FIO_CST_CT | FIO_CST_AT | FIO_CST_MT);
 }
 
 static void tree_size(const char *path, int is_dir, u64 bytes, u64 *total_bytes, u64 *items)
@@ -250,15 +526,39 @@ static void tree_size(const char *path, int is_dir, u64 bytes, u64 *total_bytes,
     free(list);
 }
 
+/* The first step that failed in this operation and what the PSP answered (the worker sets them once, the screen's thread reads them when the operation is over, for the log). */
+static const char *s_fail_what;
+static int s_fail_code;
+static int fail_at(int r, const char *what, int code)
+{
+    if (!s_fail_what) {
+        s_fail_what = what;
+        s_fail_code = code;
+    }
+    return r;
+}
+
+/* R_NO_SPACE instead of R_FAILED when the card is (nearly) full */
+static int write_failed(const char *dst)
+{
+    u64 free_b, total_b;
+    return dev_space(dst, &free_b, &total_b) && free_b < 2 * COPY_BUF ? R_NO_SPACE : R_FAILED;
+}
+
 static int copy_file(const char *src, const char *dst)
 {
+    SceIoStat st;
+    memset(&st, 0, sizeof(st));
+    u64 free_b, total_b;
+    if (sceIoGetstat(src, &st) >= 0 && st.st_size >= 1024 * 1024 && dev_space(dst, &free_b, &total_b) && (u64)st.st_size + 1024 * 1024 > free_b)
+        return R_NO_SPACE; /* (a big file that cannot fit is known before a byte is written: what is there already may be replaced or skipped, so the size of everything is not asked at the start) */
     SceUID in = sceIoOpen(src, PSP_O_RDONLY, 0);
     if (in < 0)
-        return R_FAILED;
+        return fail_at(R_FAILED, "opening the file to copy", in);
     SceUID out = sceIoOpen(dst, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (out < 0) {
         sceIoClose(in);
-        return R_FAILED;
+        return fail_at(R_FAILED, "making the new file", out);
     }
     int r = R_OK;
     for (;;) {
@@ -268,13 +568,14 @@ static int copy_file(const char *src, const char *dst)
         }
         int got = sceIoRead(in, W.buf, COPY_BUF);
         if (got < 0) {
-            r = R_FAILED;
+            r = fail_at(R_FAILED, "reading a file", got);
             break;
         }
         if (got == 0)
             break;
-        if (sceIoWrite(out, W.buf, got) != got) {
-            r = R_FAILED;
+        int put = sceIoWrite(out, W.buf, got);
+        if (put != got) {
+            r = fail_at(write_failed(dst), "writing a file", put);
             break;
         }
         W.done += got;
@@ -283,6 +584,8 @@ static int copy_file(const char *src, const char *dst)
     sceIoClose(out);
     if (r != R_OK)
         sceIoRemove(dst); /* ingen halv fil kvar */
+    else
+        keep_times(src, dst);
     return r;
 }
 
@@ -290,10 +593,11 @@ static int copy_tree(const char *src, const char *dst, int is_dir)
 {
     if (!is_dir)
         return copy_file(src, dst);
-    if (sceIoMkdir(dst, 0777) < 0)
-        return R_FAILED;
+    int mk = sceIoMkdir(dst, 0777);
+    if (mk < 0)
+        return fail_at(R_FAILED, "making a folder", mk);
     FileEntry *list;
-    int n = read_dir(src, &list), r = n < 0 ? R_FAILED : R_OK;
+    int n = read_dir(src, &list), r = n < 0 ? fail_at(R_FAILED, "reading a folder", n) : R_OK;
     for (int i = 0; i < n && r == R_OK; i++) {
         char s[MAX_PATH], d[MAX_PATH];
         join(s, sizeof(s), src, list[i].name);
@@ -301,6 +605,8 @@ static int copy_tree(const char *src, const char *dst, int is_dir)
         r = copy_tree(s, d, list[i].kind == KIND_DIR);
     }
     free(list);
+    if (r == R_OK)
+        keep_times(src, dst); /* (after the files: making them changed the time of the folder) */
     return r;
 }
 
@@ -332,10 +638,166 @@ static int delete_tree(const char *path, int is_dir, int flags)
     return r;
 }
 
+/* --- a name that is taken ---
+ * What the player may choose, for a file or a folder that is to go where something of that name is already:
+ *   Replace  the old one goes (after the new one is there: it is moved aside first and removed when the new one has arrived, put back if it does not)
+ *   Skip     the new one is left out
+ *   Merge    folder onto folder only: the files go into the folder that is there, and a name taken inside it is asked again
+ *   Rename   both stay: the new one gets another name (typed, starting at "name (2)"; with "for all" the next free "name (k)")
+ *   Cancel   the whole copy or move stops (what is done stays done)
+ * A copy into its own folder has no old one to replace or merge with: it is the thing itself. Only Rename and Cancel. */
+static int cf_choices(int src_dir, int dst_dir, int same, int *out, int *sel)
+{
+    int n = 0;
+    if (same) {
+        out[n++] = CF_RENAME;
+        out[n++] = CF_CANCEL;
+        *sel = 0;
+        return n;
+    }
+    out[n++] = CF_REPLACE;
+    *sel = n; /* Skip is the one chosen: nothing is lost by a press of ✕ */
+    out[n++] = CF_SKIP;
+    if (src_dir && dst_dir)
+        out[n++] = CF_MERGE;
+    out[n++] = CF_RENAME;
+    out[n++] = CF_CANCEL;
+    return n;
+}
+
+/* The worker is at a name that is taken: what to do (CF_*), and in `new_name` the name that was typed ("" = the next free "name (k)"). An answer given for all is used
+ * without asking; else the worker waits here until the screen has asked the player (or the player cancelled). */
+static int cf_resolve(const char *dir, const char *name, int src_dir, int dst_dir, int same, char *new_name, int size)
+{
+    new_name[0] = 0;
+    int *memo = src_dir && dst_dir ? &W.all_dd : &W.all_other;
+    if (*memo != CF_NONE && (!same || *memo == CF_RENAME))
+        return *memo;
+    snprintf(W.ask_name, sizeof(W.ask_name), "%s", name);
+    snprintf(W.ask_dir, sizeof(W.ask_dir), "%s", dir);
+    W.ask_src_dir = src_dir;
+    W.ask_dst_dir = dst_dir;
+    W.ask_same = same;
+    W.ask_more = W.n - W.idx > 1 || src_dir; /* (more names may be taken: the question can offer "for all") */
+    W.answer = CF_CANCEL;
+    W.answer_all = 0;
+    W.answer_name[0] = 0;
+    W.ask = 1;
+    while (W.ask == 1 && !W.cancel)
+        sceKernelDelayThread(10000);
+    if (W.ask == 1) { /* ○ on the progress panel, or the screen is closing */
+        W.ask = 0;
+        return CF_CANCEL;
+    }
+    int c = W.answer;
+    W.ask = 0;
+    if (W.answer_all && c != CF_CANCEL && (!same || c == CF_RENAME))
+        *memo = c;
+    snprintf(new_name, size, "%s", W.answer_name);
+    return c;
+}
+
+static int transfer_item(const char *src, int is_dir, const char *destdir);
+
+/* One thing from `src` to `dst` (nothing of that name is there): a rename on the same card if it works, else a copy and, for a move, a delete of the original. */
+static int plain_transfer(const char *src, const char *dst, int is_dir)
+{
+    if (W.op == OP_MOVE && same_device(src, dst) && move_verified(src, dst))
+        return R_OK;
+    int r = copy_tree(src, dst, is_dir);
+    if (r != R_OK) {
+        delete_tree(dst, is_dir, DT_FORCE); /* städa bort det som hann kopieras – också efter ○ */
+        return r;
+    }
+    if (W.op == OP_MOVE) {
+        r = delete_tree(src, is_dir, 0);
+        if (r == R_FAILED) { /* it is on the other card whole; the original is not all gone: said at the end, the rest goes on */
+            W.partial = 1;
+            r = R_OK;
+        }
+    }
+    return r;
+}
+
+/* Replace: the old one is renamed (next to itself) first, the new one is made, and only then the old one is removed; if the new one does not
+ * arrive (full card, a failed read, ○) the old one gets its name back. */
+static int replace_item(const char *src, const char *dst, int is_dir, int dst_dir)
+{
+    char aside[MAX_PATH];
+    if (!side_name(aside, sizeof(aside), dst, ".psp5old") || !rename_checked(dst, aside))
+        return R_FAILED;
+    int r = plain_transfer(src, dst, is_dir);
+    if (r == R_OK)
+        delete_tree(aside, dst_dir, DT_FORCE);
+    else if (!rename_checked(aside, dst))
+        r = R_FAILED; /* (it stays where it is, under the other name) */
+    return r;
+}
+
+/* Merge: what is in the folder `src` goes into the folder `dst`; a name taken inside it is asked again (or answered as for all). A moved folder is
+ * removed when it is empty (what was skipped stays in it). Cancelled halfway: what has arrived has arrived, and nothing that was there is touched. */
+static int merge_dir(const char *src, const char *dst)
+{
+    FileEntry *list;
+    int n = read_dir(src, &list), r = n < 0 ? R_FAILED : R_OK;
+    for (int i = 0; i < n && r == R_OK; i++) {
+        char s[MAX_PATH];
+        join(s, sizeof(s), src, list[i].name);
+        r = transfer_item(s, list[i].kind == KIND_DIR, dst);
+    }
+    free(list);
+    if (r == R_OK && W.op == OP_MOVE)
+        sceIoRmdir(src); /* (fails when something was skipped: it stays) */
+    return r;
+}
+
+/* `src` into the folder `destdir`: as it is when nothing of that name is there, else as the player says */
+static int transfer_item(const char *src, int is_dir, const char *destdir)
+{
+    char dst[MAX_PATH], parent[MAX_PATH], typed[256];
+    const char *name = base_name(src);
+    join(dst, sizeof(dst), destdir, name);
+    SceIoStat st;
+    memset(&st, 0, sizeof(st));
+    if (sceIoGetstat(dst, &st) < 0)
+        return plain_transfer(src, dst, is_dir);
+    int dst_dir = FIO_S_ISDIR(st.st_mode) != 0;
+    parent_of(parent, sizeof(parent), src);
+    int same = !strcasecmp(parent, destdir); /* a copy into the folder it is in: the thing that is "already there" is the thing itself */
+    int c = cf_resolve(destdir, name, is_dir, dst_dir, same, typed, sizeof(typed));
+    if ((c == CF_REPLACE || c == CF_MERGE) && (same || is_inside(src, dst)))
+        return same ? R_CANCELLED : R_INTO_ITSELF; /* never remove or merge the thing into itself or the folder it lies in */
+    switch (c) {
+    case CF_SKIP: { /* left out: the bar does not wait for it */
+        u64 bytes = 0, items = 0;
+        SceIoStat ss;
+        memset(&ss, 0, sizeof(ss));
+        sceIoGetstat(src, &ss);
+        tree_size(src, is_dir, ss.st_size, &bytes, &items);
+        if (W.op != OP_MOVE || !same_device(src, destdir))
+            W.total = W.total > bytes ? W.total - bytes : 0;
+        return R_OK;
+    }
+    case CF_REPLACE:
+        return replace_item(src, dst, is_dir, dst_dir);
+    case CF_MERGE:
+        return merge_dir(src, dst);
+    case CF_RENAME: {
+        char alt[MAX_PATH];
+        if (typed[0])
+            join(alt, sizeof(alt), destdir, typed);
+        else if (!unique_dest(alt, sizeof(alt), destdir, name, is_dir))
+            return R_FAILED;
+        return plain_transfer(src, alt, is_dir);
+    }
+    }
+    return R_CANCELLED;
+}
+
 static int worker(SceSize args, void *argp)
 {
     int is_dir[MAX_CLIP], r = R_OK;
-    u64 bytes = 0, items = 0;
+    u64 bytes = 0, items = 0, need = 0;
     for (int i = 0; i < W.n; i++) {
         SceIoStat st;
         memset(&st, 0, sizeof(st));
@@ -345,15 +807,24 @@ static int worker(SceSize args, void *argp)
         }
         is_dir[i] = FIO_S_ISDIR(st.st_mode) != 0;
         /* en flytt på samma enhet är bara ett namnbyte – inget att kopiera */
-        if (W.op != OP_MOVE || !same_device(W.src[i], W.dest))
-            tree_size(W.src[i], is_dir[i], st.st_size, &bytes, &items);
+        if (W.op != OP_MOVE || !same_device(W.src[i], W.dest)) {
+            u64 b = 0, it = 0;
+            tree_size(W.src[i], is_dir[i], st.st_size, &b, &it);
+            bytes += b;
+            items += it;
+            char taken[MAX_PATH];
+            join(taken, sizeof(taken), W.dest, base_name(W.src[i]));
+            if (W.op == OP_DELETE || !path_exists(taken))
+                need += b; /* (what has a name that is taken may be skipped, merged or replaced: the room it needs is seen file by file) */
+        }
     }
     W.total = W.op == OP_DELETE ? items : bytes;
     u64 free_b, total_b;
-    if (W.op != OP_DELETE && bytes && dev_space(W.dest, &free_b, &total_b) && bytes + 1024 * 1024 > free_b)
+    if (W.op != OP_DELETE && need && dev_space(W.dest, &free_b, &total_b) && need + 1024 * 1024 > free_b)
         r = R_NO_SPACE;
 
     for (int i = 0; i < W.n && r == R_OK; i++) {
+        W.idx = i;
         if (is_dir[i] < 0)
             continue;
         snprintf(W.current, sizeof(W.current), "%s", base_name(W.src[i]));
@@ -361,27 +832,17 @@ static int worker(SceSize args, void *argp)
             r = delete_tree(W.src[i], is_dir[i], DT_COUNT);
             continue;
         }
-        char parent[MAX_PATH], dst[MAX_PATH];
+        char parent[MAX_PATH];
         parent_of(parent, sizeof(parent), W.src[i]);
         if (W.op == OP_MOVE && !strcmp(parent, W.dest))
             continue; /* redan här */
         if (is_dir[i] && is_inside(W.dest, W.src[i])) {
-            r = R_FAILED; /* en mapp in i sig själv */
+            r = R_INTO_ITSELF; /* en mapp in i sig själv */
             break;
         }
-        if (!unique_dest(dst, sizeof(dst), W.dest, base_name(W.src[i]), is_dir[i])) {
-            r = R_FAILED; /* alla namn är upptagna: skriv inte över något */
-            break;
-        }
-        if (W.op == OP_MOVE && same_device(W.src[i], W.dest) && sceIoRename(W.src[i], dst) >= 0)
-            continue;
-        r = copy_tree(W.src[i], dst, is_dir[i]);
-        if (r != R_OK)
-            delete_tree(dst, is_dir[i], DT_FORCE); /* städa bort det som hann kopieras – också efter ○ */
-        else if (W.op == OP_MOVE)
-            r = delete_tree(W.src[i], is_dir[i], 0);
+        r = transfer_item(W.src[i], is_dir[i], W.dest);
     }
-    W.result = r;
+    W.result = r == R_OK && W.partial ? R_NOT_DELETED : r;
     W.running = 0;
     return 0;
 }
@@ -398,11 +859,17 @@ static void start_op(int op, char **paths, int n, const char *dest)
     W.current[0] = 0;
     W.cancel = 0;
     W.result = R_OK;
+    s_fail_what = NULL;
+    W.idx = W.partial = 0;
+    W.ask = 0;
+    W.all_dd = W.all_other = CF_NONE;
     W.buf = op == OP_DELETE ? NULL : malloc(COPY_BUF);
     W.running = 1;
     W.thread = (op == OP_DELETE || W.buf)
                    ? sceKernelCreateThread("psp5_files", worker, 0x28, 0x10000, PSP_THREAD_ATTR_USER, NULL)
                    : -1;
+    if (W.thread >= 0)
+        logs_step_later(LOG_FILES, op == OP_COPY ? "a copy" : op == OP_MOVE ? "a move" : "a delete"); /* (taken away by finish_op) */
     if (W.thread >= 0 && sceKernelStartThread(W.thread, 0, NULL) < 0) {
         sceKernelDeleteThread(W.thread);
         W.thread = -1;
@@ -413,6 +880,7 @@ static void start_op(int op, char **paths, int n, const char *dest)
             free(W.src[i]);
         free(W.buf);
         W.buf = NULL;
+        logs_fail(LOG_FILES, "A copy, move or delete could not start: no thread or no memory for the copy buffer.");
         toast(L(S_F_FAILED));
         sound_play(SND_ERROR);
     }
@@ -452,6 +920,29 @@ static int marked_count(void)
     return n;
 }
 
+/* once a frame: the numbers of the storage that is shown (the bar at the top), or of the storages in the list of them, when the PSP has given them */
+static void space_poll(void)
+{
+    u64 f, t;
+    int changed = 0;
+    space_kick(); /* (a question that came as the thread was ending) */
+    if (s_path[0]) {
+        if (space_get(s_path, &f, &t, &changed) && changed) {
+            s_free = f;
+            s_total = t;
+        }
+        return;
+    }
+    for (int i = 0; i < s_count; i++) {
+        FileEntry *e = &s_items[i];
+        if (e->kind == KIND_DEVICE && space_get(e->name, &f, &t, &changed) && changed) {
+            char num[24];
+            fmt_size(num, sizeof(num), f);
+            snprintf(e->size, sizeof(e->size), L(S_F_FREE), num);
+        }
+    }
+}
+
 /* Läser in s_path och markerar `select` (namn), eller annars raden `fallback` */
 static void load(const char *select, int fallback)
 {
@@ -465,18 +956,25 @@ static void load(const char *select, int fallback)
             FileEntry *e = &s_items[i];
             snprintf(e->name, sizeof(e->name), "%s", s_devs[i]);
             snprintf(e->shown, sizeof(e->shown), "%s", L(s_devs[i][0] == 'e' ? S_F_INTERNAL : S_F_MS));
-            u64 f, t;
-            if (dev_space(e->name, &f, &t)) {
-                char num[24];
-                fmt_size(num, sizeof(num), f);
-                snprintf(e->size, sizeof(e->size), L(S_F_FREE), num);
-            }
+            space_ask(e->name); /* (the "free" of it comes when the PSP has counted: space_poll) */
             e->kind = KIND_DEVICE;
             s_count++;
         }
     } else {
         int n = read_dir(s_path, &s_items);
         s_count = n < 0 ? 0 : n;
+        if (s_pick) { /* folders, and the plugins (.prx) in them */
+            int w = 0;
+            for (int i = 0; i < s_count; i++) {
+                const char *dot = strrchr(s_items[i].name, '.');
+                if (s_items[i].kind == KIND_FILE && (!dot || strcasecmp(dot, ".prx")))
+                    continue;
+                if (w != i)
+                    s_items[w] = s_items[i];
+                w++;
+            }
+            s_count = w;
+        }
         if (s_count > 1) /* (an empty folder has no list: qsort must not get a null pointer) */
             qsort(s_items, s_count, sizeof(*s_items), cmp_entry);
         for (int i = 0; i < s_count; i++) {
@@ -485,8 +983,11 @@ static void load(const char *select, int fallback)
             if (e->kind == KIND_FILE)
                 fmt_size(e->size, sizeof(e->size), e->bytes);
         }
-        dev_space(s_path, &s_free, &s_total);
+        space_ask(s_path);
     }
+    for (int i = 0; i < SP_DEVS; i++)
+        s_sp_seen[i] = ~0u; /* (what is known is taken at once, below, and again when new numbers come) */
+    space_poll();
     s_sel = fallback < s_count ? fallback : s_count - 1;
     if (s_sel < 0)
         s_sel = 0;
@@ -557,104 +1058,14 @@ static void clear_clip(void)
 }
 
 /* ---------------------------------------------------------------------- */
-/* PSP:ns tangentbord */
-
-static void to_utf16(const char *s, unsigned short *o, int n)
-{
-    int k = 0;
-    while (*s && k < n - 1) {
-        unsigned c = (u8)*s++;
-        if (c >= 0xE0 && s[0] && s[1]) {
-            c = ((c & 0x0F) << 12) | ((s[0] & 0x3F) << 6) | (s[1] & 0x3F);
-            s += 2;
-        } else if (c >= 0xC0 && s[0]) {
-            c = ((c & 0x1F) << 6) | (s[0] & 0x3F);
-            s++;
-        }
-        o[k++] = c;
-    }
-    o[k] = 0;
-}
-
-static void to_utf8(const unsigned short *s, char *o, int n)
-{
-    int k = 0;
-    for (; *s; s++) {
-        unsigned c = *s;
-        int len = c < 0x80 ? 1 : c < 0x800 ? 2 : 3;
-        if (k + len >= n)
-            break;
-        if (len == 1) {
-            o[k++] = c;
-        } else if (len == 2) {
-            o[k++] = 0xC0 | (c >> 6);
-            o[k++] = 0x80 | (c & 0x3F);
-        } else {
-            o[k++] = 0xE0 | (c >> 12);
-            o[k++] = 0x80 | ((c >> 6) & 0x3F);
-            o[k++] = 0x80 | (c & 0x3F);
-        }
-    }
-    o[k] = 0;
-}
-
-static void osk_step(void)
-{
-    switch (sceUtilityOskGetStatus()) {
-    case PSP_UTILITY_DIALOG_VISIBLE: sceUtilityOskUpdate(1); break;
-    case PSP_UTILITY_DIALOG_QUIT:    sceUtilityOskShutdownStart(); break;
-    case PSP_UTILITY_DIALOG_NONE:    s_osk_done = 1; break;
-    }
-}
+/* PSP:ns tangentbord (kbd.c) */
 
 static void draw_scene(void);
 
 /* Visar tangentbordet med `init` ifyllt. 1 = användaren bekräftade (texten i out). */
 static int osk_input(const char *desc, const char *init, char *out, int out_size)
 {
-    static unsigned short desc16[64], in16[256], out16[256];
-    to_utf16(desc, desc16, 64);
-    to_utf16(init, in16, 256);
-    memset(out16, 0, sizeof(out16));
-    SceUtilityOskData data;
-    memset(&data, 0, sizeof(data));
-    data.language = PSP_UTILITY_OSK_LANGUAGE_DEFAULT;
-    data.lines = 1;
-    data.unk_24 = 1;
-    data.inputtype = PSP_UTILITY_OSK_INPUTTYPE_ALL;
-    data.desc = desc16;
-    data.intext = in16;
-    data.outtextlength = 256;
-    data.outtextlimit = 200;
-    data.outtext = out16;
-    SceUtilityOskParams params;
-    memset(&params, 0, sizeof(params));
-    params.base.size = sizeof(params);
-    sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_LANGUAGE, &params.base.language);
-    sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_BUTTON_SWAP, &params.base.buttonSwap);
-    params.base.graphicsThread = 17;
-    params.base.accessThread = 19;
-    params.base.fontThread = 18;
-    params.base.soundThread = 16;
-    params.datacount = 1;
-    params.data = &data;
-    if (sceUtilityOskInitStart(&params) < 0)
-        return 0;
-    s_osk_done = 0;
-    while (!s_osk_done) {
-        gfx_begin(RGBA(20, 20, 24, 255));
-        draw_scene();
-        gfx_end_with(osk_step);
-    }
-    if (data.result == PSP_UTILITY_OSK_RESULT_CANCELLED)
-        return 0;
-    if (out16[0])
-        to_utf8(out16, out, out_size);
-    else
-        snprintf(out, out_size, "%s", init);
-    while (out[0] && out[strlen(out) - 1] == ' ') /* FAT tar ändå bort mellanslag på slutet */
-        out[strlen(out) - 1] = 0;
-    return 1;
+    return kbd_input(desc, init, out, out_size, 200, 0, draw_scene);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -728,25 +1139,65 @@ static void ask_build(void)
     s_ask_n = text_wrap(text, 0.5f, POPUP_ASK_W - 24, s_ask_lines, 4);
 }
 
+/* Rename `old` to `name` in the folder `dir`. RN_EXISTS when something of that name is there (not asked of the PSP: it may replace it without a word), and a change
+ * of capitals only (a.txt to A.txt) goes by another name, because FAT sees one name in both. */
+enum { RN_OK, RN_BAD, RN_EXISTS, RN_FAILED };
+static int rename_item(const char *dir, const char *old, const char *name)
+{
+    if (!valid_name(name))
+        return RN_BAD;
+    if (!strcmp(old, name))
+        return RN_OK;
+    char from[MAX_PATH], to[MAX_PATH];
+    join(from, sizeof(from), dir, old);
+    join(to, sizeof(to), dir, name);
+    if (!strcasecmp(old, name)) {
+        char aside[MAX_PATH];
+        if (!side_name(aside, sizeof(aside), from, ".psp5tmp") || !rename_checked(from, aside))
+            return RN_FAILED;
+        if (!rename_checked(aside, to)) {
+            rename_checked(aside, from);
+            return RN_FAILED;
+        }
+        return RN_OK;
+    }
+    if (path_exists(to))
+        return RN_EXISTS;
+    return rename_checked(from, to) ? RN_OK : RN_FAILED;
+}
+
+/* A new folder `name` in `dir` */
+static int make_folder(const char *dir, const char *name)
+{
+    if (!valid_name(name))
+        return RN_BAD;
+    char path[MAX_PATH];
+    join(path, sizeof(path), dir, name);
+    if (path_exists(path))
+        return RN_EXISTS;
+    return sceIoMkdir(path, 0777) >= 0 && path_exists(path) ? RN_OK : RN_FAILED;
+}
+
+static void name_problem(int rn)
+{
+    if (rn == RN_FAILED)
+        logs_fail(LOG_FILES, "A rename or a new folder was refused by the card (the name was fine and free).");
+    toast(L(rn == RN_BAD ? S_F_BAD_NAME : rn == RN_EXISTS ? S_F_EXISTS : S_F_FAILED));
+    sound_play(SND_ERROR);
+}
+
 static void rename_selected(void)
 {
     int idx = s_sel;
     for (int i = 0; i < s_count; i++)
         if (s_items[i].marked)
             idx = i;
-    char name[256], from[MAX_PATH], to[MAX_PATH];
+    char name[256];
     if (!osk_input(L(S_F_RENAME), s_items[idx].name, name, sizeof(name)) || !strcmp(name, s_items[idx].name))
         return;
-    if (!valid_name(name)) {
-        toast(L(S_F_BAD_NAME));
-        sound_play(SND_ERROR);
-        return;
-    }
-    join(from, sizeof(from), s_path, s_items[idx].name);
-    join(to, sizeof(to), s_path, name);
-    if (sceIoRename(from, to) < 0) {
-        toast(L(S_F_FAILED));
-        sound_play(SND_ERROR);
+    int rn = rename_item(s_path, s_items[idx].name, name);
+    if (rn != RN_OK) {
+        name_problem(rn);
         return;
     }
     load(name, s_sel);
@@ -754,21 +1205,152 @@ static void rename_selected(void)
 
 static void new_folder(void)
 {
-    char name[256], path[MAX_PATH];
+    char name[256];
     if (!osk_input(L(S_F_NEWDIR), L(S_F_NEWDIR), name, sizeof(name)))
         return;
-    if (!valid_name(name)) {
-        toast(L(S_F_BAD_NAME));
-        sound_play(SND_ERROR);
-        return;
-    }
-    join(path, sizeof(path), s_path, name);
-    if (sceIoMkdir(path, 0777) < 0) {
-        toast(L(S_F_FAILED));
-        sound_play(SND_ERROR);
+    int rn = make_folder(s_path, name);
+    if (rn != RN_OK) {
+        name_problem(rn);
         return;
     }
     load(name, s_sel);
+}
+
+/* ---------------------------------------------------------------------- */
+/* ✕ on a file: it is opened by what it is */
+
+static void close_viewer(void)
+{
+    if (s_iv)
+        imageview_close(s_iv);
+    if (s_vp)
+        videoplay_close(s_vp);
+    s_iv = NULL;
+    s_vp = NULL;
+    free(s_mfiles);
+    s_mfiles = NULL;
+}
+
+/* the videos (or the pictures) of this folder are the lines the viewer steps through with L and R; the chosen file is the first one shown */
+static void open_viewer(const FileEntry *e, int video)
+{
+    int n = 0, idx = -1;
+    free(s_mfiles);
+    s_mfiles = s_count > 0 ? malloc((size_t)s_count * sizeof(MusicEntry)) : NULL;
+    for (int i = 0; s_mfiles && i < s_count; i++) {
+        const FileEntry *f = &s_items[i];
+        if (f->kind != KIND_FILE || !(video ? media_is_video(f->name) : media_is_image(f->name)) || strlen(f->name) >= sizeof(s_mfiles[0].name))
+            continue;
+        snprintf(s_mfiles[n].name, sizeof(s_mfiles[n].name), "%s", f->name);
+        s_mfiles[n].dir = 0;
+        if (f == e)
+            idx = n;
+        n++;
+    }
+    if (idx >= 0) {
+        if (video)
+            s_vp = videoplay_open(s_path, s_mfiles, n, idx);
+        else
+            s_iv = imageview_open(s_path, s_mfiles, n, idx);
+    }
+    if (!s_iv && !s_vp) {
+        free(s_mfiles);
+        s_mfiles = NULL;
+        logs_fail(video ? LOG_VIDEO : LOG_PICTURE, "%s could not be opened from the File Manager: no memory for the %s.", video ? "A video" : "A picture", video ? "player" : "viewer");
+        toast(L(video ? S_VID_CANT : S_IMG_CANT));
+        sound_play(SND_ERROR);
+        return;
+    }
+    sound_play(SND_SELECT);
+}
+
+/* a song starts, and the songs of this folder after it (the player of the sound button has the controls) */
+static void play_song(const FileEntry *e)
+{
+    MusicEntry *list = s_count > 0 ? malloc((size_t)s_count * sizeof(MusicEntry)) : NULL;
+    int n = 0, idx = -1;
+    for (int i = 0; list && i < s_count; i++) {
+        const FileEntry *f = &s_items[i];
+        if (f->kind != KIND_FILE || !music_supported(f->name) || media_is_video(f->name) || strlen(f->name) >= sizeof(list[0].name))
+            continue;
+        snprintf(list[n].name, sizeof(list[n].name), "%s", f->name);
+        list[n].dir = 0;
+        if (f == e)
+            idx = n;
+        n++;
+    }
+    if (idx < 0) {
+        free(list);
+        toast(L(S_TE_CANT));
+        sound_play(SND_ERROR);
+        return;
+    }
+    music_play_folder_once(s_path, list, n, idx); /* (it keeps its own copy of the names; the song plays to its end and the music stops, unless the player popup of the sound button is opened) */
+    free(list);
+    char msg[160], shown[96];
+    text_ellipsis(shown, sizeof(shown), e->shown, 0.5f, 220);
+    snprintf(msg, sizeof(msg), L(S_F_PLAYING), shown);
+    toast(msg);
+    sound_play(SND_SELECT);
+}
+
+static void start_text(const char *path)
+{
+    StrId why = S_TE_CANT;
+    s_te = textedit_open(path, &why);
+    if (!s_te) {
+        toast(L(why));
+        sound_play(SND_ERROR);
+        return;
+    }
+    sound_play(SND_SELECT);
+}
+
+/* A file that has no formatting is opened in the text editor: it can be changed when it is UTF-8 text with lines of at most 1000 bytes, and is only read when not (it says so). A file that is
+ * not text is not opened. */
+static void open_text(const FileEntry *e)
+{
+    char path[MAX_PATH];
+    join(path, sizeof(path), s_path, e->name);
+    SceIoStat st;
+    memset(&st, 0, sizeof(st));
+    if (sceIoGetstat(path, &st) >= 0 && st.st_size > TB_MAX_FILE) {
+        toast(L(S_TE_TOO_BIG));
+        sound_play(SND_ERROR);
+        return;
+    }
+    int k = textedit_sniff_file(path);
+    if (k < 0 || k == TB_BINARY) {
+        toast(L(S_TE_CANT));
+        sound_play(SND_ERROR);
+        return;
+    }
+    start_text(path);
+}
+
+static void open_file(const FileEntry *e)
+{
+    if (media_is_video(e->name))
+        open_viewer(e, 1);
+    else if (media_is_image(e->name))
+        open_viewer(e, 0);
+    else if (music_supported(e->name))
+        play_song(e);
+    else
+        open_text(e);
+}
+
+static void close_text(void)
+{
+    int saved = textedit_saved(s_te);
+    textedit_close(s_te);
+    s_te = NULL;
+    if (saved) { /* its size is another now */
+        char keep[256] = "";
+        if (s_count)
+            snprintf(keep, sizeof(keep), "%s", s_items[s_sel].name);
+        load(keep, s_sel);
+    }
 }
 
 static void run_act(int act)
@@ -832,26 +1414,127 @@ static int vertical(const UiInput *in, float dt)
     return dir;
 }
 
-void files_open(void)
+static StrId cf_label_id(int act)
 {
+    return act == CF_REPLACE ? S_F_CF_REPLACE : act == CF_SKIP ? S_F_CF_SKIP : act == CF_MERGE ? S_F_CF_MERGE : act == CF_RENAME ? S_F_RENAME : S_F_CANCEL;
+}
+
+/* The question is opened for the name the worker is waiting at */
+static void cf_build(void)
+{
+    s_cf_n = cf_choices(W.ask_src_dir, W.ask_dst_dir, W.ask_same, s_cf_act, &s_cf_sel);
+    s_cf_show_all = W.ask_more;
+    s_cf_all = 0;
+    text_ellipsis(s_cf_name, sizeof(s_cf_name), W.ask_name, 0.58f, POPUP_ASK_W - 24);
+    s_cf_nl = text_wrap(L(W.ask_dst_dir ? S_F_CF_DIR : S_F_CF_FILE), 0.5f, POPUP_ASK_W - 24, s_cf_lines, 2);
+}
+
+static void cf_answer(int choice, const char *name)
+{
+    W.answer = choice;
+    W.answer_all = s_cf_show_all && s_cf_all;
+    snprintf(W.answer_name, sizeof(W.answer_name), "%s", name);
+    s_cf = 0;
+    W.ask = 2; /* (last: the worker reads the answer when it sees this) */
+}
+
+/* The question: ↑ ↓ choose, ✕ answers, △ turns "for all" on and off, ○ cancels the whole copy or move. Rename asks for the name first (it starts at "name (2)")
+ * unless "for all" is on: then the worker takes the next free name each time. */
+static void cf_update(const UiInput *in, int move)
+{
+    if (!s_cf) {
+        cf_build();
+        s_cf = 1;
+    }
+    if (move) {
+        int next = (int)clampf(s_cf_sel + move, 0, s_cf_n - 1);
+        if (next != s_cf_sel)
+            sound_play(SND_MOVE);
+        s_cf_sel = next;
+    }
+    if ((in->pressed & PSP_CTRL_TRIANGLE) && s_cf_show_all) {
+        s_cf_all ^= 1;
+        sound_play(SND_SELECT);
+    }
+    if (in->pressed & PSP_CTRL_CROSS) {
+        int act = s_cf_act[s_cf_sel];
+        if (act == CF_RENAME && !(s_cf_show_all && s_cf_all)) {
+            char alt[MAX_PATH], full[MAX_PATH], typed[256];
+            if (!unique_dest(alt, sizeof(alt), W.ask_dir, W.ask_name, W.ask_src_dir))
+                snprintf(alt, sizeof(alt), "%s", W.ask_name);
+            if (!osk_input(L(S_F_RENAME), base_name(alt), typed, sizeof(typed)))
+                return; /* the keyboard was closed: back to the question */
+            join(full, sizeof(full), W.ask_dir, typed);
+            if (!valid_name(typed)) {
+                name_problem(RN_BAD);
+                return;
+            }
+            if (path_exists(full)) {
+                name_problem(RN_EXISTS);
+                return;
+            }
+            sound_play(SND_SELECT);
+            cf_answer(CF_RENAME, typed);
+            return;
+        }
+        sound_play(act == CF_CANCEL ? SND_BACK : SND_SELECT);
+        cf_answer(act, "");
+    } else if (in->pressed & PSP_CTRL_CIRCLE) {
+        sound_play(SND_BACK);
+        cf_answer(CF_CANCEL, "");
+    }
+}
+
+static void open_list(int pick)
+{
+    s_pick = pick;
+    s_picked[0] = 0;
     s_ndev = 0;
-    if (dev_present("ms0:/"))
+    int ef = dev_present("ef0:/"); /* the internal storage: shown when it can be opened, on no other condition */
+    /* ARK can point ms0: at the internal storage: that is one storage, listed once and by its real name, ef0: (the game scan and the plugins do the same) */
+    if (dev_present("ms0:/") && !(ef && sys_ms_is_ef()))
         s_devs[s_ndev++] = "ms0:/";
-    if (sys_model() == 4 && dev_present("ef0:/"))
+    if (ef)
         s_devs[s_ndev++] = "ef0:/";
-    s_open = s_menu_anim = s_toast_time = 0;
+    s_open = s_menu_anim = s_toast_time = s_cf_anim = 0;
+    s_cf = 0;
     s_menu = M_NONE;
     s_repeat_dir = 0;
     enter(s_ndev == 1 ? s_devs[0] : "", NULL);
+}
+
+void files_open(void)
+{
+    open_list(0);
+}
+
+void files_open_pick(void)
+{
+    open_list(1);
+}
+
+int files_picked(char *out, int size)
+{
+    snprintf(out, size, "%s", s_picked);
+    return s_picked[0] != 0;
 }
 
 static void finish_op(void)
 {
     int op = W.op, r = W.result;
     stop_op();
+    logs_done(LOG_FILES);
+    s_cf = 0;
     if (op == OP_MOVE && r == R_OK)
         clear_clip();
-    static const StrId msg[] = { S_F_DONE, S_F_FAILED, S_F_NO_SPACE, S_F_CANCELLED };
+    static const StrId msg[] = { S_F_DONE, S_F_FAILED, S_F_NO_SPACE, S_F_CANCELLED, S_F_NOT_DELETED, S_F_INTO_ITSELF };
+    if (r == R_FAILED || r == R_NO_SPACE || r == R_NOT_DELETED) {
+        char how[140] = "";
+        if (s_fail_what)
+            snprintf(how, sizeof(how), " The first thing that failed: %s, the PSP said 0x%08x.", s_fail_what, (unsigned)s_fail_code);
+        logs_fail(LOG_FILES, "A %s %s.%s", op == OP_COPY ? "copy" : op == OP_MOVE ? "move" : "delete",
+                  r == R_NO_SPACE ? "stopped: the card is full" : r == R_NOT_DELETED ? "was done, but the originals could not all be removed" : "did not finish", how);
+    }
     toast(L(msg[r]));
     sound_play(r == R_OK ? SND_SELECT : SND_ERROR);
     char keep[256] = "";
@@ -860,22 +1543,52 @@ static void finish_op(void)
     load(keep, s_sel); /* raderat: samma rad */
 }
 
+int files_modal(void)
+{
+    return W.thread >= 0 || s_menu != M_NONE;
+}
+
 int files_update(const UiInput *in, float dt)
 {
     s_time += dt;
     s_open = clampf(s_open + dt * 4, 0, 1);
     s_menu_anim = clampf(s_menu_anim + (s_menu ? 7 : -7) * dt, 0, 1);
+    s_cf_anim = clampf(s_cf_anim + (s_cf ? 7 : -7) * dt, 0, 1);
     if (s_toast_time > 0)
         s_toast_time -= dt;
+    space_poll();
 
-    if (W.thread >= 0) { /* åtgärd pågår: bara ○ (avbryt) */
+    if (W.thread >= 0) { /* åtgärd pågår: bara ○ (avbryt) – eller frågan om ett namn som är upptaget, som tar alla knappar */
         if (!W.running)
             finish_op();
+        else if (W.ask == 1)
+            cf_update(in, vertical(in, dt));
         else if (in->pressed & PSP_CTRL_CIRCLE)
             W.cancel = 1;
         return 0;
     }
 
+    if (s_te) { /* the text editor has the whole screen and all the buttons (SELECT, the power popup, is main.c's) */
+        if (textedit_update(s_te, in, dt))
+            close_text();
+        return 0;
+    }
+    if (s_iv || s_vp) { /* a picture or a video: the same */
+        if (s_vp)
+            videoplay_hold(s_vp, power_is_open());
+        int done = s_iv ? imageview_update(s_iv, in->pressed, in->held, in->lx, in->ly, dt) : videoplay_update(s_vp, in->pressed, in->held, in->lx, in->ly, dt);
+        if (done) {
+            close_viewer();
+            sound_play(SND_BACK);
+        }
+        return 0;
+    }
+    { const char *cur = s_count ? s_items[s_sel].name : ""; /* the highlighted name scrolls from the moment the highlight came to it */
+      if (strcmp(cur, s_name_cur)) {
+          snprintf(s_name_cur, sizeof(s_name_cur), "%s", cur);
+          s_name_t = 0;
+      }
+      s_name_t += dt; }
     int move = vertical(in, dt);
     if (s_menu) {
         if (move) {
@@ -917,15 +1630,23 @@ int files_update(const UiInput *in, float dt)
             join(path, sizeof(path), s_path, e->name);
             enter(e->kind == KIND_DEVICE ? e->name : path, NULL);
             sound_play(SND_SELECT);
+        } else if (s_pick) { /* a plugin: it is the choice, and the File Manager is over */
+            if (e) {
+                char path[MAX_PATH];
+                join(path, sizeof(path), s_path, e->name);
+                snprintf(s_picked, sizeof(s_picked), "%s", path);
+                sound_play(SND_SELECT);
+                return 1;
+            }
+        } else if (s_path[0] && e) {
+            open_file(e); /* ✕ on a file: it is opened (a video, a picture, a song, a text file); the options are on START */
         } else if (s_path[0]) {
-            open_menu(M_OPTIONS); /* ✕ på en fil: vad ska göras med den */
+            open_menu(M_OPTIONS); /* (an empty folder: a new folder, paste) */
         }
-    } else if ((in->pressed & PSP_CTRL_SQUARE) && e && e->kind != KIND_DEVICE) {
-        e->marked ^= 1;
+    } else if ((in->pressed & PSP_CTRL_SQUARE) && e && e->kind != KIND_DEVICE && !s_pick) {
+        e->marked ^= 1; /* (the highlight stays on the row) */
         sound_play(SND_SELECT);
-        if (s_sel < s_count - 1)
-            s_sel++;
-    } else if ((in->pressed & PSP_CTRL_START) && s_path[0]) { /* the options button, as everywhere */
+    } else if ((in->pressed & PSP_CTRL_START) && s_path[0] && !s_pick) { /* the options button, as everywhere */
         open_menu(M_OPTIONS);
     } else if (in->pressed & PSP_CTRL_CIRCLE) {
         /* ○ cancels before it leaves: the marks first, then (when this is the last step out of the screen) what was copied or cut and is
@@ -954,7 +1675,7 @@ static u32 type_color(const char *ext)
     static const struct { const char *ext; u32 color; } T[] = {
         { "iso", RGBA(74, 112, 204, 255) }, { "cso", RGBA(74, 112, 204, 255) }, { "zso", RGBA(74, 112, 204, 255) }, { "dax", RGBA(74, 112, 204, 255) }, { "jso", RGBA(74, 112, 204, 255) },
         { "pbp", RGBA(128, 92, 196, 255) }, { "prx", RGBA(128, 92, 196, 255) },
-        { "mp3", RGBA(52, 156, 110, 255) }, { "at3", RGBA(52, 156, 110, 255) }, { "wav", RGBA(52, 156, 110, 255) },
+        { "mp3", RGBA(52, 156, 110, 255) }, { "at3", RGBA(52, 156, 110, 255) }, { "wav", RGBA(52, 156, 110, 255) }, { "oma", RGBA(52, 156, 110, 255) }, { "aa3", RGBA(52, 156, 110, 255) },
         { "png", RGBA(206, 128, 62, 255) }, { "jpg", RGBA(206, 128, 62, 255) }, { "bmp", RGBA(206, 128, 62, 255) },
         { "txt", RGBA(96, 126, 150, 255) }, { "ini", RGBA(96, 126, 150, 255) }, { "cfg", RGBA(96, 126, 150, 255) },
     };
@@ -988,21 +1709,13 @@ static void draw_icon(float x, float y, const FileEntry *e, float a)
     }
 }
 
-static void draw_check(float cx, float cy, float a)
-{
-    gfx_circle(cx, cy, 6, fade(theme_toggle_on(theme_cur()), a));
-    float xy[6] = { cx - 3, cy, cx - 1, cy + 2.2f, cx + 3, cy - 2.4f };
-    u32 col[3] = { fade(LIGHT, a), fade(LIGHT, a), fade(LIGHT, a) };
-    gfx_stroke(xy, col, 3, 1.5f);
-}
-
 /* Knapptips nere till höger, som i inställningarna */
 static void draw_hints(float a)
 {
     struct { int btn; StrId text; } h[4];
     int n = 0;
-    h[n++] = (typeof(h[0])){ controls_glyph(PSP_CTRL_CROSS), S_F_OPEN };
-    if (s_path[0]) {
+    h[n++] = (typeof(h[0])){ controls_glyph(PSP_CTRL_CROSS), s_pick && s_count && s_items[s_sel].kind == KIND_FILE ? S_PM_SELECT : S_F_OPEN };
+    if (s_path[0] && !s_pick) {
         h[n++] = (typeof(h[0])){ controls_glyph(PSP_CTRL_SQUARE), S_F_MARK };
         h[n++] = (typeof(h[0])){ controls_glyph(PSP_CTRL_START), S_OPTIONS };
     }
@@ -1011,10 +1724,9 @@ static void draw_hints(float a)
     for (int i = 0; i < n; i++)
         w += gfx_button_width(h[i].btn) + 5 + ceilf(text_width(0.56f, 0, L(h[i].text))) + 14; /* (whole pixels) */
     float x = SCREEN_W - 22 - w, y = 252;
-    gfx_round_rect(x - 9, y - 10, w + 18, 20, 10, RGBA(0, 0, 0, (int)(110 * a)));
     for (int i = 0; i < n; i++) {
         float bw = gfx_button_width(h[i].btn);
-        gfx_button(x + bw / 2, y, 6.5f, h[i].btn, fade(LIGHT, a), fade(DARK, a));
+        gfx_button(x + bw / 2, y, 6.5f, h[i].btn, look_fade(LOOK_HINT_PLATE, a), look_fade(LOOK_HINT_MARK, a));
         x += bw + 5;
         text_draw(x, y + 4.5f, 0.56f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(h[i].text));
         x += ceilf(text_width(0.56f, 0, L(h[i].text))) + 14;
@@ -1023,7 +1735,7 @@ static void draw_hints(float a)
 
 static void draw_header(float a, float slide)
 {
-    text_draw(LIST_X + 4 + slide, 34, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_FILES));
+    text_draw(LIST_X + 4 + slide, 34, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(s_pick ? S_PM_CHOOSE : S_FILES));
     if (s_total) { /* ledigt utrymme och en tunn stapel, som PS5:s lagringsvy */
         char num[24], line[64];
         fmt_size(num, sizeof(num), s_free);
@@ -1031,8 +1743,7 @@ static void draw_header(float a, float slide)
         float right = LIST_X + LIST_W;
         text_draw(right, 28, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_RIGHT, line);
         float bw = 120, used = 1 - (float)s_free / (float)s_total;
-        gfx_round_rect(right - bw, 34, bw, 4, 2, fade(RGBA(255, 255, 255, 40), a));
-        gfx_round_rect(right - bw, 34, bw * clampf(used, 0.02f, 1), 4, 2, fade(theme_cur()->accent, a));
+        look_bar(right - bw, 34, bw, 4, bw * clampf(used, 0.02f, 1), a); /* (a straight end) */
     }
     if (s_path[0]) { /* sökvägen, kortad från vänster */
         const char *p = s_path;
@@ -1059,9 +1770,7 @@ static void draw_list(float a, float slide)
         float y = LIST_TOP + (i - s_scroll) * ROW_H;
         if (y > bottom)
             break;
-        int sel = i == s_sel && !s_menu;
-        if (e->marked)
-            gfx_rect(LIST_X, y, LIST_W, ROW_H, fade(COLOR_ALPHA(theme_cur()->accent, 46), a));
+        int sel = i == s_sel && !s_menu && !s_cf;
         if (sel) {
             gfx_rect(LIST_X, y, LIST_W, ROW_H, RGBA(255, 255, 255, (int)(16 * a)));
             gfx_frame(LIST_X, y, LIST_W, ROW_H, 1, fade(RGBA(232, 232, 236, 230), a));
@@ -1070,14 +1779,14 @@ static void draw_list(float a, float slide)
         }
         float x = LIST_X + 8 + slide;
         if (any) {
-            if (e->marked)
-                draw_check(x + 6, y + ROW_H / 2, a);
-            else
-                gfx_ring(x, y + ROW_H / 2 - 6, 12, 12, 6, fade(RGBA(255, 255, 255, 90), a));
-            x += 18;
+            look_tick(x + LOOK_TICK_SIZE / 2, y + ROW_H / 2, e->marked, a);
+            x += LOOK_TICK_SIZE + 6;
         }
         draw_icon(x, y + 2, e, a);
-        text_draw(x + 26, y + 16.5f, 0.58f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, e->shown);
+        if (sel && text_width(0.58f, 0, e->name) > LIST_W - 130) /* the highlighted name is not cut off with dots: it scrolls after a moment */
+            text_draw_marquee(x + 26, y + 16.5f, 0.58f, 0, fade(TEXT_MAIN, a), LIST_W - 130, e->name, s_name_t);
+        else
+            text_draw(x + 26, y + 16.5f, 0.58f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, e->shown);
         if (e->size[0])
             text_draw(LIST_X + LIST_W - 10, y + 16, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_RIGHT, e->size);
     }
@@ -1134,7 +1843,47 @@ static void draw_progress(void)
         return;
     StrId title = W.op == OP_COPY ? S_F_COPYING : W.op == OP_MOVE ? S_F_MOVING : S_F_DELETING;
     float f = W.total ? clampf((float)W.done / (float)W.total, 0, 1) : 0;
-    popup_progress(L(title), W.current, f, theme_cur()->accent, controls_glyph(PSP_CTRL_CIRCLE), L(S_F_CANCEL));
+    popup_progress(L(title), W.current, f, controls_glyph(PSP_CTRL_CIRCLE), L(S_F_CANCEL));
+}
+
+/* The question about a name that is taken, in the middle of the screen in the panel of the other questions: the name, what is there, the choices (Replace in red,
+ * Skip chosen at first), and - when more names may be taken - "for all" with the △ button that turns it on and off */
+static void draw_conflict(void)
+{
+    float a = smooth(s_cf_anim);
+    if (a <= 0)
+        return;
+    popup_dim(a);
+    float w = POPUP_ASK_W, top = 36 + s_cf_nl * 13, hint = s_cf_show_all ? 30 : 0;
+    float h = top + s_cf_n * POPUP_ITEM + hint + POPUP_EDGE;
+    float x = (SCREEN_W - w) / 2, y = floorf((SCREEN_H - h) / 2) + (1 - a) * 10;
+    popup_panel(x, y, w, h, POPUP_DARK, a);
+    text_draw(x + 12, y + 22, 0.58f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, s_cf_name);
+    for (int l = 0; l < s_cf_nl; l++)
+        text_draw(x + 12, y + 38 + l * 13, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_LEFT, s_cf_lines[l]);
+    for (int k = 0; k < s_cf_n; k++) {
+        float ry = y + top + k * POPUP_ITEM;
+        u32 col = s_cf_act[k] == CF_REPLACE ? POPUP_DANGER : POPUP_TEXT;
+        if (k == s_cf_sel)
+            popup_choice(x + POPUP_EDGE, ry, w - 2 * POPUP_EDGE, POPUP_ITEM, a);
+        else
+            col = fade(col, 0.8f);
+        const char *label = L(cf_label_id(s_cf_act[k]));
+        text_draw(x + 16, ry + 18, text_fit(0.62f, 0.45f, 0, w - 32, label), 0, fade(col, a), ALIGN_LEFT, label);
+    }
+    if (s_cf_show_all) {
+        float cy = y + top + s_cf_n * POPUP_ITEM + 15;
+        int g = controls_glyph(PSP_CTRL_TRIANGLE);
+        float bx = x + 16;
+        if (g >= 0) {
+            float bw = ceilf(gfx_button_width(g));
+            gfx_button(bx + bw / 2, cy, 6.5f, g, look_fade(LOOK_HINT_PLATE, a), look_fade(LOOK_HINT_MARK, a));
+            bx += bw + 8;
+        }
+        look_tick(bx + LOOK_TICK_SIZE / 2, cy, s_cf_all, a);
+        float tx = bx + LOOK_TICK_SIZE + 6;
+        text_draw(tx, cy + 4.5f, text_fit(0.54f, 0.42f, 0, x + w - 12 - tx, L(S_F_CF_ALL)), 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_F_CF_ALL));
+    }
 }
 
 static void draw_scene(void)
@@ -1150,13 +1899,17 @@ static void draw_scene(void)
         gfx_rect(LIST_X + 3, 241, 6, 4, fade(RGBA(150, 152, 160, 255), a));
         text_draw(LIST_X + 18, 255, 0.54f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, line);
     }
-    draw_hints(a * (1 - smooth(s_menu_anim)));
+    draw_hints(a * (1 - smooth(s_menu_anim)) * (1 - smooth(s_cf_anim)));
     draw_menu();
-    draw_progress();
+    if (s_cf_anim > 0.01f) /* (the question is over the progress panel: it hides it) */
+        draw_conflict();
+    else
+        draw_progress();
     if (s_toast_time > 0) {
         float ta = clampf(s_toast_time / 0.4f, 0, 1);
         popup_toast(s_toast, ta);
     }
+    power_draw(); /* the power popup of SELECT (main.c asks power.c) */
     osd_draw();
     if (a < 1)
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - a))));
@@ -1164,14 +1917,57 @@ static void draw_scene(void)
 
 void files_draw(void)
 {
+    if (s_iv || s_vp) { /* a picture or a video: nothing else on the screen but the popup of SELECT and the volume bar */
+        gfx_begin(RGBA(0, 0, 0, 255));
+        if (s_iv)
+            imageview_draw(s_iv);
+        else
+            videoplay_draw(s_vp);
+        power_draw();
+        osd_draw();
+        gfx_end();
+        return;
+    }
+    if (s_te) {
+        gfx_begin(RGBA(20, 20, 24, 255));
+        textedit_draw(s_te);
+        power_draw();
+        osd_draw();
+        gfx_end();
+        return;
+    }
     gfx_begin(RGBA(20, 20, 24, 255));
     draw_scene();
     gfx_end();
 }
 
+void files_sleep(int asleep)
+{
+    if (asleep == s_asleep)
+        return;
+    s_asleep = asleep;
+    if (s_vp)
+        videoplay_sleep(s_vp, asleep);
+}
+
+void files_woke(void)
+{
+    if (s_vp)
+        videoplay_woke(s_vp);
+}
+
 void files_close(void)
 {
+    close_viewer();
+    videoplay_flush(); /* (a video that was left while it was opening is closed by a thread: done before the File Manager ends) */
+    if (s_te) {
+        textedit_close(s_te);
+        s_te = NULL;
+    }
+    s_asleep = 0;
     stop_op();
+    s_cf = 0;
+    s_cf_anim = 0;
     clear_clip();
     free(s_items);
     s_items = NULL;

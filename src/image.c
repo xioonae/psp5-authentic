@@ -12,7 +12,11 @@
 #define NTX_MAGIC 0x3158544E /* "NTX1" */
 #define MAX_PNG_PIXELS (512 * 512)
 #define MAX_COVER_PIXELS (1024 * 1024) /* omslag är ofta större än ikoner */
-#define MAX_PROGRESSIVE_PIXELS (1600 * 1600) /* progressiv JPEG avkodas i sin helhet */
+/* A progressive JPEG is decoded whole: libjpeg keeps every coefficient of the picture (2 bytes each, 64 to a block, in every component) before it makes the first
+ * pixel, which no row-by-row reading can avoid. That is read from the header (the blocks of each component) and what needs more than this is not decoded: the cover is
+ * not shown, and the heap (about 13 MB on a PSP-1000) is not run dry for the icons, the lists and the music. About 1300 x 1300 pixels at the most with the colours at
+ * half size (the usual), 930 x 930 with all of them. A JPEG that is not progressive is read a row at a time and needs only the picture it makes. */
+#define MAX_PROGRESSIVE_BYTES (5 << 20)
 
 typedef struct {
     u32 magic;
@@ -66,6 +70,15 @@ static void jpeg_fail(j_common_ptr cinfo)
 
 static void jpeg_quiet(j_common_ptr cinfo, int level) {}
 
+/* the memory the coefficients of a progressive JPEG take (valid once the header is read) */
+static unsigned long long progressive_bytes(const struct jpeg_decompress_struct *c)
+{
+    unsigned long long blocks = 0;
+    for (int i = 0; i < c->num_components; i++)
+        blocks += (unsigned long long)c->comp_info[i].width_in_blocks * c->comp_info[i].height_in_blocks;
+    return blocks * 64 * 2;
+}
+
 static int decode_jpeg(const void *data, u32 size, Image *out, int min_side)
 {
     struct jpeg_decompress_struct cinfo;
@@ -84,7 +97,7 @@ static int decode_jpeg(const void *data, u32 size, Image *out, int min_side)
     jpeg_create_decompress(&cinfo);
     jpeg_mem_src(&cinfo, (const unsigned char *)data, size);
     if (jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK ||
-        (cinfo.progressive_mode && cinfo.image_width * cinfo.image_height > MAX_PROGRESSIVE_PIXELS)) {
+        (cinfo.progressive_mode && progressive_bytes(&cinfo) > MAX_PROGRESSIVE_BYTES)) {
         jpeg_destroy_decompress(&cinfo);
         return 0;
     }
@@ -148,6 +161,522 @@ int img_crop_square(Image *img)
     return 1;
 }
 
+/* ---------------------------------------------------------------------- */
+/* pictures for the image viewer */
+
+#define MAX_VIEW_PNG_PIXELS 2200000
+
+void img_fit_down(int w, int h, int mw, int mh, int *ow, int *oh)
+{
+    if (w <= mw && h <= mh) {
+        *ow = w;
+        *oh = h;
+        return;
+    }
+    if ((long long)w * mh >= (long long)h * mw) { /* wider than the box: the width is what limits */
+        *ow = mw;
+        *oh = (int)(((long long)h * mw + w / 2) / w);
+    } else {
+        *oh = mh;
+        *ow = (int)(((long long)w * mh + h / 2) / h);
+    }
+    if (*ow < 1)
+        *ow = 1;
+    if (*oh < 1)
+        *oh = 1;
+}
+
+/* the way a camera says the picture is turned (EXIF, tag 0x0112): 1 = as it is ... 8, 1 when it says nothing; d points at the data of an APP1 marker */
+static int exif_orientation(const unsigned char *d, unsigned len)
+{
+    if (len < 14 || memcmp(d, "Exif\0\0", 6))
+        return 1;
+    const unsigned char *t = d + 6;
+    unsigned tl = len - 6;
+    int le = t[0] == 'I' && t[1] == 'I';
+    if (!le && !(t[0] == 'M' && t[1] == 'M'))
+        return 1;
+#define U16(p) (le ? (unsigned)((p)[0] | ((p)[1] << 8)) : (unsigned)(((p)[0] << 8) | (p)[1]))
+#define U32(p) (le ? (unsigned)((p)[0] | ((p)[1] << 8) | ((p)[2] << 16) | ((unsigned)(p)[3] << 24)) : (unsigned)(((unsigned)(p)[0] << 24) | ((p)[1] << 16) | ((p)[2] << 8) | (p)[3]))
+    unsigned off = U32(t + 4);
+    if (off > tl || off + 2 > tl)
+        return 1;
+    unsigned n = U16(t + off);
+    for (unsigned i = 0; i < n; i++) {
+        unsigned at = off + 2 + 12 * i;
+        if (at + 12 > tl)
+            break;
+        if (U16(t + at) == 0x0112) {
+            unsigned v = U16(t + at + 8);
+            return v >= 1 && v <= 8 ? (int)v : 1;
+        }
+    }
+#undef U16
+#undef U32
+    return 1;
+}
+
+/* turns the picture as EXIF orientation o says (2 mirror, 3 half turn, 4 flip, 5 mirror on the diagonal, 6 a quarter turn clockwise, 7 mirror on the other diagonal, 8 a quarter turn the other way) */
+static int orient_image(Image *img, int o)
+{
+    if (o <= 1 || o > 8)
+        return 1;
+    int w = img->w, h = img->h, ow = o >= 5 ? h : w, oh = o >= 5 ? w : h;
+    u32 *px = malloc((size_t)ow * oh * 4);
+    if (!px)
+        return 0;
+    for (int y = 0; y < oh; y++)
+        for (int x = 0; x < ow; x++) {
+            int sx, sy;
+            switch (o) {
+            case 2: sx = w - 1 - x; sy = y; break;
+            case 3: sx = w - 1 - x; sy = h - 1 - y; break;
+            case 4: sx = x; sy = h - 1 - y; break;
+            case 5: sx = y; sy = x; break;
+            case 6: sx = y; sy = h - 1 - x; break;
+            case 7: sx = w - 1 - y; sy = h - 1 - x; break;
+            default: sx = w - 1 - y; sy = x; break;
+            }
+            px[y * ow + x] = img->px[sy * w + sx];
+        }
+    free(img->px);
+    img->px = px;
+    img->w = ow;
+    img->h = oh;
+    return 1;
+}
+
+/* the picture made smaller to the size it is shown at (the area average of img_resize), when it is bigger than that */
+static int shrink_to_fit(Image *img, int mw, int mh)
+{
+    int fw, fh;
+    img_fit_down(img->w, img->h, mw, mh, &fw, &fh);
+    if (fw == img->w && fh == img->h)
+        return 1;
+    Image small;
+    if (!img_resize(img, fw, fh, &small))
+        return 0;
+    img_free(img);
+    *img = small;
+    return 1;
+}
+
+
+static int load_jpeg_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(void *), void *arg)
+{
+    struct jpeg_decompress_struct cinfo;
+    JpegError err;
+    u8 *volatile row = NULL;
+    out->px = NULL;
+    cinfo.err = jpeg_std_error(&err.pub);
+    err.pub.error_exit = jpeg_fail;
+    err.pub.emit_message = jpeg_quiet;
+    if (setjmp(err.jump)) {
+        jpeg_destroy_decompress(&cinfo);
+        free((void *)row);
+        img_free(out);
+        return 0;
+    }
+    jpeg_create_decompress(&cinfo);
+    jpeg_stdio_src(&cinfo, fp);
+    jpeg_save_markers(&cinfo, JPEG_APP0 + 1, 0xFFFF); /* the camera's EXIF: which way up the picture is */
+    if (jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK || (cinfo.progressive_mode && progressive_bytes(&cinfo) > MAX_PROGRESSIVE_BYTES)) {
+        jpeg_destroy_decompress(&cinfo);
+        return 0;
+    }
+    int orient = 1;
+    for (jpeg_saved_marker_ptr mk = cinfo.marker_list; mk; mk = mk->next)
+        if (mk->marker == JPEG_APP0 + 1) {
+            orient = exif_orientation(mk->data, mk->data_length);
+            break;
+        }
+    /* the size it is made at, before it is turned: the box the other way round when the camera was held sideways */
+    int bw = orient >= 5 ? mh : mw, bh = orient >= 5 ? mw : mh, fw, fh;
+    img_fit_down((int)cinfo.image_width, (int)cinfo.image_height, bw, bh, &fw, &fh);
+    cinfo.scale_num = 1;
+    cinfo.scale_denom = 1;
+    while (cinfo.scale_denom < 8 && (int)(cinfo.image_width / (cinfo.scale_denom * 2)) >= fw && (int)(cinfo.image_height / (cinfo.scale_denom * 2)) >= fh)
+        cinfo.scale_denom *= 2;
+    cinfo.out_color_space = JCS_RGB;
+    cinfo.dct_method = JDCT_IFAST; /* the fast one: the picture is made smaller to the screen's size, where the small difference is not seen, and a PSP is slow */
+    cinfo.do_fancy_upsampling = FALSE;
+    cinfo.do_block_smoothing = FALSE;
+    jpeg_start_decompress(&cinfo);
+    int w = cinfo.output_width, h = cinfo.output_height;
+    if ((u64)w * h > 4000000ull || cinfo.output_components != 3)
+        longjmp(err.jump, 1);
+    out->w = w;
+    out->h = h;
+    out->px = malloc((size_t)w * h * 4);
+    row = malloc(w * 3);
+    if (!out->px || !row)
+        longjmp(err.jump, 1);
+    while (cinfo.output_scanline < cinfo.output_height) {
+        int y = cinfo.output_scanline;
+        if (cancel && (y & 15) == 0 && cancel(arg))
+            longjmp(err.jump, 1);
+        JSAMPROW rows[1] = { row };
+        jpeg_read_scanlines(&cinfo, rows, 1);
+        for (int x = 0; x < w; x++)
+            out->px[y * w + x] = RGBA(row[x * 3], row[x * 3 + 1], row[x * 3 + 2], 255);
+    }
+    jpeg_finish_decompress(&cinfo);
+    jpeg_destroy_decompress(&cinfo);
+    free((void *)row);
+    if (!shrink_to_fit(out, bw, bh) || !orient_image(out, orient)) {
+        img_free(out);
+        return 0;
+    }
+    return 1;
+}
+
+static u32 box_mean(u32 rb, u32 ga, int n);
+
+/* a PNG at its full size by the simple interface of libpng, all in one call (cannot be stopped): for the PNGs that are not read a row at a time (interlaced ones) */
+static int load_png_simple(FILE *fp, int mw, int mh, Image *out)
+{
+    png_image png;
+    memset(&png, 0, sizeof(png));
+    png.version = PNG_IMAGE_VERSION;
+    if (!png_image_begin_read_from_stdio(&png, fp))
+        return 0;
+    if ((u64)png.width * png.height > MAX_VIEW_PNG_PIXELS) {
+        png_image_free(&png);
+        return 0;
+    }
+    png.format = PNG_FORMAT_RGBA;
+    out->w = png.width;
+    out->h = png.height;
+    out->px = malloc((size_t)png.width * png.height * 4);
+    if (!out->px) {
+        png_image_free(&png);
+        return 0;
+    }
+    if (!png_image_finish_read(&png, NULL, out->px, 0, NULL) || !shrink_to_fit(out, mw, mh)) {
+        img_free(out);
+        return 0;
+    }
+    return 1;
+}
+
+static void png_fail(png_structp png, png_const_charp msg)
+{
+    longjmp(png_jmpbuf(png), 1);
+}
+
+static void png_quiet(png_structp png, png_const_charp msg) {}
+
+/* A PNG for the viewer: read a row at a time, so that `cancel` (when it is not NULL) is asked now and then and a viewer that is closed, or has been asked for another picture, does not wait for a
+ * whole picture to be decoded (the simple interface of libpng cannot be stopped: 0.5 s for a PNG of a million pixels on a PSP-1000, with the screen's thread waiting at the close), and the picture
+ * is made smaller as it is read: no full-size copy of 4 bytes a pixel (3 MB for a PNG of 783 000 pixels) is made and gone through again. The pixels are the very ones the simple interface and
+ * img_resize() give (a test compares them: every colour type and depth, tRNS, gAMA). Interlaced PNGs and shrinks with a box of over 256 pixels take the other ways. */
+static int load_png_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(void *), void *arg)
+{
+    out->px = NULL;
+    out->w = out->h = 0;
+    png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, png_fail, png_quiet);
+    png_infop info = png ? png_create_info_struct(png) : NULL;
+    if (!png || !info) {
+        png_destroy_read_struct(&png, &info, NULL);
+        return 0;
+    }
+    u8 *volatile row = NULL;
+    u32 *volatile acc = NULL;
+    int *volatile xb = NULL;
+    int *volatile yb = NULL;
+    if (setjmp(png_jmpbuf(png))) {
+        png_destroy_read_struct(&png, &info, NULL);
+        free((void *)row);
+        free((void *)acc);
+        free((void *)xb);
+        free((void *)yb);
+        img_free(out);
+        return 0;
+    }
+    png_init_io(png, fp);
+    png_read_info(png, info);
+    png_uint_32 w = 0, h = 0;
+    int depth = 0, ctype = 0, inter = 0;
+    png_get_IHDR(png, info, &w, &h, &depth, &ctype, &inter, NULL, NULL);
+    if (w == 0 || h == 0 || (u64)w * h > MAX_VIEW_PNG_PIXELS) {
+        png_destroy_read_struct(&png, &info, NULL);
+        return 0;
+    }
+    if (inter != PNG_INTERLACE_NONE) { /* (the rows of an interlaced PNG come in seven passes: all of it is read) */
+        png_destroy_read_struct(&png, &info, NULL);
+        if (fseek(fp, 0, SEEK_SET))
+            return 0;
+        return load_png_simple(fp, mw, mh, out);
+    }
+    /* the same pixels as PNG_FORMAT_RGBA of the simple interface: sRGB, 8 bits, a colour channel each and an alpha (255 when the file has none) */
+    png_set_alpha_mode(png, PNG_ALPHA_PNG, PNG_DEFAULT_sRGB);
+    if (depth == 16 && !png_get_valid(png, info, PNG_INFO_gAMA))
+        png_set_gamma_fixed(png, PNG_DEFAULT_sRGB, PNG_GAMMA_LINEAR); /* (the simple interface takes a 16-bit file that says nothing of its gamma for linear light: the same numbers) */
+    png_set_expand(png);
+    png_set_scale_16(png);
+    png_set_gray_to_rgb(png);
+    png_set_add_alpha(png, 0xFF, PNG_FILLER_AFTER);
+    png_read_update_info(png, info);
+    if (png_get_rowbytes(png, info) != (size_t)w * 4)
+        png_error(png, "not RGBA");
+
+    int fw, fh;
+    img_fit_down((int)w, (int)h, mw, mh, &fw, &fh);
+    float sx = (float)w / fw, sy = (float)h / fh;
+    int stream = (fw != (int)w || fh != (int)h) && ((int)sx + 2) * ((int)sy + 2) <= 256; /* the picture is made smaller as it is read */
+    if (stream) {
+        xb = malloc((size_t)(fw + 1) * sizeof(int));
+        yb = malloc((size_t)(fh + 1) * sizeof(int));
+        acc = calloc((size_t)fw * 2, sizeof(u32)); /* red and blue, green and alpha: the sums of the output row that is being made */
+        if (!xb || !yb || !acc)
+            png_error(png, "no memory");
+        for (int x = 0; x <= fw; x++) /* (the same numbers as resize_down_fast and the first version of img_resize, kept inside the picture) */
+            xb[x] = (int)(x * sx) < (int)w ? (int)(x * sx) : (int)w;
+        for (int y = 0; y <= fh; y++)
+            yb[y] = (int)(y * sy) < (int)h ? (int)(y * sy) : (int)h;
+        for (int x = 0; x < fw; x++) /* (the boxes follow each other with a pixel at least: when float rounding would make one empty, the first version moved its end by a pixel and the boxes overlapped: that is read the other way) */
+            if (xb[x + 1] <= xb[x])
+                stream = 0;
+        for (int y = 0; y < fh; y++)
+            if (yb[y + 1] <= yb[y])
+                stream = 0;
+        if (!stream) {
+            free((void *)xb);
+            free((void *)yb);
+            free((void *)acc);
+            xb = NULL;
+            yb = NULL;
+            acc = NULL;
+        }
+    }
+    out->w = stream ? fw : (int)w;
+    out->h = stream ? fh : (int)h;
+    out->px = malloc((size_t)out->w * out->h * 4);
+    row = malloc((size_t)w * 4);
+    if (!out->px || !row)
+        png_error(png, "no memory");
+    u8 *const rowp = row; /* (the volatile pointers above are for the longjmp: in the loop they would be read again at every use) */
+    u32 *const accp = acc;
+    const int *const xbp = xb, *const ybp = yb;
+    int dy = 0;
+    for (int y = 0; y < (int)h; y++) {
+        if (cancel && (y & 15) == 0 && cancel(arg))
+            png_error(png, "stopped");
+        png_read_row(png, rowp, NULL);
+        if (!stream) {
+            memcpy(out->px + (size_t)y * w, rowp, (size_t)w * 4);
+            continue;
+        }
+        /* the row is added to the sums of the output row: one pass over its pixels, a column's sums in registers while its box goes by */
+        const u32 *p = (const u32 *)rowp;
+        u32 *rb = accp, *ga = accp + fw;
+        int x = 0, next = xbp[1], end = xbp[fw];
+        u32 a = rb[0], b = ga[0];
+        for (int xx = xbp[0]; xx < end; xx++) {
+            if (xx == next) {
+                rb[x] = a;
+                ga[x] = b;
+                x++;
+                a = rb[x];
+                b = ga[x];
+                next = xbp[x + 1];
+            }
+            u32 c = p[xx];
+            a += c & 0x00FF00FFu;
+            b += (c >> 8) & 0x00FF00FFu;
+        }
+        rb[x] = a;
+        ga[x] = b;
+        if (y == ybp[dy + 1] - 1) { /* the last row of this output row: its mean */
+            int n_rows = ybp[dy + 1] - ybp[dy];
+            for (int k = 0; k < fw; k++) {
+                out->px[(size_t)dy * fw + k] = box_mean(rb[k], ga[k], (xbp[k + 1] - xbp[k]) * n_rows);
+                rb[k] = ga[k] = 0;
+            }
+            if (++dy >= fh)
+                break; /* (the rows after the last box are not used, as before: they are not read) */
+        }
+    }
+    png_destroy_read_struct(&png, &info, NULL);
+    free((void *)row);
+    free((void *)acc);
+    free((void *)xb);
+    free((void *)yb);
+    if (!stream && !shrink_to_fit(out, mw, mh)) {
+        img_free(out);
+        return 0;
+    }
+    return 1;
+}
+
+static unsigned le16(const unsigned char *p) { return p[0] | (p[1] << 8); }
+static unsigned le32(const unsigned char *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((unsigned)p[3] << 24); }
+
+/* A BMP is read a row at a time, and every block of step x step pixels becomes one pixel of the result, so a big one never needs more memory than the picture it makes */
+static int load_bmp_fit(FILE *fp, int mw, int mh, Image *out, int (*cancel)(void *), void *arg)
+{
+    unsigned char hd[14 + 124];
+    if (fread(hd, 1, 14 + 12, fp) != 14 + 12 || hd[0] != 'B' || hd[1] != 'M')
+        return 0;
+    unsigned data_off = le32(hd + 10), dib = le32(hd + 14);
+    if (dib < 12 || dib > 124 || fread(hd + 26, 1, dib - 12, fp) != dib - 12)
+        return 0;
+    int w, h, bpp, top_down = 0;
+    unsigned comp = 0, colors = 0;
+    if (dib == 12) { /* the old header: 16-bit sizes, 3-byte palette entries */
+        w = (int)le16(hd + 18);
+        h = (int)le16(hd + 20);
+        bpp = (int)le16(hd + 24);
+    } else {
+        w = (int)le32(hd + 18);
+        h = (int)le32(hd + 22);
+        bpp = (int)le16(hd + 28);
+        comp = le32(hd + 30);
+        colors = le32(hd + 46);
+    }
+    if (h < 0) {
+        h = -h;
+        top_down = 1;
+    }
+    if (w <= 0 || h <= 0 || w > 16384 || h > 16384 || (comp != 0 && !(comp == 3 && (bpp == 32 || bpp == 16))))
+        return 0;
+    if (bpp != 1 && bpp != 4 && bpp != 8 && bpp != 16 && bpp != 24 && bpp != 32)
+        return 0;
+    unsigned char pal[256][3] = { { 0 } }; /* r, g, b */
+    if (bpp <= 8) {
+        unsigned n = colors ? colors : 1u << bpp, esz = dib == 12 ? 3 : 4;
+        if (n > 256)
+            n = 256;
+        if (fseek(fp, (long)(14 + dib), SEEK_SET))
+            return 0;
+        for (unsigned i = 0; i < n; i++) {
+            unsigned char e[4];
+            if (fread(e, 1, esz, fp) != esz)
+                return 0;
+            pal[i][0] = e[2];
+            pal[i][1] = e[1];
+            pal[i][2] = e[0];
+        }
+    }
+    unsigned stride = (((unsigned)w * bpp + 31) / 32) * 4;
+    int step = 1;
+    while ((w + step - 1) / step > mw || (h + step - 1) / step > mh)
+        step++;
+    int ow = (w + step - 1) / step, oh = (h + step - 1) / step;
+    unsigned char *line = malloc(stride);
+    u32 *sum = calloc((size_t)ow * 3, sizeof(u32));
+    out->w = ow;
+    out->h = oh;
+    out->px = malloc((size_t)ow * oh * 4);
+    if (!line || !sum || !out->px) {
+        free(line);
+        free(sum);
+        img_free(out);
+        return 0;
+    }
+    int ok = 1;
+    for (int oy = 0; oy < oh && ok; oy++) {
+        if (cancel && (oy & 7) == 0 && cancel(arg)) {
+            ok = 0;
+            break;
+        }
+        memset(sum, 0, (size_t)ow * 3 * sizeof(u32));
+        int rows = 0;
+        for (int k = 0; k < step && oy * step + k < h && ok; k++) {
+            int sy = oy * step + k, frow = top_down ? sy : h - 1 - sy;
+            if (fseek(fp, (long)(data_off + (unsigned)frow * stride), SEEK_SET) || fread(line, 1, stride, fp) != stride) {
+                ok = 0;
+                break;
+            }
+            for (int x = 0; x < w; x++) {
+                unsigned r, g, b;
+                if (bpp == 24) {
+                    b = line[x * 3]; g = line[x * 3 + 1]; r = line[x * 3 + 2];
+                } else if (bpp == 32) {
+                    b = line[x * 4]; g = line[x * 4 + 1]; r = line[x * 4 + 2];
+                } else if (bpp == 16) {
+                    unsigned v = le16(line + x * 2);
+                    r = ((v >> 10) & 31) * 255 / 31; g = ((v >> 5) & 31) * 255 / 31; b = (v & 31) * 255 / 31;
+                } else {
+                    unsigned idx = bpp == 8 ? line[x] : bpp == 4 ? (line[x / 2] >> (x & 1 ? 0 : 4)) & 15 : (line[x / 8] >> (7 - (x & 7))) & 1;
+                    r = pal[idx][0]; g = pal[idx][1]; b = pal[idx][2];
+                }
+                u32 *s = sum + (x / step) * 3;
+                s[0] += r; s[1] += g; s[2] += b;
+            }
+            rows++;
+        }
+        for (int ox = 0; ox < ow && ok; ox++) {
+            int cols = step;
+            if ((ox + 1) * step > w)
+                cols = w - ox * step;
+            unsigned n = (unsigned)(rows * cols);
+            if (!n)
+                n = 1;
+            out->px[oy * ow + ox] = RGBA((sum[ox * 3] + n / 2) / n, (sum[ox * 3 + 1] + n / 2) / n, (sum[ox * 3 + 2] + n / 2) / n, 255);
+        }
+    }
+    free(line);
+    free(sum);
+    if (!ok) {
+        img_free(out);
+        return 0;
+    }
+    return 1;
+}
+
+/* what went wrong with the last picture (a static text, for the log of the picture viewer: it asks right after a load that returned 0, in the thread that made the load) */
+static char s_why[120];
+const char *img_last_error(void) { return s_why[0] ? s_why : "no reason noted"; }
+
+int img_load_fit_cancel(const char *path, int max_w, int max_h, Image *out, int (*cancel)(void *), void *arg)
+{
+    out->px = NULL;
+    out->w = out->h = 0;
+    s_why[0] = 0;
+    /* what kind of file it is: read from a first opening of it, so that the second can have the buffer that suits the decoder before anything is read from it */
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        snprintf(s_why, sizeof(s_why), "the file could not be opened");
+        return 0;
+    }
+    unsigned char b[8];
+    size_t got = fread(b, 1, sizeof(b), fp);
+    fclose(fp);
+    int jpeg = got >= 4 && b[0] == 0xFF && b[1] == 0xD8;
+    int png = got >= 8 && b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G';
+    int bmp = got >= 2 && b[0] == 'B' && b[1] == 'M';
+    if (!jpeg && !png && !bmp) {
+        snprintf(s_why, sizeof(s_why), "it is not a JPEG, PNG or BMP picture (it starts with %02x %02x)", got > 0 ? b[0] : 0, got > 1 ? b[1] : 0);
+        return 0;
+    }
+    fp = fopen(path, "rb");
+    if (!fp) {
+        snprintf(s_why, sizeof(s_why), "the file could not be opened a second time");
+        return 0;
+    }
+    /* The Memory Stick is slow to be asked for a few kilobytes at a time, and a JPEG and a PNG are read in pieces of 4 KB or less: a buffer of 64 KB makes one request of sixteen. (Not for a BMP: it is
+     * read a row at a time, the bottom row first, and each of those jumps would read the whole buffer again.) */
+    if (!bmp)
+        setvbuf(fp, NULL, _IOFBF, 65536);
+    int ok = 0;
+    if (jpeg)
+        ok = load_jpeg_fit(fp, max_w, max_h, out, cancel, arg);
+    else if (png)
+        ok = load_png_fit(fp, max_w, max_h, out, cancel, arg);
+    else
+        ok = load_bmp_fit(fp, max_w, max_h, out, cancel, arg);
+    fclose(fp);
+    if (!ok)
+        snprintf(s_why, sizeof(s_why), "the %s could not be decoded (damaged, a kind that is not supported, or not enough memory)", jpeg ? "JPEG" : png ? "PNG" : "BMP");
+    return ok;
+}
+
+int img_load_fit(const char *path, int max_w, int max_h, Image *out)
+{
+    return img_load_fit_cancel(path, max_w, max_h, out, NULL, NULL);
+}
+
 void img_free(Image *img)
 {
     free(img->px);
@@ -155,6 +684,71 @@ void img_free(Image *img)
 }
 
 #define CH(c, s) (((c) >> (s)) & 0xFF)
+
+/* The mean of a box of pixels from the two sums of resize_down_fast() (red and blue, green and alpha, a 16-bit lane each) and the number of pixels n (1 to 256): the multiplication by the reciprocal
+ * that stands for the division, exact for every sum that can happen. Also the streaming shrink of the PNG reader. */
+static u32 box_mean(u32 rb, u32 ga, int n)
+{
+    static u32 recip[257]; /* about 2^32 / n (filled by the first call: two threads may both do it, with the same numbers) */
+    if (n == 1)
+        return (rb & 0x00FF00FFu) | ((ga & 0x00FF00FFu) << 8);
+    if (!recip[2])
+        for (int k = 2; k <= 256; k++)
+            recip[k] = 0xFFFFFFFFu / k + 1; /* (the same as floor(2^32 / k) + 1 for every k that is not a power of two, and 2^32 / k for those: exact too; no 64-bit division) */
+    u32 m = recip[n];
+    u32 r = (u32)(((u64)(rb & 0xFFFFu) * m) >> 32);
+    r |= (u32)(((u64)(rb >> 16) * m) >> 32) << 16;
+    r |= (u32)(((u64)(ga & 0xFFFFu) * m) >> 32) << 8;
+    r |= (u32)(((u64)(ga >> 16) * m) >> 32) << 24;
+    return r;
+}
+
+/* The shrink: every output pixel is the mean of the box of source pixels it covers. This is the same mean, number for number, as the loop in img_resize() below makes (a test compares them on random
+ * pictures), made faster: the two channels of a pair are added in one 32-bit number (a box of up to 256 pixels, so no 16-bit half overflows), and the division by the number of pixels is a
+ * multiplication by its reciprocal (exact for every sum of at most 255 * 256: checked for all of them). On a PSP-1000 the divisions (four a pixel, 35 cycles each) were most of the time of the
+ * shrink of a picture, which took about as long as decoding it (the PSP-1000 timings, `jpg: fit, turn`). Returns 0 when it cannot (a box over 256 pixels, no memory): the caller then does it the slow way. */
+static int resize_down_fast(const Image *src, int dw, int dh, u32 *dst)
+{
+    float sx = (float)src->w / dw, sy = (float)src->h / dh;
+    if (((int)sx + 2) * ((int)sy + 2) > 256)
+        return 0;
+    int *xb = malloc((size_t)(dw + 1) * sizeof(int)); /* where the box of each column begins (and ends): the same numbers as the first version made for every pixel */
+    if (!xb)
+        return 0;
+    for (int x = 0; x <= dw; x++)
+        xb[x] = (int)(x * sx);
+    for (int y = 0; y < dh; y++) {
+        int y0 = (int)(y * sy), y1 = (int)((y + 1) * sy);
+        if (y1 <= y0)
+            y1 = y0 + 1;
+        if (y1 > src->h)
+            y1 = src->h;
+        for (int x = 0; x < dw; x++) {
+            int x0 = xb[x], x1 = xb[x + 1];
+            if (x1 <= x0)
+                x1 = x0 + 1;
+            if (x1 > src->w)
+                x1 = src->w;
+            int n = (x1 - x0) * (y1 - y0);
+            if (x1 <= x0 || y1 <= y0) { /* (a box that is outside the picture: as the first version, black and clear) */
+                dst[y * dw + x] = 0;
+                continue;
+            }
+            u32 rb = 0, ga = 0; /* red and blue, green and alpha: a 16-bit sum each */
+            for (int yy = y0; yy < y1; yy++) {
+                const u32 *p = src->px + (size_t)yy * src->w;
+                for (int xx = x0; xx < x1; xx++) {
+                    u32 c = p[xx];
+                    rb += c & 0x00FF00FFu;
+                    ga += (c >> 8) & 0x00FF00FFu;
+                }
+            }
+            dst[y * dw + x] = box_mean(rb, ga, n);
+        }
+    }
+    free(xb);
+    return 1;
+}
 
 int img_resize(const Image *src, int dw, int dh, Image *out)
 {
@@ -165,6 +759,8 @@ int img_resize(const Image *src, int dw, int dh, Image *out)
         return 0;
 
     float sx = (float)src->w / dw, sy = (float)src->h / dh;
+    if ((sx > 1.0f || sy > 1.0f) && resize_down_fast(src, dw, dh, out->px))
+        return 1;
     for (int y = 0; y < dh; y++) {
         for (int x = 0; x < dw; x++) {
             u32 acc[4] = { 0 };
@@ -284,7 +880,7 @@ void img_round_corners(Image *img, float radius)
  * of the last row, as everywhere else. */
 void tex_round_corners(Texture *t, float r)
 {
-    if (!t || t->psm != GU_PSM_8888 || r <= 0.0f)
+    if (!t || t->psm != GU_PSM_8888 || r <= 0.0f || t->swizzled) /* (the pixels of a swizzled texture are not in rows) */
         return;
     int half = (t->w < t->h ? t->w : t->h) / 2;
     if (r > half)
@@ -369,6 +965,8 @@ Texture *ntx_load(const char *path)
 
 int ntx_save(const char *path, const Texture *t)
 {
+    if (t->swizzled) /* (the file holds the rows one after the other) */
+        return 0;
     SceUID fd = sceIoOpen(path, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (fd < 0)
         return 0;

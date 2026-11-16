@@ -1,7 +1,7 @@
 /* psp5 – made by Mille Weber */
-/* Inställningar i samma anda som PS5:s: mörk yta med ett strålkastarljus,
- * kategorier till vänster, alternativ till höger med tunna skiljelinjer
- * och en tunn ljus ram runt det valda. All grafik ritas här. */
+/* Settings in the spirit of the PS5's: a dark surface with a spotlight and one list at a time (as in the file manager: thin dividers,
+ * a thin light frame round the chosen row, a thin bar at the right when the list is longer than the screen). The first list has the
+ * categories; a category is a list of settings, and System is a list of pages of its own. ○ goes back one list. All graphics are drawn here. */
 #include <pspkernel.h>
 #include <pspctrl.h>
 #include <math.h>
@@ -9,6 +9,7 @@
 #include <string.h>
 #include <strings.h>
 #include "settings.h"
+#include "logs.h"
 #include "arkcfg.h"
 #include "plugins.h"
 #include "system.h"
@@ -18,24 +19,32 @@
 #include "controls.h"
 #include "theme.h"
 #include "osd.h"
+#include "power.h"
 #include "popup.h"
+#include "look.h"
+#include "gameops.h"
+#include "storage.h"
+#include "datetime.h"
 
 #define TITLE_Y     34.0f
-#define LEFT_X      24.0f  /* the same sides as the lists of the file manager and Manage Saved Data: 24 px from the edges of the screen */
-#define LEFT_W      136.0f
-#define RIGHT_X     172.0f /* 12 px after the left column */
-#define RIGHT_W     284.0f /* to 456 */
+#define LIST_X      24.0f  /* the same sides as the list of the file manager: 24 px from the edges of the screen */
+#define LIST_W      432.0f
 #define ROW_H       26.0f
+#define LIST_ROWS        7      /* rows shown at once; a longer list scrolls (as in the file manager and in Manage Saved Data) */
 #define LIST_TOP    58.0f
-#define LIST_BOTTOM 236.0f
+#define ICON_W      26.0f  /* the room of the icon in front of the label (the categories only) */
 #define MAX_ITEMS   (MAX_PLUGINS + 4)
-#define PSP5_VERSION "1.2.0"
+#define PSP5_VERSION "1.3.0"
+#define APP_NAME     "psp5 authentic"
 
 #define TEXT_MAIN RGBA(238, 238, 242, 255)
 #define TEXT_DIM  RGBA(160, 162, 172, 255)
 #define LIGHT     RGBA(236, 236, 240, 255)
 
-typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO, IT_THEME } ItemType;
+typedef enum { IT_TOGGLE, IT_CHOICE, IT_ACTION, IT_INFO, IT_THEME, IT_PAGE, IT_LANG, IT_STORE, IT_DATETIME } ItemType; /* IT_DATETIME: the date and time psp5 shows now (only shown: ✕ does nothing) */
+
+/* the icons of the first list (drawn here, no image files) */
+enum { ICO_NONE, ICO_APP, ICO_NETWORK, ICO_SYSTEM, ICO_STORAGE, ICO_SCREEN, ICO_CONTROLS };
 
 typedef struct {
     const char *label;
@@ -43,7 +52,9 @@ typedef struct {
     unsigned char *value;        /* TOGGLE/CHOICE */
     const char *const *opts;     /* CHOICE */
     int nopts;
-    int action;                  /* ACTION: SA_*, THEME: temats index */
+    int action;                  /* ACTION: SA_*, THEME: temats index, LANG: the language, PAGE: the page it opens */
+    int icon;                    /* PAGE: ICO_* in front of the label (0 = none); STORE: the colour of the dot (ST_*) */
+    int block;                   /* STORE: the storage it is a row of (0, or 1 on a PSP Go with two) */
     char info[48];               /* INFO-värde / undertext */
     int plugin;                  /* >0: plugin nr (1-baserat) */
     int own;                     /* psp5:s egen inställning (psp5.cfg) */
@@ -54,37 +65,46 @@ typedef struct {
 
 typedef struct {
     const char *name;
-    const char *desc;
     Item items[MAX_ITEMS];
     int count;
-} Category;
+} Category; /* a page: a list of rows */
 
-enum { CAT_PSP5, CAT_THEME, CAT_CONTROLS, CAT_DISPLAY, CAT_NETWORK, CAT_PERF, CAT_SYSTEM, CAT_PLUGINS, CAT_POWER, CAT_ABOUT, CAT_COUNT };
+/* The pages. PG_ROOT is the first list; the six rows of it open the pages after it; the rows of PG_SYSTEM open the seven after that (Date and Time is the one after the storage page). */
+enum { PG_ROOT, PG_PSP5, PG_NETWORK, PG_SYSTEM, PG_STORAGE, PG_SCREEN, PG_CONTROLS, PG_INFO, PG_APPEAR, PG_LANG, PG_ARK, PG_PERF, PG_PLUGINS, PG_CSTORE, PG_DATETIME,
+       PG_PLUGMGR, PG_PLUGEDIT, PG_PLUGADD, PG_PLUGDEL, PG_PLUGNEW, PG_COUNT };
+static const signed char PARENT[PG_COUNT] = { -1, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_ROOT, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_SYSTEM, PG_STORAGE, PG_SYSTEM,
+                                              PG_PLUGINS, PG_PLUGMGR, PG_PLUGEDIT, PG_PLUGEDIT, PG_PLUGMGR };
 
-static Category s_cats[CAT_COUNT];
+/* The actions that Settings does itself (an IT_ACTION with one of these is not given to main.c): the buttons of Manage Plugins */
+enum { PA_ADD = 100, PA_DEL, PA_NEW };
+
+/* Console Storage (PG_CSTORE): for each storage a status block (the size, a bar, the free space) that can not be chosen, and four rows that can: the colours
+ * of the dots and of the bar */
+enum { ST_GAMES, ST_MEDIA, ST_SAVED, ST_OTHER, ST_ROWS };
+
+static Category s_cats[PG_COUNT];
+static char s_ark_name[48]; /* "ARK-5 Settings" or "ARK-4 Settings": the name of the page that has the settings of ARK itself */
 static unsigned char s_plugin_on[MAX_PLUGINS];
-/* Radbrytningen mäter texten många gånger – gör den bara när texten byts, inte varje bildruta */
-static const char *s_wrapped; /* texten som s_desc håller, NULL = inget */
-static int s_wrapped_n;
-
 static struct {
-    int cat, item[CAT_COUNT];
-    int cat_top;        /* the first category shown (more categories than fit: the list scrolls) */
-    float cat_scroll;
-    int focus;          /* 0 = kategorier, 1 = alternativ */
-    float scroll, open, time;
+    int page, item[PG_COUNT]; /* the page shown, and the row chosen on each page (kept when the page is left) */
+    int top[PG_COUNT];  /* the first row shown on each page: it moves only when the chosen row would leave the screen */
+    int store_dev;      /* the storage of the row that gave SA_GAMES / SA_SAVES (settings_action_dev) */
+    float store_scroll; /* Console Storage: how far the page is scrolled (in pixels) */
+    float scroll, open, time; /* scroll: the first row shown, on its way to top[page] */
     int cfw_dirty, plugins_dirty, own_dirty;
     int repeat_dir;
     float repeat_timer;
-    int stick_x;        /* the analog stick sideways as it was last time: -1, 0 or 1 */
     /* the popup of a choice (✕ on it): the list of values, the one chosen, and the first one shown when there are more than fit */
-    int pop, pop_cat, pop_item, pop_sel, pop_top;
+    int pop, pop_page, pop_item, pop_sel, pop_top;
     float pop_anim, pop_scroll;
     char toast[96];     /* a message that is shown for a moment (settings_notice) */
     float toast_time;
+    /* the question of Manage Plugins (Install / Uninstall): its text, which button is chosen (0 = do it, 1 = Cancel), what it is for (PA_*) */
+    int ask, ask_sel, ask_kind, ask_nl;
+    float ask_anim;
+    char ask_lines[4][96];
 } S;
 
-#define VIS_CATS 6 /* the categories shown at once in the left column */
 #define POP_ROWS 8 /* the most values a popup shows at once; a longer list scrolls (the 14 regions, the 11 languages) */
 
 /* valtexter byggs om när språket ändras */
@@ -93,7 +113,9 @@ static const char *OPT_HIGHMEM[5], *OPT_MSCACHE[4], *OPT_INFERNO[3], *OPT_LOGOS[
 static const char *OPT_UMDREG[4], *OPT_VSHREG[14], *OPT_LANG[LANG_COUNT];
 static const char *OPT_BUTTON[CTL_COUNT];                                     /* the PSP's setting, then ✕ ○ □ △ (each is shown with its symbol, too) */
 static const char *OPT_EQ[5];                                                 /* the equalizer: off and the XMB's four */
-static const char *OPT_PSP_CONFIRM[2];                                       /* the PSP's own confirm button: Cross or Circle */
+static const char *OPT_PSP_CONFIRM[2];
+static const char *OPT_DST[3], *OPT_TIMEFMT[2];                              /* Date and Time: one hour less / as it is / one hour more; the 24-hour and the 12-hour clock */
+static const char *const OPT_DATEFMT[] = { "YYYY.MM.DD", "MM.DD.YYYY", "DD.MM.YYYY" }; /* (the same in every language) */                                       /* the PSP's own confirm button: Cross or Circle */
 static const char *const OPT_START_SELECT[] = { "START", "SELECT" };          /* the options button */
 static const char *const OPT_SELECT_START[] = { "SELECT", "START" };          /* the power menu button: the same setting, the other way round */
 
@@ -128,6 +150,11 @@ static void build_options(void)
     OPT_BUTTON[CTL_CIRCLE] = OPT_PSP_CONFIRM[1] = L(S_BTN_CIRCLE);
     OPT_BUTTON[CTL_SQUARE] = L(S_BTN_SQUARE);
     OPT_BUTTON[CTL_TRIANGLE] = L(S_BTN_TRIANGLE);
+    OPT_DST[DT_DST_REMOVE] = L(S_DT_DST_REMOVE);
+    OPT_DST[DT_DST_KEEP] = L(S_DT_DST_KEEP);
+    OPT_DST[DT_DST_ADD] = L(S_DT_DST_ADD);
+    OPT_TIMEFMT[DT_TIME_24] = L(S_DT_24H);
+    OPT_TIMEFMT[DT_TIME_12] = L(S_DT_12H);
 }
 
 /* ARK:s runlevel i PLUGINS.TXT → läsbar text */
@@ -334,7 +361,7 @@ static const char *model_name(void)
          : m == 4 ? "PSP Go" : m == 10 ? "PSP E1000" : "PSP";
 }
 
-/* --- About: what the PSP says about itself (nothing here can be changed) --- */
+/* --- Console Information: what the PSP says about itself, and where psp5 authentic comes from (nothing here can be changed) --- */
 
 static void fmt_bytes(char *out, int size, unsigned long long b)
 {
@@ -344,15 +371,6 @@ static void fmt_bytes(char *out, int size, unsigned long long b)
         snprintf(out, size, "%.1f MB", (float)b / (1024.0f * 1024.0f));
     else
         snprintf(out, size, "%u KB", (unsigned)(b / 1024));
-}
-
-static void about_space(Category *c, const char *label, unsigned long long free_b, unsigned long long total_b)
-{
-    char f[24], t[24], v[48];
-    fmt_bytes(f, sizeof(f), free_b);
-    fmt_bytes(t, sizeof(t), total_b);
-    snprintf(v, sizeof(v), L(S_ABOUT_FREE_OF), f, t);
-    info(c, label, v);
 }
 
 /* The rows of About, asked of the PSP now (the battery changes): called when the menu is built and every time About comes into view. */
@@ -368,18 +386,20 @@ static void fill_about(Category *c)
     snprintf(v, sizeof(v), "%u.%u%u", a.devkit >> 24, (a.devkit >> 16) & 0xFF, (a.devkit >> 8) & 0xFF); /* 0x06060110 is 6.61 */
     info(c, L(S_ABOUT_SYSTEM), v);
     if (sys_ark_version()) {
-        snprintf(v, sizeof(v), "ARK-%d", sys_ark_version());
-        info(c, "CFW", v);
+        static char cfw[24]; /* (a row keeps the pointer to its label, so it must outlive this function) */
+        snprintf(cfw, sizeof(cfw), "CFW (ARK-%d)", sys_ark_version());
+        info(c, cfw, sys_ark_full_version()[0] ? sys_ark_full_version() : "-");
     }
-    info(c, "psp5", PSP5_VERSION);
+    info(c, APP_NAME, PSP5_VERSION);
+    info(c, L(S_ABOUT_ORIGINAL), "08Weber"); /* psp5 authentic is a fork of psp5, which Mille Weber (08Weber) made */
+    info(c, L(S_ABOUT_FORK), "Xioonae");
     if (a.has_mac) {
         snprintf(v, sizeof(v), "%02X:%02X:%02X:%02X:%02X:%02X", a.mac[0], a.mac[1], a.mac[2], a.mac[3], a.mac[4], a.mac[5]);
         info(c, L(S_ABOUT_MAC), v);
     }
-    if (a.has_ms)
-        about_space(c, L(S_F_MS), a.ms_free, a.ms_total);
-    if (a.has_ef)
-        about_space(c, L(S_F_INTERNAL), a.ef_free, a.ef_total);
+    info(c, L(S_ABOUT_IP), a.last_ip[0] ? a.last_ip : L(S_ABOUT_NO_IP));
+    fmt_bytes(v, sizeof(v), a.ram_free);
+    info(c, L(S_ABOUT_RAM_FREE), v);
     if (a.battery) {
         if (a.percent >= 0) {
             snprintf(v, sizeof(v), a.charging ? "%d %%, %s" : "%d %%", a.percent, L(S_ABOUT_CHARGING));
@@ -400,17 +420,337 @@ static void fill_about(Category *c)
     }
 }
 
-/* rebuild = 1: menyn byggs om (t.ex. nytt språk) utan att tappa osparade val */
+/* a row that opens another page */
+static void page_row(Category *c, int page, int icon)
+{
+    Item *it = add(c, s_cats[page].name, IT_PAGE);
+    it->action = page;
+    it->icon = icon;
+}
+
+/* --- Plugins and Manage Plugins ---
+ * The page Plugins has a row Manage Plugins and then a switch for every line of the plugin files. Manage Plugins (PG_PLUGMGR) has a row that opens the File Manager to
+ * choose a new plugin (SA_PLUGIN_PICK; main.c does it and gives the file back through settings_plugin_new) and a row for every plugin that has a line. A plugin's page
+ * (PG_PLUGEDIT) has Install to (PG_PLUGADD: the runlevels it is not in yet) and Uninstall from (PG_PLUGDEL: its lines). Each of those is a list of switches and a button; the
+ * button asks first (the question of the popups) and then changes the files (plugins.c). The page of a new plugin (PG_PLUGNEW) has the file, where to put it
+ * (the ARK folder or SEPLUGINS, on each storage) and a switch for XMB, Games and PS1. */
+#define PM_MAX 24
+
+static struct {
+    char name[48];                                                   /* the plugin the pages are about */
+    PluginFree add[PM_MAX];
+    unsigned char add_on[PM_MAX];
+    char add_text[PM_MAX][80];
+    int add_n;
+    int del[PM_MAX];                                                 /* its lines (indexes for plugins_get) */
+    unsigned char del_on[PM_MAX];
+    char del_text[PM_MAX][80];
+    int del_n;
+    char src[160], src_name[48];                                     /* a new plugin: the file that was chosen, and its name */
+    unsigned char lvl_on[PLUGIN_LEVELS], loc;                        /* its switches, and where it goes (an index in locs) */
+    PluginLoc locs[PLUGIN_LOCS];
+    int loc_n;
+    const char *loc_opt[PLUGIN_LOCS];
+    char loc_text[PLUGIN_LOCS][48];
+} PM;
+
+static void page_enter(int page);
+
+/* "XMB, Games": where a plugin is installed */
+static void pm_levels_text(const char *name, char *out, int size)
+{
+    int idx[PM_MAX], n = plugins_lines_of(name, idx, PM_MAX);
+    const char *seen[PM_MAX];
+    int ns = 0;
+    out[0] = 0;
+    for (int k = 0; k < n; k++) {
+        const char *t = runlevel_name(plugins_get(idx[k])->where);
+        int dup = 0;
+        for (int j = 0; j < ns; j++)
+            dup |= !strcmp(seen[j], t);
+        if (dup)
+            continue;
+        seen[ns++] = t;
+        int len = strlen(out);
+        snprintf(out + len, size - len, "%s%s", len ? ", " : "", t);
+    }
+}
+
+static void fill_plugins(int rebuild)
+{
+    Category *c = &s_cats[PG_PLUGINS];
+    c->count = 0;
+    page_row(c, PG_PLUGMGR, 0); /* above the switches */
+    for (int i = 0; i < plugins_count() && c->count < MAX_ITEMS; i++) {
+        Plugin *p = plugins_get(i);
+        if (!rebuild)
+            s_plugin_on[i] = p->on;
+        Item *it = add(c, p->name, IT_TOGGLE);
+        it->value = &s_plugin_on[i];
+        it->plugin = i + 1;
+        snprintf(it->info, sizeof(it->info), "%s", runlevel_name(p->where));
+    }
+    if (c->count == 1)
+        info(c, L(S_NO_PLUGINS), "");
+}
+
+/* Manage Plugins: the button for a new plugin, then the plugins that are installed */
+static void pm_fill_mgr(void)
+{
+    Category *c = &s_cats[PG_PLUGMGR];
+    c->count = 0;
+    action(c, L(S_PM_NEW), SA_PLUGIN_PICK);
+    const char *names[MAX_PLUGINS];
+    int n = plugins_names(names, MAX_PLUGINS);
+    for (int i = 0; i < n && c->count < MAX_ITEMS; i++) {
+        Item *it = add(c, names[i], IT_PAGE);
+        it->action = PG_PLUGEDIT;
+        pm_levels_text(names[i], it->info, sizeof(it->info));
+    }
+    if (!n)
+        info(c, L(S_NO_PLUGINS), "");
+}
+
+/* A plugin's page: what can be done with it (Install to needs a runlevel that is free, Uninstall from a line) */
+static void pm_fill_edit(void)
+{
+    Category *c = &s_cats[PG_PLUGEDIT];
+    PluginFree free_[PM_MAX];
+    int lines[PM_MAX];
+    c->count = 0;
+    if (plugins_free_places(PM.name, free_, PM_MAX))
+        page_row(c, PG_PLUGADD, 0);
+    if (plugins_lines_of(PM.name, lines, PM_MAX))
+        page_row(c, PG_PLUGDEL, 0);
+}
+
+/* "XMB - SEPLUGINS (ms0:)" */
+static void pm_place_text(char *out, int size, const char *level, const char *file_path)
+{
+    char place[64];
+    plugins_place_label(file_path, place, sizeof(place));
+    snprintf(out, size, "%s - %s", level, place);
+}
+
+static void pm_fill_add(void)
+{
+    Category *c = &s_cats[PG_PLUGADD];
+    c->count = 0;
+    PM.add_n = plugins_free_places(PM.name, PM.add, PM_MAX);
+    for (int i = 0; i < PM.add_n; i++) {
+        pm_place_text(PM.add_text[i], sizeof(PM.add_text[i]), runlevel_name(PLUGIN_LEVEL[PM.add[i].level]), plugins_file_path(PM.add[i].file));
+        PM.add_on[i] = 0;
+        Item *it = add(c, PM.add_text[i], IT_TOGGLE);
+        it->value = &PM.add_on[i];
+        it->immediate = 1; /* a choice for the button below, nothing to save */
+    }
+    if (PM.add_n)
+        action(c, L(S_PM_INSTALL), PA_ADD);
+}
+
+static void pm_fill_del(void)
+{
+    Category *c = &s_cats[PG_PLUGDEL];
+    c->count = 0;
+    PM.del_n = plugins_lines_of(PM.name, PM.del, PM_MAX);
+    for (int i = 0; i < PM.del_n; i++) {
+        const Plugin *pl = plugins_get(PM.del[i]);
+        pm_place_text(PM.del_text[i], sizeof(PM.del_text[i]), runlevel_name(pl->where), plugins_file_path(pl->file));
+        PM.del_on[i] = 0;
+        Item *it = add(c, PM.del_text[i], IT_TOGGLE);
+        it->value = &PM.del_on[i];
+        it->immediate = 1;
+    }
+    if (PM.del_n)
+        action(c, L(S_PM_UNINSTALL), PA_DEL);
+}
+
+static void pm_fill_new(void);
+static void pm_set_loc(int opt)
+{
+    PM.loc = opt;
+    pm_fill_new(); /* the runlevels that are free depend on the place */
+}
+
+/* A new plugin: its file and where that rests (it stays there: nothing is moved or copied), which PLUGINS.TXT is edited, and a switch for each runlevel it is not in already in that file */
+static void pm_fill_new(void)
+{
+    Category *c = &s_cats[PG_PLUGNEW];
+    c->count = 0;
+    PM.loc_n = plugins_locations(PM.locs, PLUGIN_LOCS);
+    for (int i = 0; i < PM.loc_n; i++) {
+        plugins_place_label(PM.locs[i].file, PM.loc_text[i], sizeof(PM.loc_text[i]));
+        PM.loc_opt[i] = PM.loc_text[i];
+    }
+    if (PM.loc >= PM.loc_n)
+        PM.loc = 0;
+    info(c, L(S_I_FILE), PM.src_name);
+    char rests[64];
+    plugins_place_label(PM.src, rests, sizeof(rests));
+    info(c, L(S_I_LOCATION), rests);
+    if (PM.loc_n) {
+        Item *it = add(c, "PLUGINS.TXT", IT_CHOICE); /* the file whose lines are made: the choices are the folders it can be in */
+        it->value = &PM.loc;
+        it->opts = PM.loc_opt;
+        it->nopts = PM.loc_n;
+        it->immediate = 1;
+        it->set = pm_set_loc;
+    }
+    int rows = 0;
+    for (int lv = 0; lv < PLUGIN_LEVELS && PM.loc_n; lv++) {
+        if (plugins_has(&PM.locs[PM.loc], PM.src, lv)) { /* it is there already */
+            PM.lvl_on[lv] = 0;
+            continue;
+        }
+        Item *it = add(c, runlevel_name(PLUGIN_LEVEL[lv]), IT_TOGGLE);
+        it->value = &PM.lvl_on[lv];
+        it->immediate = 1;
+        rows++;
+    }
+    if (rows)
+        action(c, L(S_PM_INSTALL), PA_NEW);
+}
+
+/* the switches of Plugins are saved when Settings is left; before the files are changed here they are written, so that nothing is lost when the lines move */
+static void flush_plugins(void)
+{
+    if (!S.plugins_dirty)
+        return;
+    for (int i = 0; i < plugins_count(); i++)
+        plugins_get(i)->on = s_plugin_on[i];
+    plugins_save();
+    S.plugins_dirty = 0;
+}
+
+/* The question: what is switched on in the list, said in words. Nothing switched on: a message instead. */
+static void pm_ask(int kind)
+{
+    char list[512] = "";
+    int n = 0;
+    for (int i = 0; kind == PA_ADD && i < PM.add_n; i++)
+        if (PM.add_on[i]) {
+            int len = strlen(list);
+            snprintf(list + len, sizeof(list) - len, "%s%s", n++ ? ", " : "", PM.add_text[i]);
+        }
+    for (int i = 0; kind == PA_DEL && i < PM.del_n; i++)
+        if (PM.del_on[i]) {
+            int len = strlen(list);
+            snprintf(list + len, sizeof(list) - len, "%s%s", n++ ? ", " : "", PM.del_text[i]);
+        }
+    for (int lv = 0; kind == PA_NEW && lv < PLUGIN_LEVELS && PM.loc_n; lv++)
+        if (PM.lvl_on[lv]) {
+            char one[80];
+            pm_place_text(one, sizeof(one), runlevel_name(PLUGIN_LEVEL[lv]), PM.locs[PM.loc].file);
+            int len = strlen(list);
+            snprintf(list + len, sizeof(list) - len, "%s%s", n++ ? ", " : "", one);
+        }
+    if (!n) {
+        settings_notice(L(S_PM_NOTHING));
+        sound_play(SND_ERROR);
+        return;
+    }
+    char text[700];
+    snprintf(text, sizeof(text), L(kind == PA_DEL ? S_PM_ASK_UNINSTALL : S_PM_ASK_INSTALL), kind == PA_NEW ? PM.src_name : PM.name, list);
+    S.ask_nl = text_wrap(text, 0.5f, POPUP_ASK_W - 24, S.ask_lines, 4);
+    S.ask_kind = kind;
+    S.ask = 1;
+    S.ask_sel = 1; /* Cancel is preselected: nothing is changed by mistake */
+    sound_play(SND_SELECT);
+}
+
+/* The question was answered with Install / Uninstall: the files are changed, and Settings goes back to where the change shows */
+static void pm_apply(int kind)
+{
+    flush_plugins();
+    int ok = 0;
+    if (kind == PA_ADD) {
+        ok = 1;
+        for (int i = 0; i < PM.add_n; i++)
+            if (PM.add_on[i])
+                ok &= plugins_add(PM.add[i].file, PM.add[i].level, PM.add[i].path);
+    } else if (kind == PA_DEL) {
+        int idx[PM_MAX], n = 0;
+        for (int i = 0; i < PM.del_n; i++)
+            if (PM.del_on[i])
+                idx[n++] = PM.del[i];
+        ok = plugins_remove(idx, n);
+    } else if (PM.loc_n) {
+        unsigned mask = 0;
+        for (int lv = 0; lv < PLUGIN_LEVELS; lv++)
+            if (PM.lvl_on[lv])
+                mask |= 1u << lv;
+        ok = plugins_install(PM.src, &PM.locs[PM.loc], mask) == PLUGIN_OK;
+    }
+    if (!ok)
+        logs_fail(LOG_SYSTEM, "A plugin could not be %s: the plugin files could not be written or removed.", PM.del_n ? "removed" : "installed");
+    settings_notice(L(ok ? S_F_DONE : S_F_FAILED));
+    sound_play(ok ? SND_SELECT : SND_ERROR);
+    fill_plugins(0); /* the lines have moved: the switches of the page Plugins are made from the files again */
+    int lines[PM_MAX];
+    if (!ok)
+        page_enter(S.page); /* the lists as they are now */
+    else if (kind == PA_NEW) {
+        pm_fill_mgr();
+        const char *name = PM.src_name;
+        for (int i = 0; i < s_cats[PG_PLUGMGR].count; i++)
+            if (s_cats[PG_PLUGMGR].items[i].type == IT_PAGE && !strcasecmp(s_cats[PG_PLUGMGR].items[i].label, name))
+                S.item[PG_PLUGMGR] = i;
+        page_enter(PG_PLUGMGR);
+    } else
+        page_enter(plugins_lines_of(PM.name, lines, PM_MAX) ? PG_PLUGEDIT : PG_PLUGMGR);
+}
+
+void settings_plugin_new(const char *path)
+{
+    const char *base = strrchr(path, '/');
+    snprintf(PM.src, sizeof(PM.src), "%s", path);
+    snprintf(PM.src_name, sizeof(PM.src_name), "%s", base ? base + 1 : path);
+    memset(PM.lvl_on, 0, sizeof(PM.lvl_on));
+    PM.loc = 0;
+    S.item[PG_PLUGNEW] = 2; /* the row for the PLUGINS.TXT (the first two only say what the file is called and where it rests) */
+    page_enter(PG_PLUGNEW);
+}
+
+/* rebuild = 1: the menu is built again (a new language, say) without losing the choices that are not saved yet */
 static void build(int rebuild)
 {
     build_options();
     memset(s_cats, 0, sizeof(s_cats));
-    s_wrapped = NULL; /* nytt språk eller typsnitt: bryt om beskrivningarna */
     Category *c;
+    int ark = sys_ark_version();
+    snprintf(s_ark_name, sizeof(s_ark_name), L(S_CAT_ARK), ark == 4 || ark == 5 ? (ark == 4 ? "ARK-4" : "ARK-5") : "ARK");
 
-    c = &s_cats[CAT_PSP5];
-    c->name = "psp5";
-    c->desc = L(S_DESC_PSP5);
+    /* the names first: the rows that open a page are named after it */
+    s_cats[PG_PSP5].name = APP_NAME;
+    s_cats[PG_NETWORK].name = L(S_CAT_NETWORK);
+    s_cats[PG_SYSTEM].name = L(S_CAT_SYSTEM);
+    s_cats[PG_STORAGE].name = L(S_CAT_STORAGE);
+    s_cats[PG_SCREEN].name = L(S_CAT_SCREEN_SOUND);
+    s_cats[PG_CONTROLS].name = L(S_CAT_CONTROLS);
+    s_cats[PG_INFO].name = L(S_CAT_INFO);
+    s_cats[PG_APPEAR].name = L(S_CAT_APPEARANCE);
+    s_cats[PG_LANG].name = L(S_LANGUAGE);
+    s_cats[PG_DATETIME].name = L(S_DATETIME);
+    s_cats[PG_ARK].name = s_ark_name;
+    s_cats[PG_PERF].name = L(S_CAT_PERF);
+    s_cats[PG_PLUGINS].name = L(S_CAT_PLUGINS);
+    s_cats[PG_CSTORE].name = L(S_CS_TITLE);
+    s_cats[PG_PLUGMGR].name = L(S_PM_MANAGE);
+    s_cats[PG_PLUGEDIT].name = PM.name; /* the plugin that is being managed */
+    s_cats[PG_PLUGADD].name = L(S_PM_INSTALL_TO);
+    s_cats[PG_PLUGDEL].name = L(S_PM_UNINSTALL_FROM);
+    s_cats[PG_PLUGNEW].name = L(S_PM_NEW);
+
+    c = &s_cats[PG_ROOT];
+    c->name = L(S_SETTINGS);
+    page_row(c, PG_PSP5, ICO_APP);
+    page_row(c, PG_NETWORK, ICO_NETWORK);
+    page_row(c, PG_SYSTEM, ICO_SYSTEM);
+    page_row(c, PG_STORAGE, ICO_STORAGE);
+    page_row(c, PG_SCREEN, ICO_SCREEN);
+    page_row(c, PG_CONTROLS, ICO_CONTROLS);
+
+    c = &s_cats[PG_PSP5];
     toggle(c, L(S_BOOT_PSP5), &g_cfw.launcher);
     toggle(c, L(S_SOUNDS), &g_sound_on);
     c->items[c->count - 1].own = 1;
@@ -418,48 +758,29 @@ static void build(int rebuild)
     c->items[c->count - 1].own = 1;
     toggle(c, L(S_BATTERY_PCT), &g_battery_pct);
     c->items[c->count - 1].own = 1;
-    choice(c, L(S_LANGUAGE), &g_lang_setting, OPT_LANG, LANG_COUNT);
-    c->items[c->count - 1].own = 1;
     info(c, L(S_IS_LAUNCHER), L(sys_is_launcher() ? S_YES : S_NO));
     action(c, L(S_CLEAR_CACHE), SA_CLEAR_CACHE);
 
-    c = &s_cats[CAT_THEME];
-    c->name = L(S_CAT_THEME);
-    c->desc = L(S_DESC_THEME);
-    toggle(c, L(S_THEME_ART), &g_theme_art);
-    c->items[c->count - 1].own = 1;
-    for (int i = 0; i < theme_count() && c->count < MAX_ITEMS; i++) {
-        Item *it = add(c, theme_get(i)->name, IT_THEME);
-        it->action = i;
-        it->own = 1;
-    }
+    c = &s_cats[PG_NETWORK];
+    action(c, L(S_WIFI_CONNECTION), SA_WIFI);
+    action(c, L(S_FTP_SERVER), SA_FTP);
 
-    c = &s_cats[CAT_CONTROLS];
-    c->name = L(S_CAT_CONTROLS);
-    c->desc = L(S_DESC_CONTROLS);
-    s_psp_circle = sys_confirm_is_circle() ? 1 : 0;
-    controls_psp_assignment(s_psp_circle); /* (what the PSP says may have changed since the start: the XMB, a game) */
-    {
-        Item *it;
-        choice(c, L(S_CTL_PSP_ASSIGN), &s_psp_circle, OPT_PSP_CONFIRM, 2);
-        it = &c->items[c->count - 1];
-        it->glyph = glyph_psp; it->set = set_psp; it->immediate = 1;
-        choice(c, L(S_CTL_CONFIRM), &g_ctl_confirm, OPT_BUTTON, CTL_COUNT);
-        it = &c->items[c->count - 1];
-        it->glyph = glyph_confirm; it->set = set_confirm; it->own = 1;
-        choice(c, L(S_BACK), &g_ctl_back, OPT_BUTTON, CTL_COUNT);
-        it = &c->items[c->count - 1];
-        it->glyph = glyph_back; it->set = set_back; it->own = 1;
-        /* Options and the power menu are one setting seen from both sides: START / SELECT, either way round */
-        choice(c, L(S_OPTIONS), &g_ctl_options, OPT_START_SELECT, 2);
-        c->items[c->count - 1].own = 1;
-        choice(c, L(S_CTL_POWER), &g_ctl_options, OPT_SELECT_START, 2);
-        c->items[c->count - 1].own = 1;
-    }
+    c = &s_cats[PG_SYSTEM];
+    page_row(c, PG_INFO, 0);
+    page_row(c, PG_APPEAR, 0);
+    page_row(c, PG_LANG, 0);
+    page_row(c, PG_DATETIME, 0);
+    page_row(c, PG_ARK, 0);
+    page_row(c, PG_PERF, 0);
+    page_row(c, PG_PLUGINS, 0);
 
-    c = &s_cats[CAT_DISPLAY];
-    c->name = L(S_CAT_DISPLAY_SOUND);
-    c->desc = L(S_DESC_DISPLAY_SOUND);
+    /* Exit to XMB, Sleep, Shut down, Restart and Recovery menu are not here: they are the power popup of the SELECT button (power.c), on every screen */
+    c = &s_cats[PG_STORAGE];
+    page_row(c, PG_CSTORE, 0);
+    action(c, L(S_FILES), SA_FILES);
+    action(c, L(S_USB_MODE), SA_USB);
+
+    c = &s_cats[PG_SCREEN];
     s_bl_item = s_br_item = NULL;
     {
         Item *it;
@@ -504,40 +825,59 @@ static void build(int rebuild)
             info(c, L(S_UNAVAILABLE), "");
     }
 
-    c = &s_cats[CAT_NETWORK];
-    c->name = L(S_CAT_NETWORK);
-    c->desc = L(S_DESC_NETWORK);
-    action(c, L(S_WIFI_CONNECTION), SA_WIFI);
-
-    c = &s_cats[CAT_PERF];
-    c->name = L(S_CAT_PERF);
-    c->desc = L(S_DESC_PERF);
-    /* ARK-4 har bara Auto/133/222/333 och på/av för extra minne och minneskortscache;
-     * PSP-1000 har varken extra minne eller USB-laddning (som i arkMenu) */
-    int ark4 = sys_ark_version() == 4, psp1000 = sys_is_psp1000(), go = sys_model() == 4;
-    if (ark4) {
-        if (g_cfw.clock_game > CLOCK_333) g_cfw.clock_game = CLOCK_333;
-        if (g_cfw.clock_vsh > CLOCK_333) g_cfw.clock_vsh = CLOCK_333;
-        if (g_cfw.highmem > 1) g_cfw.highmem = 1;
-        if (g_cfw.mscache > 1) g_cfw.mscache = 1;
+    c = &s_cats[PG_CONTROLS];
+    s_psp_circle = sys_confirm_is_circle() ? 1 : 0;
+    controls_psp_assignment(s_psp_circle); /* (what the PSP says may have changed since the start: the XMB, a game) */
+    {
+        Item *it;
+        choice(c, L(S_CTL_PSP_ASSIGN), &s_psp_circle, OPT_PSP_CONFIRM, 2);
+        it = &c->items[c->count - 1];
+        it->glyph = glyph_psp; it->set = set_psp; it->immediate = 1;
+        choice(c, L(S_CTL_CONFIRM), &g_ctl_confirm, OPT_BUTTON, CTL_COUNT);
+        it = &c->items[c->count - 1];
+        it->glyph = glyph_confirm; it->set = set_confirm; it->own = 1;
+        choice(c, L(S_BACK), &g_ctl_back, OPT_BUTTON, CTL_COUNT);
+        it = &c->items[c->count - 1];
+        it->glyph = glyph_back; it->set = set_back; it->own = 1;
+        /* Options and the power menu are one setting seen from both sides: START / SELECT, either way round */
+        choice(c, L(S_OPTIONS), &g_ctl_options, OPT_START_SELECT, 2);
+        c->items[c->count - 1].own = 1;
+        choice(c, L(S_CTL_POWER), &g_ctl_options, OPT_SELECT_START, 2);
+        c->items[c->count - 1].own = 1;
     }
-    int nclock = ark4 ? CLOCK_333 + 1 : N(OPT_CLOCK);
-    choice(c, L(S_CPU_GAME), &g_cfw.clock_game, OPT_CLOCK, nclock);
-    choice(c, L(S_CPU_XMB), &g_cfw.clock_vsh, OPT_CLOCK, nclock);
-    if (!psp1000) {
-        if (ark4)
-            toggle(c, L(S_EXTRA_MEM), &g_cfw.highmem);
-        else
-            choice(c, L(S_EXTRA_MEM), &g_cfw.highmem, OPT_HIGHMEM, N(OPT_HIGHMEM));
-    }
-    if (ark4)
-        toggle(c, L(S_MS_CACHE), &g_cfw.mscache);
-    else
-        choice(c, L(S_MS_CACHE), &g_cfw.mscache, OPT_MSCACHE, N(OPT_MSCACHE));
-    choice(c, L(S_ISO_CACHE), &g_cfw.infernocache, OPT_INFERNO, N(OPT_INFERNO));
 
-    c = &s_cats[CAT_SYSTEM];
-    c->name = L(S_CAT_SYSTEM);
+    c = &s_cats[PG_INFO];
+    fill_about(c);
+
+    c = &s_cats[PG_APPEAR];
+    toggle(c, L(S_THEME_ART), &g_theme_art);
+    c->items[c->count - 1].own = 1;
+    for (int i = 0; i < theme_count() && c->count < MAX_ITEMS; i++) {
+        Item *it = add(c, theme_get(i)->name, IT_THEME);
+        it->action = i;
+        it->own = 1;
+    }
+
+    c = &s_cats[PG_LANG];
+    for (int i = 0; i < LANG_COUNT; i++) {
+        Item *it = add(c, OPT_LANG[i], IT_LANG);
+        it->action = i;
+        it->own = 1;
+    }
+
+    /* Date and Time: what psp5 shows, never the PSP's own clock (datetime.c). The first row only shows the date and time that psp5 shows now, the others are choices kept in psp5.cfg. */
+    c = &s_cats[PG_DATETIME];
+    add(c, L(S_DT_CURRENT), IT_DATETIME);
+    choice(c, L(S_DT_DST), &g_dt_dst, OPT_DST, N(OPT_DST));
+    c->items[c->count - 1].own = 1;
+    choice(c, L(S_DT_DATE_FORMAT), &g_dt_date, OPT_DATEFMT, N(OPT_DATEFMT));
+    c->items[c->count - 1].own = 1;
+    choice(c, L(S_DT_TIME_FORMAT), &g_dt_time, OPT_TIMEFMT, N(OPT_TIMEFMT));
+    c->items[c->count - 1].own = 1;
+
+    /* ARK's own settings (SETTINGS.TXT): what the old System category had */
+    c = &s_cats[PG_ARK];
+    int ark4 = ark == 4, psp1000 = sys_is_psp1000(), go = sys_model() == 4;
     if (!psp1000)
         toggle(c, L(S_USB_CHARGE), &g_cfw.usbcharge);
     toggle(c, L(S_WPA2), &g_cfw.wpa2);
@@ -560,47 +900,53 @@ static void build(int rebuild)
     choice(c, L(S_UMD_REGION), &g_cfw.regionchange, OPT_UMDREG, N(OPT_UMDREG));
     choice(c, L(S_XMB_REGION), &g_cfw.vshregion, OPT_VSHREG, N(OPT_VSHREG));
 
-    c = &s_cats[CAT_PLUGINS];
-    c->name = L(S_CAT_PLUGINS);
-    c->desc = L(S_DESC_PLUGINS);
-    for (int i = 0; i < plugins_count() && c->count < MAX_ITEMS; i++) {
-        Plugin *p = plugins_get(i);
-        if (!rebuild)
-            s_plugin_on[i] = p->on;
-        Item *it = add(c, p->name, IT_TOGGLE);
-        it->value = &s_plugin_on[i];
-        it->plugin = i + 1;
-        snprintf(it->info, sizeof(it->info), "%s", runlevel_name(p->where));
+    c = &s_cats[PG_PERF];
+    /* ARK-4 har bara Auto/133/222/333 och på/av för extra minne och minneskortscache;
+     * PSP-1000 har varken extra minne eller USB-laddning (som i arkMenu) */
+    if (ark4) {
+        if (g_cfw.clock_game > CLOCK_333) g_cfw.clock_game = CLOCK_333;
+        if (g_cfw.clock_vsh > CLOCK_333) g_cfw.clock_vsh = CLOCK_333;
+        if (g_cfw.highmem > 1) g_cfw.highmem = 1;
+        if (g_cfw.mscache > 1) g_cfw.mscache = 1;
     }
-    if (!c->count)
-        info(c, L(S_NO_PLUGINS), "");
+    int nclock = ark4 ? CLOCK_333 + 1 : N(OPT_CLOCK);
+    choice(c, L(S_CPU_GAME), &g_cfw.clock_game, OPT_CLOCK, nclock);
+    choice(c, L(S_CPU_XMB), &g_cfw.clock_vsh, OPT_CLOCK, nclock);
+    if (!psp1000) {
+        if (ark4)
+            toggle(c, L(S_EXTRA_MEM), &g_cfw.highmem);
+        else
+            choice(c, L(S_EXTRA_MEM), &g_cfw.highmem, OPT_HIGHMEM, N(OPT_HIGHMEM));
+    }
+    if (ark4)
+        toggle(c, L(S_MS_CACHE), &g_cfw.mscache);
+    else
+        choice(c, L(S_MS_CACHE), &g_cfw.mscache, OPT_MSCACHE, N(OPT_MSCACHE));
+    choice(c, L(S_ISO_CACHE), &g_cfw.infernocache, OPT_INFERNO, N(OPT_INFERNO));
 
-    c = &s_cats[CAT_POWER];
-    c->name = L(S_CAT_POWER);
-    action(c, L(S_USB_MODE), SA_USB);
-    action(c, L(S_FILES), SA_FILES);
-    action(c, L(S_TO_XMB), SA_XMB);
-    /* the same four, in the same order, as the popup of the SELECT button (ui.c) */
-    action(c, L(S_SLEEP), SA_SUSPEND);
-    action(c, L(S_SHUTDOWN), SA_SHUTDOWN);
-    action(c, L(S_RESTART), SA_RESTART);
-    action(c, L(S_RECOVERY), SA_RECOVERY);
-
-    c = &s_cats[CAT_ABOUT];
-    c->name = L(S_CAT_ABOUT);
-    c->desc = L(S_DESC_ABOUT);
-    fill_about(c);
+    fill_plugins(rebuild);
 }
 
 void settings_open(void)
 {
-    font_ensure_cjk(); /* språkens egna namn (Русский, 日本語) */
+    /* (the Japanese font, for the languages' own names (Русский, 日本語), is not loaded here but when the Language page comes into view, page_enter: it is a large font, and loading it made Settings open
+     * a fraction of a second late every time, though most visits never look at the languages) */
     char path[200];
     snprintf(path, sizeof(path), "%sSETTINGS.TXT", sys_ark_dir());
     arkcfg_load(path);
     plugins_load(sys_ark_dir());
     build(0);
     memset(&S, 0, sizeof(S));
+}
+
+int settings_modal(void)
+{
+    return S.pop != 0 || S.ask != 0;
+}
+
+int settings_is_visit(int action)
+{
+    return action == SA_WIFI || action == SA_FTP || action == SA_FILES || action == SA_USB || action == SA_PLUGIN_PICK;
 }
 
 void settings_notice(const char *msg)
@@ -611,6 +957,7 @@ void settings_notice(const char *msg)
 
 int settings_commit(void)
 {
+    storage_stop(); /* (nothing counts in the background once Settings is left, whatever comes next) */
     int changed = S.cfw_dirty || S.plugins_dirty;
     if (S.own_dirty)
         config_save(PSP5_DATA_DIR); /* ljud och språk gäller direkt, ingen omstart */
@@ -619,11 +966,7 @@ int settings_commit(void)
         snprintf(path, sizeof(path), "%sSETTINGS.TXT", sys_ark_dir());
         arkcfg_save(path);
     }
-    if (S.plugins_dirty) {
-        for (int i = 0; i < plugins_count(); i++)
-            plugins_get(i)->on = s_plugin_on[i];
-        plugins_save();
-    }
+    flush_plugins();
     S.cfw_dirty = S.plugins_dirty = S.own_dirty = 0;
     return changed;
 }
@@ -631,7 +974,8 @@ int settings_commit(void)
 /* --- uppdatering --- */
 
 /* The analog stick as a direction on each axis: -1, 0 or 1. It counts when it is pushed far (as in the other menus:
- * below 40, above 215) and only along the axis it is pushed furthest, so a diagonal push is one move, not two. */
+ * below 40, above 215) and only along the axis it is pushed furthest, so a diagonal push is one move, not two. Only up and down do
+ * anything in Settings (← and → are not used any more), but a push that is mostly sideways must not move the list. */
 static void stick_dir(const UiInput *in, int *dx, int *dy)
 {
     *dx = in->lx < 40 ? -1 : in->lx > 215 ? 1 : 0;
@@ -680,12 +1024,9 @@ static void mark_dirty(const Item *it)
         S.cfw_dirty = 1;
 }
 
-/* Övre kanten för rad i i den högra listan (innan scroll). */
-static float row_y(const Category *c, int i);
-
 static float smooth(float t) { t = clampf(t, 0, 1); return t * t * (3 - 2 * t); }
 
-/* A new value for a choice. A new language changes every text, so the menu is built again. */
+/* A new value for a choice. */
 static void choice_set(Item *it, int v)
 {
     if (it->set)
@@ -693,22 +1034,27 @@ static void choice_set(Item *it, int v)
     else
         *it->value = v;
     mark_dirty(it);
-    if (it->value == &g_lang_setting) {
-        lang_apply();
-        if (lang_needs_cjk())
-            font_ensure_cjk();
-        build(1);
-    }
+}
+
+/* A new language changes every text, so the menu is built again (the page, the row and the unsaved choices stay). */
+static void set_language(const Item *it)
+{
+    g_lang_setting = it->action;
+    mark_dirty(it);
+    lang_apply();
+    if (lang_needs_cjk())
+        font_ensure_cjk();
+    build(1);
 }
 
 /* ✕ on a choice opens a popup with all its values (the way the other popups work), the current one chosen. No arrow changes a value
  * any more, so a stray press while moving through the list can't change a setting. */
-static void pop_open(int cat, int item)
+static void pop_open(int page, int item)
 {
-    const Item *it = &s_cats[cat].items[item];
+    const Item *it = &s_cats[page].items[item];
     int vis = it->nopts < POP_ROWS ? it->nopts : POP_ROWS;
     S.pop = 1;
-    S.pop_cat = cat;
+    S.pop_page = page;
     S.pop_item = item;
     S.pop_sel = *it->value;
     S.pop_top = (int)clampf(S.pop_sel - vis / 2, 0, it->nopts - vis);
@@ -718,7 +1064,7 @@ static void pop_open(int cat, int item)
 /* The popup: ↑ ↓ choose (a held direction repeats), ✕ takes the value, ○ closes it and keeps the old one. */
 static void pop_update(int move, u32 p)
 {
-    Item *it = &s_cats[S.pop_cat].items[S.pop_item];
+    Item *it = &s_cats[S.pop_page].items[S.pop_item];
     int vis = it->nopts < POP_ROWS ? it->nopts : POP_ROWS;
     if (move) {
         int next = (int)clampf(S.pop_sel + move, 0, it->nopts - 1);
@@ -741,6 +1087,123 @@ static void pop_update(int move, u32 p)
     }
 }
 
+/* The question of Manage Plugins: ↑ ↓ choose, ✕ does it (the first) or not (Cancel), ○ closes it. */
+static void ask_update(int move, u32 p)
+{
+    if (move) {
+        int next = (int)clampf(S.ask_sel + move, 0, 1);
+        if (next != S.ask_sel)
+            sound_play(SND_MOVE);
+        S.ask_sel = next;
+    }
+    if (p & PSP_CTRL_CROSS) {
+        int go = S.ask_sel == 0;
+        S.ask = 0;
+        if (go)
+            pm_apply(S.ask_kind); /* (it plays its own sound) */
+        else
+            sound_play(SND_BACK);
+    } else if (p & PSP_CTRL_CIRCLE) {
+        S.ask = 0;
+        sound_play(SND_BACK);
+    }
+}
+
+/* --- Console Storage ---
+ * The page has a status block for each storage (the size, a bar of what is on it, the free space) and under it four rows: Games and Apps, Media,
+ * Saved Data and Other, each with its colour and its size. The blocks are not rows (they can not be chosen); a PSP Go with a Memory Stick has two of
+ * them, one under the other, and the page scrolls from one to the other. Games and Apps and Saved Data open their screens (SA_GAMES, SA_SAVES, saves.c);
+ * Media and Other do nothing yet. */
+#define STORE_HEAD_H   22.0f /* the name of the storage, when there are two */
+#define STORE_STATUS_H 54.0f /* "Size", the bar, "Free space" */
+#define STORE_GAP      10.0f
+#define ST_MIN_PIECE  2.0f  /* a part of the storage that is not empty is at least this wide in the bar */
+
+static const u32 ST_COLOR[ST_ROWS] = { RGBA(20, 150, 236, 255), RGBA(81, 3, 174, 255), RGBA(215, 90, 6, 255), RGBA(189, 187, 174, 255) }; /* (taken from the console's own Storage page: blue, purple, orange, grey) */
+static StorageInfo s_si[2];
+static int s_blocks;
+
+static float store_head(void) { return s_blocks > 1 ? STORE_HEAD_H : 0; }
+static float store_block_h(void) { return store_head() + STORE_STATUS_H + ST_ROWS * ROW_H + STORE_GAP; }
+
+/* The rows from what storage.c knows now (it counts in the background: the sizes grow until it is done) */
+static void store_fill(void)
+{
+    static const StrId names[ST_ROWS] = { S_CS_GAMES, S_CS_MEDIA, S_CS_SAVED, S_CS_OTHER };
+    static const int actions[ST_ROWS] = { SA_GAMES, SA_NONE, SA_SAVES, SA_NONE };
+    Category *c = &s_cats[PG_CSTORE];
+    s_blocks = storage_count();
+    c->count = 0;
+    for (int b = 0; b < s_blocks && b < 2; b++) {
+        storage_get(b, &s_si[b]);
+        const StorageInfo *si = &s_si[b];
+        unsigned long long size[ST_ROWS] = { si->games, si->media, si->saved, si->other };
+        for (int r = 0; r < ST_ROWS; r++) {
+            Item *it = add(c, L(names[r]), IT_STORE);
+            it->icon = r;
+            it->block = b;
+            it->action = actions[r];
+            if (r == ST_OTHER && !si->ready)
+                snprintf(it->info, sizeof(it->info), "...");
+            else
+                gameops_fmt_size(it->info, sizeof(it->info), size[r]);
+        }
+    }
+}
+
+int settings_action_dev(void)
+{
+    return S.store_dev;
+}
+
+void settings_back(void)
+{
+    if (S.page == PG_CSTORE) {
+        storage_start();
+        store_fill();
+    }
+}
+
+/* The page comes into view: the chosen row is kept (and is on the list), and the list starts where it was, or just enough further on to show the row. */
+static void page_enter_body(int page);
+static void page_enter(int page)
+{
+    page_enter_body(page);
+}
+
+static void page_enter_body(int page)
+{
+    const Category *c = &s_cats[page];
+    int *sel = &S.item[page], *top = &S.top[page];
+    if (page == PG_INFO) /* what it shows is asked of the PSP when it comes into view (the battery changes) */
+        fill_about(&s_cats[PG_INFO]);
+    if (page == PG_LANG)
+        font_ensure_cjk_later(); /* the languages' own names: 日本語 comes with the font that is loaded in a thread now (it is kept for good) */
+    if (page == PG_CSTORE) { /* the numbers are asked of the storage when it comes into view */
+        storage_start();
+        store_fill();
+        S.store_scroll = 0;
+    }
+    if (page == PG_PLUGMGR) /* the lists of Manage Plugins are made from the files when the page comes into view */
+        pm_fill_mgr();
+    else if (page == PG_PLUGEDIT)
+        pm_fill_edit();
+    else if (page == PG_PLUGADD)
+        pm_fill_add();
+    else if (page == PG_PLUGDEL)
+        pm_fill_del();
+    else if (page == PG_PLUGNEW)
+        pm_fill_new();
+    if (*sel >= c->count)
+        *sel = c->count ? c->count - 1 : 0;
+    if (*sel < *top)
+        *top = *sel;
+    if (*sel > *top + LIST_ROWS - 1)
+        *top = *sel - (LIST_ROWS - 1);
+    S.page = page;
+    S.scroll = *top;
+}
+
 int settings_update(const UiInput *in, float dt)
 {
     S.open = clampf(S.open + dt * 5.0f, 0, 1);
@@ -748,186 +1211,101 @@ int settings_update(const UiInput *in, float dt)
     if (S.toast_time > 0)
         S.toast_time -= dt;
 
-    Category *c = &s_cats[S.cat];
-    int *sel = &S.item[S.cat];
+    if (S.page == PG_CSTORE)
+        store_fill();
+    Category *c = &s_cats[S.page];
+    int *sel = &S.item[S.page];
     u32 p = in->pressed;
     int sx, sy;
     stick_dir(in, &sx, &sy);
-    if (sx != S.stick_x) { /* a push of the stick sideways is one press of ← / →, like on the D-pad */
-        if (sx < 0)
-            p |= PSP_CTRL_LEFT;
-        else if (sx > 0)
-            p |= PSP_CTRL_RIGHT;
-        S.stick_x = sx;
-    }
     int move = vertical(in, sy, dt);
 
     S.pop_anim = clampf(S.pop_anim + (S.pop ? 7 : -7) * dt, 0, 1);
-    if (S.pop) { /* a choice's popup is open: it gets all the buttons (the list behind it goes on scrolling into place) */
+    S.ask_anim = clampf(S.ask_anim + (S.ask ? 7 : -7) * dt, 0, 1);
+    if (S.ask) { /* the question of Manage Plugins is open: it gets all the buttons */
+        ask_update(move, p);
+        sel = &S.item[S.page]; /* (answering it can take Settings to another page) */
+        c = &s_cats[S.page];
+    } else if (S.pop) { /* a choice's popup is open: it gets all the buttons (the list behind it goes on scrolling into place) */
         pop_update(move, p);
         S.pop_scroll = approach(S.pop_scroll, S.pop_top, 14.0f, dt);
-    } else if (S.focus == 0) {
-        if (move) {
-            int cat = (int)clampf(S.cat + move, 0, CAT_COUNT - 1);
-            if (cat != S.cat) {
-                sound_play(SND_MOVE);
-                if (cat == CAT_ABOUT) { /* what it shows is asked of the PSP when it comes into view (the battery changes) */
-                    fill_about(&s_cats[CAT_ABOUT]);
-                    if (S.item[CAT_ABOUT] >= s_cats[CAT_ABOUT].count)
-                        S.item[CAT_ABOUT] = s_cats[CAT_ABOUT].count - 1;
-                }
-            }
-            S.cat = cat;
-        }
-        if ((p & (PSP_CTRL_CROSS | PSP_CTRL_RIGHT)) && c->count) {
-            S.focus = 1;
-            sound_play(SND_SELECT);
-        }
-        if (p & PSP_CTRL_CIRCLE) { /* back */
-            sound_play(SND_BACK);
-            return SA_CLOSE;
-        }
     } else {
-        Item *it = &c->items[*sel];
-        if (move) {
+        if (move && c->count) {
             int next = (int)clampf(*sel + move, 0, c->count - 1);
             if (next != *sel)
                 sound_play(SND_MOVE);
             *sel = next;
-            it = &c->items[*sel];
         }
-        if ((p & PSP_CTRL_CROSS) && it->type == IT_CHOICE) {
-            pop_open(S.cat, *sel);
+        if (c->count && *sel >= c->count) /* (a page that was made again has fewer rows than before) */
+            *sel = c->count - 1;
+        Item *it = c->count ? &c->items[*sel] : NULL;
+        if (it && (p & PSP_CTRL_CROSS) && it->type == IT_PAGE) {
             sound_play(SND_SELECT);
-        } else if ((p & PSP_CTRL_CROSS) && it->type == IT_THEME) {
+            if (it->action == PG_PLUGEDIT) /* the row is the plugin: its name is what the pages are about */
+                snprintf(PM.name, sizeof(PM.name), "%s", it->label);
+            page_enter(it->action);
+            sel = &S.item[S.page];
+        } else if (it && (p & PSP_CTRL_CROSS) && it->type == IT_CHOICE) {
+            pop_open(S.page, *sel);
+            sound_play(SND_SELECT);
+        } else if (it && (p & PSP_CTRL_CROSS) && it->type == IT_THEME) {
             if (g_theme != it->action) {
                 g_theme = it->action;
                 mark_dirty(it);
             }
             sound_play(SND_SELECT);
-        } else if ((p & PSP_CTRL_CROSS) && it->type == IT_TOGGLE) {
+        } else if (it && (p & PSP_CTRL_CROSS) && it->type == IT_LANG) {
+            if (g_lang_setting != it->action)
+                set_language(it);
+            sound_play(SND_SELECT);
+        } else if (it && (p & PSP_CTRL_CROSS) && it->type == IT_TOGGLE) {
             if (it->set)
                 it->set(!*it->value);
             else
                 *it->value = !*it->value;
             mark_dirty(it);
             sound_play(SND_SELECT);
-        } else if ((p & PSP_CTRL_CROSS) && it->type == IT_ACTION) {
+        } else if (it && (p & PSP_CTRL_CROSS) && it->type == IT_STORE) {
+            if (it->action != SA_NONE) { /* Games and Apps, Saved Data: on this storage only, when there are two */
+                S.store_dev = s_blocks > 1 ? s_si[it->block].dev : -1;
+                sound_play(SND_SELECT);
+                return it->action;
+            }
+        } else if (it && (p & PSP_CTRL_CROSS) && it->type == IT_ACTION && it->action >= PA_ADD) {
+            pm_ask(it->action); /* the buttons of Manage Plugins: Settings asks, and does it itself */
+        } else if (it && (p & PSP_CTRL_CROSS) && it->type == IT_ACTION) {
             sound_play(SND_SELECT);
             sound_wait(400); /* låt ljudet höras innan något stängs */
             return it->action;
-        } else if (p & (PSP_CTRL_CIRCLE | PSP_CTRL_LEFT)) {
-            S.focus = 0;
+        } else if (p & PSP_CTRL_CIRCLE) { /* back: up one list, and out of Settings from the first one */
             sound_play(SND_BACK);
+            if (PARENT[S.page] < 0)
+                return SA_CLOSE;
+            page_enter(PARENT[S.page]);
+            sel = &S.item[S.page];
         }
     }
 
-    /* håll vald rad synlig */
-    float target = 0;
-    if (S.focus == 1 && c->count) {
-        float y = row_y(c, *sel);
-        float visible = LIST_BOTTOM - LIST_TOP - ROW_H;
-        if (y > visible)
-            target = y - visible;
-    }
-    S.scroll = approach(S.scroll, target, 14.0f, dt);
-    if (S.cat < S.cat_top) /* the left column scrolls when there are more categories than fit */
-        S.cat_top = S.cat;
-    if (S.cat > S.cat_top + VIS_CATS - 1)
-        S.cat_top = S.cat - (VIS_CATS - 1);
-    S.cat_scroll = approach(S.cat_scroll, S.cat_top, 14.0f, dt);
+    /* the list moves only when the chosen row would leave the screen (the file manager's way): the first row shown follows it */
+    int *top = &S.top[S.page];
+    if (*sel < *top)
+        *top = *sel;
+    if (*sel > *top + LIST_ROWS - 1)
+        *top = *sel - (LIST_ROWS - 1);
+    S.scroll += (*top - S.scroll) * clampf(dt * 16, 0, 1);
+    if (S.page == PG_CSTORE && c->count) /* the page shows the block of the chosen row */
+        S.store_scroll += (c->items[*sel].block * store_block_h() - S.store_scroll) * clampf(dt * 14, 0, 1);
     return SA_NONE;
 }
 
 /* --- ritning --- */
 
-#define MAX_DESC_LINES 6
-static char s_desc[MAX_DESC_LINES][160];
-
-/* Radbryter beskrivningen till högerspaltens bredd. */
-/* Längd i byte på UTF-8-tecknet som börjar i p */
-static int utf8_len(const char *p)
-{
-    unsigned char c = (unsigned char)*p;
-    return c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
-}
-
-/* Radbryter beskrivningen till högerspaltens bredd. Bryter vid mellanslag, och
- * mellan enskilda tecken när ett "ord" inte får plats (japanska har inga mellanslag). */
-static int wrap_desc_now(const char *text)
-{
-    const float max_w = RIGHT_W - 8;
-    int lines = 0;
-    char line[sizeof(s_desc[0])] = "";
-    const char *p = text;
-    while (*p && lines < MAX_DESC_LINES) {
-        while (*p == ' ')
-            p++;
-        if (!*p)
-            break;
-        /* nästa ord */
-        const char *end = p;
-        while (*end && *end != ' ')
-            end += utf8_len(end);
-        char test[sizeof(line) * 2];
-        snprintf(test, sizeof(test), "%s%s%.*s", line, line[0] ? " " : "", (int)(end - p), p);
-        if (text_width(0.56f, 0, test) <= max_w && strlen(test) < sizeof(line)) {
-            snprintf(line, sizeof(line), "%s", test);
-            p = end;
-            continue;
-        }
-        if (line[0]) { /* ordet får inte plats – ny rad */
-            snprintf(s_desc[lines++], sizeof(s_desc[0]), "%s", line);
-            line[0] = 0;
-            continue;
-        }
-        /* ordet är bredare än raden: ta så många tecken som får plats */
-        int n = 0;
-        while (p + n < end) {
-            int l = utf8_len(p + n);
-            snprintf(test, sizeof(test), "%.*s", n + l, p);
-            if (n && (text_width(0.56f, 0, test) > max_w || n + l >= (int)sizeof(line)))
-                break;
-            n += l;
-        }
-        snprintf(s_desc[lines++], sizeof(s_desc[0]), "%.*s", n, p);
-        p += n;
-    }
-    if (line[0] && lines < MAX_DESC_LINES)
-        snprintf(s_desc[lines++], sizeof(s_desc[0]), "%s", line);
-    return lines;
-}
-
-static int wrap_desc(const char *text)
-{
-    if (text != s_wrapped) {
-        s_wrapped_n = wrap_desc_now(text);
-        s_wrapped = text;
-    }
-    return s_wrapped_n;
-}
-
-static float desc_line_h(void)
-{
-    return lang_needs_cjk() ? 15.0f : 13.0f;
-}
-
-static float desc_height(const Category *c)
-{
-    return c->desc ? wrap_desc(c->desc) * desc_line_h() + 10 : 0;
-}
-
-static float row_y(const Category *c, int i)
-{
-    return desc_height(c) + i * ROW_H;
-}
-
 /* Temat som visas: det markerade i temalistan (förhandsvisning), annars det valda */
 static const Theme *shown_theme(void)
 {
-    const Category *c = &s_cats[CAT_THEME];
-    const Item *it = &c->items[S.item[CAT_THEME]];
-    if (S.cat == CAT_THEME && S.focus == 1 && S.item[CAT_THEME] < c->count && it->type == IT_THEME)
+    const Category *c = &s_cats[PG_APPEAR];
+    const Item *it = &c->items[S.item[PG_APPEAR]];
+    if (S.page == PG_APPEAR && S.item[PG_APPEAR] < c->count && it->type == IT_THEME)
         return theme_get(it->action);
     return theme_cur();
 }
@@ -937,20 +1315,52 @@ static void draw_background(const Theme *t)
     theme_backdrop(t, S.time, 1);
 }
 
-static void draw_toggle(float x, float y, int on, u32 on_color, float a)
+/* The icon of a category, in a box of 16 x 16 round (cx, cy) */
+static void draw_icon(int icon, float cx, float cy, float a)
 {
-    /* 26 x 14 with a knob 10 across, 2 px from the edge on every side: all on whole pixels */
-    gfx_round_rect(x, y, 26, 14, 7, fade(on ? on_color : RGBA(74, 76, 84, 255), a));
-    gfx_circle(on ? x + 19 : x + 7, y + 7, 5, fade(on ? LIGHT : RGBA(196, 196, 202, 255), a));
+    u32 hi = fade(LIGHT, a), mid = fade(RGBA(186, 188, 198, 255), a), lo = fade(RGBA(120, 122, 134, 255), a), dark = fade(RGBA(38, 40, 48, 255), a);
+    switch (icon) {
+    case ICO_APP: /* the PlayStation logo of the start screen, 12 high and as wide as it is, in the middle */
+        gfx_logo((int)cx - icon_logo_width(12) / 2, (int)cy - 6, 12, hi);
+        break;
+    case ICO_NETWORK:
+        gfx_wifi(cx, cy, 7, hi);
+        break;
+    case ICO_SYSTEM: /* a cube: three faces, soft edged */
+        gfx_cube(cx, cy, 8, hi);
+        break;
+    case ICO_STORAGE: /* a drive: a can with a lighter lid */
+        gfx_round_rect(cx - 6, cy + 1, 12, 7, 3, lo);
+        gfx_rect(cx - 6, cy - 4, 12, 8, lo);
+        gfx_round_rect(cx - 6, cy - 8, 12, 7, 3, hi);
+        break;
+    case ICO_SCREEN: /* a screen on its foot */
+        gfx_round_rect(cx - 8, cy - 7, 16, 11, 2, hi);
+        gfx_rect(cx - 6, cy - 5, 12, 7, dark);
+        gfx_rect(cx - 1, cy + 4, 2, 3, mid);
+        gfx_rect(cx - 4, cy + 7, 8, 1, mid);
+        break;
+    case ICO_CONTROLS: /* a controller: the pad, two buttons */
+        gfx_round_rect(cx - 8, cy - 4, 16, 9, 4, hi);
+        gfx_rect(cx - 6, cy - 1, 5, 3, dark);
+        gfx_rect(cx - 5, cy - 2, 3, 5, dark);
+        gfx_circle(cx + 2, cy - 1, 1, dark);
+        gfx_circle(cx + 5, cy + 1, 1, dark);
+        break;
+    }
 }
 
-static void draw_item(const Item *it, float y, int selected, const Theme *shown, float a)
+static void draw_item(const Item *it, float y, float a)
 {
-    float right = RIGHT_X + RIGHT_W - 8;
+    float right = LIST_X + LIST_W - 10, left = LIST_X + 8;
     char value[64] = "";
+    if (it->icon) {
+        draw_icon(it->icon, LIST_X + 8 + 10, y + ROW_H / 2, a);
+        left += ICON_W;
+    }
     switch (it->type) {
     case IT_TOGGLE:
-        draw_toggle(right - 26, y + 6, *it->value != 0, theme_toggle_on(shown), a);
+        look_switch(right - 26, y + 6, *it->value != 0, a);
         right -= 34;
         snprintf(value, sizeof(value), "%s", it->info); /* plugins: var den laddas */
         break;
@@ -959,7 +1369,7 @@ static void draw_item(const Item *it, float y, int selected, const Theme *shown,
         int g = it->glyph ? it->glyph(*it->value) : -1; /* a button: its symbol at the end of the row, the words (if any) before it */
         if (g >= 0) {
             float bw = gfx_button_width(g);
-            gfx_button(right - ceilf(bw / 2), y + 13, 6.5f, g, fade(LIGHT, a), fade(RGBA(20, 20, 26, 255), a));
+            gfx_button(right - ceilf(bw / 2), y + 13, 6.5f, g, look_fade(LOOK_HINT_PLATE, a), look_fade(LOOK_HINT_MARK, a));
             right -= ceilf(bw) + (value[0] ? 6 : 0);
         }
         break;
@@ -967,11 +1377,13 @@ static void draw_item(const Item *it, float y, int selected, const Theme *shown,
     case IT_INFO:
         snprintf(value, sizeof(value), "%s", it->info);
         break;
-    case IT_THEME: {
+    case IT_THEME:
         /* liten förhandsvisning, och en bock för temat som används */
         theme_swatch(theme_get(it->action), right - 40, y + 5, 40, 16, a);
         right -= 48;
-        if (it->action == g_theme) {
+        /* fall through */
+    case IT_LANG:
+        if ((it->type == IT_THEME ? it->action == g_theme : it->action == g_lang_setting)) {
             float cx = right - 6, cy = y + 13;
             float xy[6] = { cx - 5, cy, cx - 1.5f, cy + 3.5f, cx + 5, cy - 4 };
             u32 col[3] = { fade(LIGHT, a), fade(LIGHT, a), fade(LIGHT, a) };
@@ -979,19 +1391,90 @@ static void draw_item(const Item *it, float y, int selected, const Theme *shown,
             right -= 16;
         }
         break;
-    }
+    case IT_PAGE: /* a page has a value only in Manage Plugins: where the plugin is installed */
+        snprintf(value, sizeof(value), "%s", it->info);
+        break;
+    case IT_DATETIME: /* the time psp5 shows now, in the formats that are chosen */
+        dt_text(value, sizeof(value), dt_now());
+        break;
     case IT_ACTION:
-        break; /* an action has no value to show */
+    case IT_STORE:
+        break; /* an action has no value to show (a storage row is drawn by draw_store_page) */
     }
     float value_w = 0;
     if (value[0]) {
-        float vs = text_fit(0.58f, 0.46f, 0, RIGHT_W * 0.55f, value);
+        float vs = text_fit(0.58f, 0.46f, 0, LIST_W * 0.55f, value);
         value_w = text_width(vs, 0, value) + 12;
         text_draw(right, y + 17, vs, 0, fade(TEXT_DIM, a), ALIGN_RIGHT, value);
     }
     /* långa etiketter (t.ex. tyska, japanska) krymper i stället för att krocka med värdet */
-    float ls = text_fit(0.62f, 0.48f, 0, right - value_w - (RIGHT_X + 8), it->label);
-    text_draw(RIGHT_X + 8, y + 17, ls, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, it->label);
+    float ls = text_fit(0.62f, 0.48f, 0, right - value_w - left, it->label); /* the same size on the first list as in the pages */
+    text_draw(left, y + 17, ls, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, it->label);
+}
+
+/* Console Storage: the status blocks and, under each, its four rows */
+static void draw_store_page(float a)
+{
+    const Category *c = &s_cats[PG_CSTORE];
+    int sel = S.item[PG_CSTORE];
+    float head = store_head(), bh = store_block_h();
+    gfx_clip(0, LIST_TOP - 2, SCREEN_W, SCREEN_H - LIST_TOP - 4);
+    for (int b = 0; b < s_blocks && b < 2; b++) {
+        const StorageInfo *si = &s_si[b];
+        float top = LIST_TOP + b * bh - S.store_scroll;
+        if (top > SCREEN_H || top + bh < 0)
+            continue;
+        if (head)
+            text_draw(LIST_X + 8, top + 16, 0.62f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(si->dev ? S_F_INTERNAL : S_F_MS));
+        float y = top + head, bx = LIST_X + 8, bw = LIST_W - 16;
+        char num[32], line[80];
+        if (si->total) {
+            gameops_fmt_size(num, sizeof(num), si->total);
+            snprintf(line, sizeof(line), L(S_CS_SIZE), num);
+            text_draw(bx, y + 14, text_fit(0.6f, 0.46f, 0, bw, line), 0, fade(TEXT_MAIN, a), ALIGN_LEFT, line);
+            /* the bar: the colours of what is on the storage one after the other, the rest is free */
+            gfx_round_rect(bx, y + 22, bw, 6, 3, look_fade(LOOK_BAR_TRACK, a));
+            unsigned long long part[ST_ROWS] = { si->games, si->media, si->saved, si->other };
+            float x = bx;
+            for (int r = 0; r < ST_ROWS; r++) {
+                float w = floorf(bw * (float)((double)part[r] / (double)si->total) + 0.5f);
+                if (part[r] && w < ST_MIN_PIECE) /* a small part is seen too (Saved Data is often less than a pixel) */
+                    w = ST_MIN_PIECE;
+                if (x + w > bx + bw)
+                    w = bx + bw - x;
+                if (w < 1)
+                    continue;
+                if (x == bx)
+                    gfx_bar_fill(x, y + 22, w, 6, 3, fade(ST_COLOR[r], a)); /* the left end is the bar's, round; every part ends in a straight edge */
+                else
+                    gfx_rect(x, y + 22, w, 6, fade(ST_COLOR[r], a));
+                x += w;
+            }
+            gameops_fmt_size(num, sizeof(num), si->free);
+            snprintf(line, sizeof(line), L(S_CS_FREE), num);
+            text_draw(bx, y + 46, text_fit(0.56f, 0.44f, 0, bw, line), 0, fade(TEXT_DIM, a), ALIGN_LEFT, line);
+        }
+        for (int r = 0; r < ST_ROWS; r++) {
+            int i = b * ST_ROWS + r;
+            if (i >= c->count)
+                break;
+            const Item *it = &c->items[i];
+            float ry = y + STORE_STATUS_H + r * ROW_H;
+            if (i == sel) {
+                gfx_rect(LIST_X, ry, LIST_W, ROW_H, RGBA(255, 255, 255, (int)(16 * a)));
+                gfx_frame(LIST_X, ry, LIST_W, ROW_H, 1, fade(RGBA(232, 232, 236, 230), a));
+            } else if (r < ST_ROWS - 1 && i + 1 != sel) {
+                gfx_rect(LIST_X + 4, ry + ROW_H - 1, LIST_W - 8, 1, RGBA(255, 255, 255, (int)(26 * a)));
+            }
+            gfx_circle(LIST_X + 16, ry + ROW_H / 2, 4, fade(ST_COLOR[it->icon], a));
+            float vs = text_fit(0.58f, 0.46f, 0, LIST_W * 0.4f, it->info);
+            float vw = text_width(vs, 0, it->info) + 12;
+            text_draw(LIST_X + LIST_W - 10, ry + 17, vs, 0, fade(TEXT_DIM, a), ALIGN_RIGHT, it->info);
+            float ls = text_fit(0.62f, 0.48f, 0, LIST_W - 10 - vw - 30, it->label);
+            text_draw(LIST_X + 30, ry + 17, ls, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, it->label);
+        }
+    }
+    gfx_clip_reset();
 }
 
 /* The popup of a choice, in the middle of the screen and rising into place like the power popup: the values one under the other, the
@@ -1001,7 +1484,7 @@ static void draw_popup(void)
     float a = smooth(S.pop_anim);
     if (a <= 0)
         return;
-    const Item *it = &s_cats[S.pop_cat].items[S.pop_item];
+    const Item *it = &s_cats[S.pop_page].items[S.pop_item];
     int n = it->nopts, vis = n < POP_ROWS ? n : POP_ROWS, bar = n > vis;
     float w = 200;
     for (int k = 0; k < n; k++) {
@@ -1027,7 +1510,7 @@ static void draw_popup(void)
         int g = it->glyph ? it->glyph(k) : -1;
         if (g >= 0) { /* a value that is a button: its symbol first, then the words, if there are any */
             float bw = ceilf(gfx_button_width(g));
-            gfx_button(tx + bw / 2, ry + 14, 6.5f, g, fade(LIGHT, a), fade(RGBA(20, 20, 26, 255), a * (k == S.pop_sel ? 1.0f : 0.9f)));
+            gfx_button(tx + bw / 2, ry + 14, 6.5f, g, look_fade(LOOK_HINT_PLATE, a), look_fade(LOOK_HINT_MARK, a * (k == S.pop_sel ? 1.0f : 0.9f)));
             tx += bw + 8;
         }
         if (it->opts[k][0])
@@ -1043,73 +1526,65 @@ static void draw_popup(void)
     }
 }
 
+/* The question of Manage Plugins, in the middle of the screen like the other questions (popup.c) */
+static void draw_ask(void)
+{
+    float a = smooth(S.ask_anim);
+    if (a <= 0)
+        return;
+    popup_dim(a);
+    const char *labels[2] = { L(S.ask_kind == PA_DEL ? S_PM_UNINSTALL : S_PM_INSTALL), L(S_F_CANCEL) };
+    const u32 colors[2] = { S.ask_kind == PA_DEL ? POPUP_DANGER : POPUP_TEXT, POPUP_TEXT };
+    popup_ask(S.ask_lines, S.ask_nl, lang_needs_cjk() ? 15.0f : 13.0f, NULL, labels, colors, 2, S.ask_sel, a);
+}
+
 void settings_draw(void)
 {
     float a = S.open;
     float slide = (1 - a) * 10;
-    const Category *c = &s_cats[S.cat];
+    const Category *c = &s_cats[S.page];
 
     gfx_begin(RGBA(20, 20, 24, 255));
     const Theme *shown = shown_theme();
     draw_background(shown);
-    text_draw(LEFT_X + 4 + slide, TITLE_Y, 0.95f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, L(S_SETTINGS));
-
-    /* kategorier (more than fit: the column scrolls, the rows at its ends fade, and a small arrow says there are more) */
-    for (int i = 0; i < CAT_COUNT; i++) {
-        float y = LIST_TOP + (i - S.cat_scroll) * 30;
-        float edge = clampf((y - (LIST_TOP - ROW_H)) / ROW_H, 0, 1) * clampf((LIST_TOP + VIS_CATS * 30 - y) / ROW_H, 0, 1);
-        if (edge <= 0)
-            continue;
-        float ca = a * edge;
-        int selected = i == S.cat;
-        float ta = selected ? 1.0f : S.focus ? 0.42f : 0.8f;
-        if (selected && S.focus == 0) {
-            gfx_rect(LEFT_X, y, LEFT_W, ROW_H, RGBA(255, 255, 255, (int)(16 * ca)));
-            gfx_frame(LEFT_X, y, LEFT_W, ROW_H, 1, fade(RGBA(232, 232, 236, 230), ca));
-        }
-        float cs = text_fit(0.66f, 0.5f, 0, LEFT_W - 16, s_cats[i].name);
-        text_draw(LEFT_X + 8 + slide, y + 17.5f, cs, 0, fade(TEXT_MAIN, ca * ta), ALIGN_LEFT, s_cats[i].name);
-    }
-    for (int dir = -1; dir <= 1; dir += 2) { /* ˄ above and ˅ below, when there are more categories that way */
-        if (dir < 0 ? S.cat_top <= 0 : S.cat_top + VIS_CATS >= CAT_COUNT)
-            continue;
-        float cx = LEFT_X + LEFT_W / 2, cy = dir < 0 ? LIST_TOP - 8 : LIST_TOP + VIS_CATS * 30 + 4;
-        float xy[6] = { cx - 5, cy - dir * 2, cx, cy + dir * 2, cx + 5, cy - dir * 2 };
-        u32 col[3] = { fade(TEXT_DIM, a), fade(TEXT_DIM, a), fade(TEXT_DIM, a) };
-        gfx_stroke(xy, col, 3, 1.6f);
+    /* the title: Settings on the first list, else the name of the page that is open (Appearance, not System > Appearance) */
+    {
+        char title[96];
+        if (S.page == PG_ROOT)
+            snprintf(title, sizeof(title), "%s", L(S_SETTINGS));
+        else
+            snprintf(title, sizeof(title), "%s", c->name);
+        text_draw(LIST_X + 4 + slide, TITLE_Y, text_fit(0.95f, 0.6f, 0, LIST_W - 8, title), 0, fade(TEXT_MAIN, a), ALIGN_LEFT, title);
     }
 
-    /* alternativ */
-    float top = LIST_TOP - S.scroll;
-    if (c->desc) {
-        int n = wrap_desc(c->desc);
-        for (int l = 0; l < n; l++) {
-            float y = top + l * desc_line_h() + 9;
-            if (y > LIST_TOP - 4 && y < LIST_BOTTOM)
-                text_draw(RIGHT_X + 8 + slide, y, 0.56f, 0, fade(TEXT_DIM, a), ALIGN_LEFT, s_desc[l]);
+    /* the rows: as in the file manager, a frame round the chosen one, a thin line between the others, the rows that are partly out of the list cut */
+    int sel = S.item[S.page];
+    if (S.page == PG_CSTORE)
+        draw_store_page(a);
+    gfx_clip(0, LIST_TOP - 2, SCREEN_W, LIST_ROWS * ROW_H + 4);
+    for (int i = (int)S.scroll; S.page != PG_CSTORE && i < c->count && i <= (int)S.scroll + LIST_ROWS; i++) {
+        float y = LIST_TOP + (i - S.scroll) * ROW_H;
+        if (i == sel) {
+            gfx_rect(LIST_X, y, LIST_W, ROW_H, RGBA(255, 255, 255, (int)(16 * a)));
+            gfx_frame(LIST_X, y, LIST_W, ROW_H, 1, fade(RGBA(232, 232, 236, 230), a));
+        } else if (i < c->count - 1 && i + 1 != sel) {
+            float x0 = LIST_X + (c->items[i].icon ? 8 + ICON_W : 4);
+            gfx_rect(x0, y + ROW_H - 1, LIST_X + LIST_W - 4 - x0, 1, RGBA(255, 255, 255, (int)(26 * a)));
         }
+        draw_item(&c->items[i], y, a);
     }
-    for (int i = 0; i < c->count; i++) {
-        float y = top + row_y(c, i);
-        if (y < LIST_TOP - ROW_H || y > LIST_BOTTOM)
-            continue;
-        /* tona ut rader som glider ut ur listan */
-        float edge = clampf((y - (LIST_TOP - ROW_H * 0.6f)) / (ROW_H * 0.6f), 0, 1) *
-                     clampf((LIST_BOTTOM - y) / (ROW_H * 0.6f), 0, 1);
-        float ra = a * edge;
-        int selected = S.focus == 1 && i == S.item[S.cat];
-        if (selected) {
-            gfx_rect(RIGHT_X, y, RIGHT_W, ROW_H, RGBA(255, 255, 255, (int)(16 * ra)));
-            gfx_frame(RIGHT_X, y, RIGHT_W, ROW_H, 1, fade(RGBA(232, 232, 236, 230), ra));
-        } else if (i < c->count - 1 && !(S.focus == 1 && i + 1 == S.item[S.cat])) {
-            gfx_rect(RIGHT_X + 4, y + ROW_H - 1, RIGHT_W - 8, 1, RGBA(255, 255, 255, (int)(26 * ra)));
-        }
-        draw_item(&c->items[i], y, selected, shown, ra);
+    gfx_clip_reset();
+    if (S.page != PG_CSTORE && c->count > LIST_ROWS) { /* the bar at the right: where the shown part is in the whole list (the file manager's) */
+        float h = LIST_ROWS * ROW_H, th = clampf(h * LIST_ROWS / c->count, 12, h);
+        float ty = LIST_TOP + (h - th) * S.scroll / (c->count - LIST_ROWS);
+        gfx_round_rect(LIST_X + LIST_W + 6, ty, 3, th, 1.5f, fade(RGBA(255, 255, 255, 70), a));
     }
 
     draw_popup();
+    draw_ask();
     if (S.toast_time > 0) /* as the toast of the other screens: 2.8 s, fading in and out */
         popup_toast(S.toast, clampf(S.toast_time / 0.4f, 0, 1) * clampf((2.8f - S.toast_time) / 0.2f, 0, 1));
+    power_draw(); /* the power popup of SELECT (main.c asks power.c) */
     osd_draw();
     /* in-toning */
     if (a < 1)

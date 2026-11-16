@@ -2,7 +2,7 @@
 #ifndef SOUND_H
 #define SOUND_H
 
-/* Gränssnittsljud: inspelade (PSP5/sounds/<namn>.wav på lagringen) eller, om filen saknas, inbyggda
+/* Gränssnittsljud: inspelade (<namn>.wav bredvid EBOOT.PBP, t.ex. ms0:/PSP/GAME/PSP5/select.wav) eller, om filen saknas, inbyggda
  * som räknas fram vid start. */
 typedef enum {
     SND_MOVE,    /* bläddra, byta flik */

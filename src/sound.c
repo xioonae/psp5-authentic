@@ -1,7 +1,7 @@
 /* psp5 – made by Mille Weber */
 /* Gränssnittsljud i stil med moderna konsolmenyer: mjuka, korta och luftiga.
  * De inbyggda ljuden syntetiseras här (sinustoner, filtrerat brus, envelopes). Finns inspelade ljud i
- * PSP5/sounds/<namn>.wav på lagringen används de i stället (load_wav) – saknas en fil spelas det inbyggda ljudet. */
+ * <namn>.wav bredvid EBOOT.PBP (t.ex. ms0:/PSP/GAME/PSP5/select.wav) används de i stället (load_wav) – saknas en fil spelas det inbyggda ljudet. */
 #include <pspkernel.h>
 #include <pspaudio.h>
 #include <math.h>
@@ -16,6 +16,10 @@
 #define BLOCK 512 /* stereo-par per utmatning, ~12 ms */
 #define VOICES 4
 #define PI 3.14159265f
+/* A sound that is started again before it has ended (holding a direction in a menu starts "move" every 45 to 85 ms, and the recording is 0.36 s long) is not cut:
+ * it fades out in a straight line over this many samples (5.8 ms) while the new one plays from its start in another voice. A cut in the middle of the wave is a
+ * step of up to 16 times the largest step inside the recording, and 12 to 22 of them a second are a crackle. */
+#define RELEASE 256
 
 typedef struct {
     short *data;
@@ -27,6 +31,7 @@ typedef struct {
     int len;
     volatile int pos;
     volatile int active;
+    volatile int release; /* > 0: the samples of the fade-out that are left (RELEASE at the start of it); the voice ends when it reaches 0 */
 } Voice;
 
 unsigned char g_sound_on = 1;
@@ -176,25 +181,45 @@ static float gen_boot(float t)
 }
 
 /* --- recorded sounds ---
- * <data dir>/sounds/<name>.wav (e.g. ms0:/PSP5/sounds/select.wav) replaces the built-in sound of that name.
+ * <name>.wav (move, select, back, error, boot) lying next to EBOOT.PBP, e.g. ms0:/PSP/GAME/PSP5/select.wav, replaces the built-in sound of that name.
  * 16-bit PCM at 44.1 kHz, mono or stereo (stereo is mixed down - the mixer is mono). A missing or unusable
  * file is not an error: the built-in sound is used. tools/convert_sounds.py makes these files. */
 #define WAV_MAX_BYTES (3 << 20) /* ~17 s of mono; the longest sound is the 5 s startup sound */
 #define WAV_MIN_FRAMES 64       /* the end fade needs at least this many */
-/* The recordings are about 8 dB quieter than the built-in sounds were (average level over the five
- * sounds; they keep their levels relative to each other). One gain for all of them. */
-#define FILE_GAIN 2.5f
+/* The recordings are played as they are: there is no gain. They are made to be as loud as one another (the same average level, peaks between -4 and -8 dBFS),
+ * so a gain would only clip them (the older, quieter recordings were played with a gain of 2.5). */
 
 static unsigned rd16(const unsigned char *p) { return p[0] | p[1] << 8; }
 static unsigned rd32(const unsigned char *p) { return p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; }
 static int rds16(const unsigned char *p) { return (int)(rd16(p) ^ 0x8000u) - 0x8000; }
 
+/* Opens the recording of that name. The places, in this order (the first file that can be opened is the one; a bad file there means the built-in sound):
+ *  1. the folder psp5 was started from, next to EBOOT.PBP (g_self_dir)
+ *  2. the game folder of the storage, <root>/PSP/GAME/PSP5 (psp5 started as ARK's launcher lies in ARK_01234, which has no sounds)
+ *  3. <data dir>/sounds, where 1.2.0 and older had them (so an update that only replaces EBOOT.PBP keeps its sounds) */
+static SceUID open_wav(const char *name)
+{
+    char path[256];
+    SceUID fd = -1;
+    if (g_self_dir[0]) {
+        snprintf(path, sizeof(path), "%s/%s.wav", g_self_dir, name);
+        fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+    }
+    if (fd < 0) {
+        snprintf(path, sizeof(path), "%s/PSP/GAME/PSP5/%s.wav", g_root, name);
+        fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+    }
+    if (fd < 0) {
+        snprintf(path, sizeof(path), "%s/sounds/%s.wav", PSP5_DATA_DIR, name);
+        fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+    }
+    return fd;
+}
+
 /* Reads the file into s_samples[id]. Returns 1 if that worked, 0 if there is no usable file (nothing changed). */
 static int load_wav(SoundId id, const char *name)
 {
-    char path[64];
-    snprintf(path, sizeof(path), "%s/sounds/%s.wav", PSP5_DATA_DIR, name);
-    SceUID fd = sceIoOpen(path, PSP_O_RDONLY, 0);
+    SceUID fd = open_wav(name);
     if (fd < 0)
         return 0;
     int size = sceIoLseek32(fd, 0, PSP_SEEK_END);
@@ -240,14 +265,12 @@ static int load_wav(SoundId id, const char *name)
         return 0;
     }
 
-    /* convert in place to mono + gain: sample i is written at byte 2i, which is always in front of the data
+    /* convert in place to mono: sample i is written at byte 2i, which is always in front of the data
      * of every frame still to be read (data_off >= 20) */
     short *out = (short *)b;
     for (unsigned i = 0; i < frames; i++) {
         const unsigned char *s = b + data_off + i * 2 * ch;
-        int m = ch == 2 ? (rds16(s) + rds16(s + 2)) / 2 : rds16(s);
-        float v = m * FILE_GAIN;
-        out[i] = (short)(v > 32767.0f ? 32767 : v < -32768.0f ? -32768 : v);
+        out[i] = (short)(ch == 2 ? (rds16(s) + rds16(s + 2)) / 2 : rds16(s)); /* (a mix of two 16-bit samples is a 16-bit sample) */
     }
     for (unsigned i = frames - 64; i < frames; i++)
         out[i] = (short)(out[i] * (int)(frames - i) / 64); /* no click at the end, as in render() */
@@ -290,6 +313,39 @@ static void build_sounds(void)
 
 /* --- mixer --- */
 
+/* One block of the output: the voices added up (mono, copied to both sides), the fade-out of sound_fade_out() and the limit at full scale. */
+static void mix_block(short *out)
+{
+    for (int i = 0; i < BLOCK; i++) {
+        int mix = 0;
+        for (int v = 0; v < VOICES; v++) {
+            Voice *vo = &s_voices[v];
+            if (!vo->active)
+                continue;
+            int pos = vo->pos;
+            if (pos >= vo->len) {
+                vo->active = 0;
+                continue;
+            }
+            int sample = vo->data[pos];
+            int rel = vo->release;
+            if (rel > 0) { /* started again: down to nothing in a straight line, and then the voice is free */
+                sample = sample * rel / RELEASE;
+                vo->release = --rel;
+                if (rel == 0)
+                    vo->active = 0;
+            }
+            mix += sample;
+            vo->pos = pos + 1;
+        }
+        if (s_fade > 0)
+            mix = mix * (s_fade * BLOCK - i) / (24 * BLOCK);
+        if (mix > 32767) mix = 32767;
+        if (mix < -32768) mix = -32768;
+        out[i * 2] = out[i * 2 + 1] = (short)mix;
+    }
+}
+
 static int audio_thread(SceSize args, void *argp)
 {
     /* ljuden räknas fram här, i bakgrunden, så att starten inte blir långsammare */
@@ -315,26 +371,7 @@ static int audio_thread(SceSize args, void *argp)
         }
         short *out = s_out[buf];
         buf ^= 1;
-        for (int i = 0; i < BLOCK; i++) {
-            int mix = 0;
-            for (int v = 0; v < VOICES; v++) {
-                Voice *vo = &s_voices[v];
-                if (!vo->active)
-                    continue;
-                int pos = vo->pos;
-                if (pos >= vo->len) {
-                    vo->active = 0;
-                    continue;
-                }
-                mix += vo->data[pos];
-                vo->pos = pos + 1;
-            }
-            if (s_fade > 0)
-                mix = mix * (s_fade * BLOCK - i) / (24 * BLOCK);
-            if (mix > 32767) mix = 32767;
-            if (mix < -32768) mix = -32768;
-            out[i * 2] = out[i * 2 + 1] = (short)mix;
-        }
+        mix_block(out);
         if (s_fade > 0 && --s_fade == 0)
             for (int v = 0; v < VOICES; v++)
                 s_voices[v].active = 0;
@@ -378,18 +415,28 @@ void sound_play(SoundId id)
 {
     if (!g_sound_on || s_thread < 0 || !s_built || id >= SND_COUNT)
         return;
-    /* samma ljud igen (t.ex. snabb bläddring): starta om i samma röst */
+    /* The same sound again (fast scrolling): the one that is playing is not cut, it fades out (see RELEASE) and the new one gets a voice of its own. */
+    for (int v = 0; v < VOICES; v++)
+        if (s_voices[v].active && s_voices[v].release == 0 && s_voices[v].data == s_samples[id].data)
+            s_voices[v].release = RELEASE;
     Voice *pick = NULL;
-    for (int v = 0; v < VOICES && !pick; v++)
-        if (s_voices[v].active && s_voices[v].data == s_samples[id].data)
-            pick = &s_voices[v];
     for (int v = 0; v < VOICES && !pick; v++)
         if (!s_voices[v].active)
             pick = &s_voices[v];
-    if (!pick)
-        pick = &s_voices[0];
+    if (!pick) { /* all busy (more than four starts between two blocks): one that is fading out already, else the one that is furthest on */
+        for (int v = 0; v < VOICES && !pick; v++)
+            if (s_voices[v].release > 0)
+                pick = &s_voices[v];
+        if (!pick) {
+            pick = &s_voices[0];
+            for (int v = 1; v < VOICES; v++)
+                if (s_voices[v].pos > pick->pos)
+                    pick = &s_voices[v];
+        }
+    }
     /* rösten stängs först så att mixern aldrig läser en halvt bytt röst */
     pick->active = 0;
+    pick->release = 0;
     pick->pos = 0;
     pick->data = s_samples[id].data;
     pick->len = s_samples[id].len;

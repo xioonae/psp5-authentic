@@ -6,6 +6,7 @@
 #include <string.h>
 #include "playtime.h"
 #include "awake.h"
+#include "lastplayed.h"
 #include "lang.h"
 
 #define KEY_LEN   80   /* as home.c: entry_cover_key() callers have always used 80 */
@@ -21,6 +22,13 @@ typedef struct {
 static Game *s_games;
 static int s_n, s_cap;
 static char s_dir[16];
+
+#define MAX_PLAYED 256 /* files taken at one start; the rest next time */
+
+/* the games that were played since psp5 was last open (the files of the plugin that were added at this start), oldest first */
+static char s_plays[MAX_PLAYED][KEY_LEN];
+static u32 s_play_time[MAX_PLAYED];
+static int s_nplays;
 
 static void file_path(char *out, int size)
 {
@@ -79,8 +87,6 @@ static int save(void)
 
 /* --- the files of the helper plugin (src/awake.h) --- */
 
-#define MAX_PLAYED 256 /* files taken at one start; the rest next time */
-
 static char s_self_key[KEY_LEN]; /* the folder of psp5's own EBOOT.PBP: psp5 is not a game */
 
 void playtime_set_self(const char *path)
@@ -99,6 +105,7 @@ static void merge_played(void)
         char name[AWAKE_KEY_MAX + 8];
         char key[KEY_LEN];
         unsigned secs;
+        u32 time; /* when the file was written last: the game was played until then */
     } Found;
     char dir[64];
     snprintf(dir, sizeof(dir), "%s/%s", s_dir, AWAKE_PLAYED_DIR);
@@ -125,6 +132,8 @@ static void merge_played(void)
             sceIoClose(fd);
         }
         if (got > 0 && awake_parse(text, got, &found[n].secs)) {
+            SceIoStat st;
+            found[n].time = sceIoGetstat(path, &st) >= 0 ? lastplayed_pack(&st.sce_st_mtime) : 0;
             if (s_self_key[0] && !strcasecmp(found[n].key, s_self_key))
                 found[n].secs = 0; /* the plugin counted the time psp5 was open (it only knows psp5 by the folder name PSP5): not a game, the file is removed */
             snprintf(found[n].name, sizeof(found[n].name), "%s", ent.d_name);
@@ -138,12 +147,32 @@ static void merge_played(void)
             add(found[i].key, found[i].secs);
             added = 1;
         }
-    if (!added || save())
+    if (!added || save()) {
         for (int i = 0; i < n; i++) {
             char path[160];
             snprintf(path, sizeof(path), "%s/%s", dir, found[i].name);
             sceIoRemove(path);
         }
+        u32 now = 0;
+        for (int i = 0; i < n; i++) {
+            if (found[i].secs == 0)
+                continue;
+            if (!found[i].time && !now)
+                now = lastplayed_now(); /* a file whose time cannot be read: it was played some time since psp5 was last open */
+            u32 t = found[i].time ? found[i].time : now;
+            lastplayed_note(found[i].key, t);
+            int at = s_nplays; /* oldest first; the same time keeps the order the files came in */
+            while (at > 0 && s_play_time[at - 1] > t)
+                at--;
+            if (s_nplays < MAX_PLAYED) {
+                memmove(s_plays[at + 1], s_plays[at], (size_t)(s_nplays - at) * KEY_LEN);
+                memmove(&s_play_time[at + 1], &s_play_time[at], (size_t)(s_nplays - at) * sizeof(u32));
+                snprintf(s_plays[at], KEY_LEN, "%s", found[i].key);
+                s_play_time[at] = t;
+                s_nplays++;
+            }
+        }
+    }
     free(found);
 }
 
@@ -191,6 +220,7 @@ static int read_games(void)
 void playtime_load(const char *dir)
 {
     s_n = 0;
+    s_nplays = 0;
     snprintf(s_dir, sizeof(s_dir), "%s", dir);
     if (read_games()) /* (a file that could not be read is not written over with what the plugin kept) */
         merge_played();
@@ -221,4 +251,19 @@ void playtime_text(unsigned secs, char *out, int size)
         snprintf(out, size, "%u%s", mins, L(S_UNIT_MIN));
     else
         snprintf(out, size, "%u%s", mins / 60 > 9999 ? 9999 : mins / 60, L(S_UNIT_H));
+}
+
+int playtime_plays(void)
+{
+    return s_nplays;
+}
+
+const char *playtime_play_key(int i)
+{
+    return i < s_nplays ? s_plays[i] : ""; /* (i is 0 or more) */
+}
+
+void playtime_plays_taken(void)
+{
+    s_nplays = 0;
 }

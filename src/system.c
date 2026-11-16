@@ -21,6 +21,7 @@
 #include "system.h"
 #include "launch.h"
 #include "arkcfg.h"
+#include "netlink.h"
 
 #define USBSTOR_EF_DRIVERNAME "USBStorEFlash_Driver"
 /* finns när launcherläget är pausat för att psp5 gick till XMB */
@@ -42,6 +43,7 @@ ARKConfig *sctrlArkGetConfig_ark4(ARKConfig *conf);
 
 static ARKConfig s_conf;
 static int s_ark;        /* 4, 5 eller 0 = ingen ARK */
+static char s_ark_full[24]; /* its whole version as text ("4.20.69"), "" when it did not give one */
 static int s_model = -1; /* kuKernelGetModel(), -1 = okänd */
 static int s_has_ark;
 static int s_is_launcher;
@@ -51,6 +53,7 @@ static int s_ms_is_ef; /* ARK låter ms0: peka på PSP Go:s internminne */
 
 char g_root[5] = "ms0:";
 char g_data_dir[16] = "ms0:/PSP5";
+char g_self_dir[128] = "";
 
 void sys_set_root(const char *self_path)
 {
@@ -58,6 +61,13 @@ void sys_set_root(const char *self_path)
     if (self_path && !strncasecmp(self_path, "ef0:", 4))
         snprintf(g_root, sizeof(g_root), "ef0:");
     snprintf(g_data_dir, sizeof(g_data_dir), "%s/PSP5", g_root);
+    /* the folder of EBOOT.PBP (or VBOOT.PBP): the recorded sounds lie next to it; empty when there is no slash or the folder is too long */
+    const char *slash = self_path ? strrchr(self_path, '/') : NULL;
+    g_self_dir[0] = 0;
+    if (slash && (size_t)(slash - self_path) < sizeof(g_self_dir)) {
+        memcpy(g_self_dir, self_path, slash - self_path);
+        g_self_dir[slash - self_path] = 0;
+    }
 }
 
 #ifdef PSP5_TEST
@@ -76,10 +86,34 @@ static void fake_device(void)
     const char *p;
     if ((p = strstr(buf, "model=")))
         s_model = atoi(p + 6);
-    if ((p = strstr(buf, "ark=")))
+    if ((p = strstr(buf, "ark="))) {
         s_ark = atoi(p + 4);
+        snprintf(s_ark_full, sizeof(s_ark_full), "%d.%d.0", s_ark, s_ark == 4 ? 20 : 0); /* (made up: the demo has no ARK to ask) */
+    }
 }
 #endif
+
+/* "4.20.69" from the three numbers that ARK's SystemControl gives: sctrlSEGetVersion() is the major version, sctrlHENGetVersion() the minor and
+ * sctrlHENGetMinorVersion() the micro version (read in the source of ARK-4 and ARK-5). "" when one of them is not a sensible number: without ARK the
+ * functions are not there and give 0 or an error value. */
+static void ark_version_text(int major, int minor, int micro, char *out, int size)
+{
+    if (major < 1 || major > 99 || minor < 0 || minor > 999 || micro < 0 || micro > 999)
+        out[0] = 0;
+    else
+        snprintf(out, size, "%d.%d.%d", major, minor, micro);
+}
+
+/* ARK-5 puts the CPU clock (the overclock of SETTINGS.TXT) and the cache of the storage in force when the first module is loaded after the system
+ * has started, not before. psp5 used to load its first one (the music codecs) after the intro and the game scan, so the PSP changed its clock and
+ * its cache in the middle of reading files, which hung or lagged some PSP Gos on an overclock of 333 MHz or more (psp5 2.0.1, issue 19 of
+ * the original project, did the same as this). So it is done first of all, before a thread is started or a file is scanned: one module is loaded and
+ * unloaded again. The result does not matter (the codecs are loaded by music.c when they are needed). */
+static void apply_ark_settings(void)
+{
+    if (sceUtilityLoadModule(PSP_MODULE_AV_AVCODEC) >= 0) /* (an error such as "already loaded" means someone else holds it: not ours to unload) */
+        sceUtilityUnloadModule(PSP_MODULE_AV_AVCODEC);
+}
 
 void sys_init(const char *self_path)
 {
@@ -89,6 +123,7 @@ void sys_init(const char *self_path)
     if (launch_supported()) {
         int major = sctrlSEGetVersion();
         s_ark = major == 4 ? 4 : 5; /* ARK-4 ger 4, ARK-5 ger 5 */
+        ark_version_text(major, sctrlHENGetVersion(), sctrlHENGetMinorVersion(), s_ark_full, sizeof(s_ark_full));
         s_model = kuKernelGetModel();
         s_ms_is_ef = sctrlKernelMsIsEf() == 1;
         memset(&s_conf, 0, sizeof(s_conf));
@@ -99,6 +134,7 @@ void sys_init(const char *self_path)
         else
             sctrlArkGetConfig(&s_conf);
 #endif
+        apply_ark_settings();
         char settings[200], vboot[200];
         snprintf(settings, sizeof(settings), "%sSETTINGS.TXT", s_ark_dir);
         snprintf(vboot, sizeof(vboot), "%sVBOOT.PBP", s_ark_dir);
@@ -318,19 +354,6 @@ int sys_set_avls(int on)
     return impose_get(IMPOSE_AVLS);
 }
 
-/* free and total space of a drive (ms0:, ef0:): the same call the file manager makes */
-static int device_space(const char *dev, unsigned long long *free_b, unsigned long long *total_b)
-{
-    struct { u32 max_clusters, free_clusters, max_sectors, sector_size, sectors_per_cluster; } info;
-    void *p = &info;
-    if (sceIoDevctl(dev, 0x02425818, &p, sizeof(p), NULL, 0) < 0)
-        return 0;
-    unsigned long long cluster = (unsigned long long)info.sector_size * info.sectors_per_cluster;
-    *free_b = (unsigned long long)info.free_clusters * cluster;
-    *total_b = (unsigned long long)info.max_clusters * cluster;
-    return 1;
-}
-
 /* scePowerGetBatteryTemp: the SDK says degrees Celsius, but a PSP gives the temperature in hundredths of a degree (36.87 °C comes as 3687 - psp5 showed
  * "3687 °C" first). A battery is never 100 °C, so a number from 100 up is hundredths and is rounded to whole degrees; below that it is taken as it
  * is (should a PSP give whole degrees); a negative number is the PSP not saying (-1). */
@@ -359,13 +382,90 @@ void sys_about(SysAbout *a)
         a->mah_left = scePowerGetBatteryRemainCapacity();
         a->mah_full = scePowerGetBatteryFullCapacity();
     }
-    a->has_ms = device_space("ms0:", &a->ms_free, &a->ms_total);
-    a->has_ef = s_model == 4 && device_space("ef0:", &a->ef_free, &a->ef_total); /* only a PSP Go has an internal storage */
+    a->ram_free = sceKernelTotalFreeMemSize();
+    snprintf(a->last_ip, sizeof(a->last_ip), "%s", netlink_last_ip());
 }
 
 int sys_has_ark(void) { return s_has_ark; }
 int sys_ark_version(void) { return s_ark; }
+const char *sys_ark_full_version(void) { return s_ark_full; }
 int sys_model(void) { return s_model; }
+
+void sys_fast(int on)
+{
+    static int depth, saved_cpu, saved_bus;
+    if (on) {
+        if (depth++ > 0)
+            return;
+        saved_cpu = scePowerGetCpuClockFrequencyInt();
+        saved_bus = scePowerGetBusClockFrequencyInt();
+        if (saved_cpu > 0 && saved_cpu < 333)
+            scePowerSetClockFrequency(333, 333, 166);
+        else
+            saved_cpu = 0; /* it is as fast as it goes already (or it does not say): nothing to give back */
+        return;
+    }
+    if (depth <= 0 || --depth > 0)
+        return;
+    if (saved_cpu > 0 && saved_bus > 0)
+        scePowerSetClockFrequency(saved_cpu, saved_cpu, saved_bus);
+    saved_cpu = 0;
+}
+
+/* sys_fast() in a thread of its own (sys_fast_later). The queue has one writer for each end: the screen's thread writes `head`, the clock thread `tail`; no atomic operation (see files.c). */
+static SceUID s_clock_thread = -1;
+static volatile signed char s_clock_req[16];
+static volatile unsigned s_clock_head, s_clock_tail;
+
+static int clock_thread(SceSize args, void *argp)
+{
+    for (;;) {
+        while (s_clock_tail != s_clock_head) {
+            int on = s_clock_req[s_clock_tail % 16];
+            sys_fast(on);
+            __sync_synchronize();
+            s_clock_tail++;
+        }
+        sceKernelSleepThread(); /* (sys_fast_later wakes it: a wake-up that comes before the sleep is counted by the PSP and not lost) */
+    }
+    return 0;
+}
+
+void sys_fast_flush(void)
+{
+    while (s_clock_tail != s_clock_head)
+        sceKernelDelayThread(1000);
+}
+
+void sys_fast_now(int on)
+{
+    sys_fast_flush(); /* (what the thread was given goes first) */
+    sys_fast(on);
+}
+
+void sys_fast_later(int on)
+{
+    if (s_clock_thread < 0) {
+        SceUID th = sceKernelCreateThread("psp5_clock", clock_thread, 0x30, 0x2000, PSP_THREAD_ATTR_USER, NULL);
+        if (th >= 0 && sceKernelStartThread(th, 0, NULL) >= 0)
+            s_clock_thread = th;
+        else {
+            if (th >= 0)
+                sceKernelDeleteThread(th);
+            sys_fast_now(on); /* no thread: here, as it was */
+            return;
+        }
+    }
+    unsigned h = s_clock_head;
+    if (h - s_clock_tail >= 16) { /* (it cannot be: a picture is opened and closed a few times a minute) */
+        sys_fast_now(on);
+        return;
+    }
+    s_clock_req[h % 16] = (signed char)on;
+    __sync_synchronize();
+    s_clock_head = h + 1;
+    sceKernelWakeupThread(s_clock_thread);
+}
 int sys_ms_is_ef(void) { return s_ms_is_ef; }
 int sys_is_psp1000(void) { return s_model == 0; }
 const char *sys_ark_dir(void) { return s_ark_dir; }
@@ -407,6 +507,11 @@ void sys_resume_launcher(void)
     sceIoRemove(paused_mark());
 }
 
+/* A short wait before the PSP restarts, switches off or goes back to the XMB: the storage finishes writing the file that was closed a moment ago
+ * (SETTINGS.TXT, PLUGINS.TXT), which a reset would otherwise cut off (psp5 2.0.1 waited like this too, for issue 19 of the original project). */
+#define SETTLE_US 50000
+static void settle(void) { sceKernelDelayThread(SETTLE_US); }
+
 void sys_exit_xmb(void)
 {
     if (!s_has_ark) {
@@ -430,12 +535,23 @@ void sys_exit_xmb(void)
         }
 #endif
     }
+    settle();
     sctrlKernelExitVSH(NULL);
 }
 
-void sys_restart(void) { scePowerRequestColdReset(0); }
+void sys_restart(void)
+{
+    settle();
+    scePowerRequestColdReset(0);
+}
+
 void sys_suspend(void) { scePowerRequestSuspend(); }
-void sys_shutdown(void) { scePowerRequestStandby(); }
+
+void sys_shutdown(void)
+{
+    settle();
+    scePowerRequestStandby();
+}
 
 static int exists(const char *path)
 {

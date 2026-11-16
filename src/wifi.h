@@ -9,4 +9,9 @@
  * so the PSP is not left connected. */
 int wifi_dialog(volatile int *running);
 
+/* The same window, for the FTP server: the network libraries are started by netlink.c and, when a connection was chosen and made (the result 1), they are left running
+ * and netlink_attach() has been called, so that netlink_state() watches the connection and the server can use it. In every other case (0 = closed without a connection,
+ * -1 = the network or the window would not start) everything is stopped again (netlink_stop()). */
+int wifi_connect(volatile int *running);
+
 #endif

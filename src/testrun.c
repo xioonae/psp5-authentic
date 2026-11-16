@@ -10,7 +10,7 @@
 #include <strings.h>
 #include "testrun.h"
 
-#define MAX_STEPS 128
+#define MAX_STEPS 512
 
 typedef struct {
     char op;        /* 'w' vänta, 'p' tryck, 'h' håll, 's' skärmdump, 'z' somna, 'r' vakna, 'v' volym, 'c' laddning */
@@ -24,6 +24,11 @@ static int s_count, s_pos, s_wait, s_hold;
 static int s_active;
 static int s_resume, s_sleep;
 static int s_volume = -1, s_charging = -1, s_battery = -1, s_wifi = -1; /* låtsade värden, -1 = riktiga */
+#define MAX_TEXTS 24
+static char s_texts[MAX_TEXTS][240]; /* the answers of "text ..." lines: what the keyboard of the PSP is made to say */
+static int s_text_n;
+static char s_pending[240];
+static int s_pending_kind;     /* 0 = none, 1 = a text waits for the next keyboard, -1 = the keyboard is to be cancelled */
 
 static u32 button_by_name(const char *n)
 {
@@ -41,7 +46,7 @@ static u32 button_by_name(const char *n)
 
 void testrun_init(void)
 {
-    static char buf[4096];
+    static char buf[16384];
     SceUID fd = sceIoOpen("ms0:/PSP5/test.txt", PSP_O_RDONLY, 0);
     if (fd < 0)
         return;
@@ -55,6 +60,18 @@ void testrun_init(void)
     char *save = NULL;
     for (char *line = strtok_r(buf, "\r\n", &save); line && s_count < MAX_STEPS; line = strtok_r(NULL, "\r\n", &save)) {
         char op[16], arg[32];
+        if ((!strncmp(line, "text", 4) && (line[4] == ' ' || line[4] == 0)) || !strcmp(line, "textcancel")) { /* text WORDS - the next keyboard of the PSP answers WORDS (the rest of the line, spaces and all; none: an empty text); textcancel - it is closed with ○ */
+            if (s_text_n >= MAX_TEXTS)
+                continue;
+            Step *t = &s_steps[s_count];
+            memset(t, 0, sizeof(*t));
+            t->op = 't';
+            t->frames = s_text_n;
+            snprintf(s_texts[s_text_n], sizeof(s_texts[0]), "%s", line[0] == 't' && !strcmp(line, "textcancel") ? "\x01" : (line[4] ? line + 5 : ""));
+            s_text_n++;
+            s_count++;
+            continue;
+        }
         if (sscanf(line, "%15s %31s", op, arg) != 2)
             continue;
         Step *s = &s_steps[s_count];
@@ -135,6 +152,17 @@ u32 testrun_buttons(u32 real)
                 s_battery = s->frames;
             continue;
         }
+        if (s->op == 't') {
+            s_pos++;
+            const char *w = s_texts[s->frames];
+            if (w[0] == 1) {
+                s_pending_kind = -1;
+            } else {
+                snprintf(s_pending, sizeof(s_pending), "%s", w);
+                s_pending_kind = 1;
+            }
+            continue;
+        }
         if (s->op == 'r' || s->op == 'z') {
             s_pos++;
             if (s->op == 'r')
@@ -152,6 +180,15 @@ int testrun_volume(void) { return s_volume; }
 int testrun_charging(void) { return s_charging; }
 int testrun_battery(void) { return s_battery; }
 int testrun_wifi(void) { return s_wifi; }
+
+int testrun_take_text(char *out, int size)
+{
+    int k = s_pending_kind;
+    s_pending_kind = 0;
+    if (k > 0)
+        snprintf(out, size, "%s", s_pending);
+    return k;
+}
 
 int testrun_take_sleep(void)
 {

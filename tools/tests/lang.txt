@@ -23,7 +23,7 @@ press down
 wait 6
 press down
 wait 20
-shot 05-power
+shot 05-memory
 press up
 wait 6
 press cross

@@ -7,8 +7,11 @@ extern char g_root[5];
 /* psp5:s egna filer (omslag, cache, psp5.cfg) på den lagringen, t.ex. "ef0:/PSP5" */
 extern char g_data_dir[16];
 #define PSP5_DATA_DIR g_data_dir
+/* The folder psp5 was started from (argv[0] without the file name and the last slash), e.g. "ms0:/PSP/GAME/PSP5". The recorded sounds lie in it next to
+ * EBOOT.PBP. Empty when the path is not known or does not fit. */
+extern char g_self_dir[128];
 
-/* Väljer g_root efter var psp5 själv ligger (argv[0]). Anropas först av allt. */
+/* Väljer g_root efter var psp5 själv ligger (argv[0]) och sätter g_self_dir. Anropas först av allt. */
 void sys_set_root(const char *self_path);
 
 /* Läser ARK:s konfiguration (om ARK finns). Anropas en gång vid start. */
@@ -29,8 +32,8 @@ typedef struct {
     unsigned char mac[6];     /* the Wi-Fi address */
     int battery;              /* a battery is in the PSP */
     int percent, charging, mv, celsius, mah_left, mah_full; /* -1 = the PSP does not say; celsius is whole degrees (the PSP gives hundredths: system.c) */
-    int has_ms, has_ef;       /* the Memory Stick (ms0:) / the internal storage of a PSP Go (ef0:) can be read */
-    unsigned long long ms_free, ms_total, ef_free, ef_total;
+    unsigned ram_free;        /* unallocated user RAM, outside the C allocator's heap */
+    char last_ip[16];         /* last IPv4 address observed by psp5; empty until one is recorded */
 } SysAbout;
 void sys_about(SysAbout *out);
 
@@ -48,9 +51,21 @@ int sys_avls(void);
 int sys_set_avls(int on);
 /* ARK:s huvudversion: 4 (ARK-4), 5 (ARK-5) eller 0 (ingen ARK, t.ex. PPSSPP) */
 int sys_ark_version(void);
+/* The whole version of ARK as text, e.g. "4.20.69" (major.minor.micro as ARK's SystemControl gives them); "" when there is no ARK or it gave no sensible numbers */
+const char *sys_ark_full_version(void);
 /* PSP-modell (kuKernelGetModel): 0 = PSP-1000, 1 = PSP-2000, 2/3/6/8 = PSP-3000,
  * 4 = PSP Go, 10 = PSP Street, -1 = okänd */
 int sys_model(void);
+/* The processor at its fastest (333 MHz, the bus 166) for as long as a picture or a video is on the screen: 1 asks for it, 0 gives back what it was. They are counted, so every 1 needs its 0.
+ * Nothing changes when the PSP is already that fast (or has no such call, as an emulator). */
+void sys_fast(int on);
+/* The same, for a caller that must not wait: a thread of its own makes the change. The call itself takes 0.17 to 0.7 seconds on a PSP-1000 (the frames of 684, 167 and 167 ms of the picture viewer in
+ * the PSP-1000 timings), and the screen's thread stood still for all of it. The requests are done in the order they are made. sys_fast_now() is sys_fast() for the others (the video player): it first waits
+ * for the requests that are not done yet, so that the two never run together (sys_fast_later() does it itself when it cannot make a thread). */
+void sys_fast_later(int on);
+void sys_fast_now(int on);
+/* waits until the requests of sys_fast_later() are done (before the program is let go: a game that is started, the way out to the XMB) */
+void sys_fast_flush(void);
 /* 1 om ms0: och ef0: är samma lagring (ARK pekar om ms0: till internminnet) – skanna då bara ms0: */
 int sys_ms_is_ef(void);
 /* PSP-1000 saknar extra minne och USB-laddning */

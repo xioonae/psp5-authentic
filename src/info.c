@@ -14,12 +14,16 @@
 #include "gameops.h"
 #include "iso.h"
 #include "lang.h"
+#include "lastplayed.h"
 #include "loader.h"
 #include "osd.h"
+#include "power.h"
 #include "sfo.h"
 #include "sound.h"
 #include "system.h"
 #include "theme.h"
+#include "look.h"
+#include "datetime.h"
 #include "umd.h"
 
 /* the same layout as the settings */
@@ -30,7 +34,8 @@
 #define RIGHT_W     284.0f /* to 456 */
 #define ROW_H       26.0f
 #define LIST_TOP    58.0f
-#define LIST_BOTTOM 236.0f
+#define LIST_ROWS   7      /* rows shown at once, as in Settings, the File Manager and Manage Saved Data */
+#define LIST_BOTTOM (LIST_TOP + LIST_ROWS * ROW_H)
 
 #define MAX_ROWS    80
 #define MAX_SFO     (64 * 1024)
@@ -54,7 +59,7 @@ static Row s_rows[MAX_ROWS];
 static int s_n;
 static struct {
     float open, time, scroll;
-    int sel;
+    int sel, top;         /* the chosen row, and the first row shown (the list moves only when the chosen row would leave the ones shown) */
     int index;            /* in the game list */
     int measure_row;      /* row waiting for the folder count, or -1 */
     int repeat_dir;
@@ -158,13 +163,25 @@ static void location_rows(const Entry *e)
     }
 }
 
-static void modified_row(const Entry *e)
+/* a packed time (scan_pack_time()) as the date and time that psp5 shows; no row when the time is not known (0) */
+static void time_row(const char *label, u32 t)
 {
-    u32 t = e->file_time;
     if (!t)
         return;
-    add_rowf(L(S_I_MODIFIED), "%04u-%02u-%02u %02u:%02u", (unsigned)((t >> 26) + 1980), (unsigned)((t >> 22) & 15),
-             (unsigned)((t >> 17) & 31), (unsigned)((t >> 12) & 31), (unsigned)((t >> 6) & 63));
+    char text[40];
+    dt_text_stored(text, sizeof(text), t); /* as the player chose in Settings -> System -> Date and Time ("2026.10.28 14:05" is the standard) */
+    add_row(label, text);
+}
+
+static void modified_row(const Entry *e)
+{
+    time_row(L(S_I_MODIFIED), e->file_time);
+}
+
+/* when psp5 (or the helper plugin) saw the game played last (lastplayed.c); nothing for a game that has no time (a disc without a disc ID has none) */
+static void last_played_row(const Entry *e)
+{
+    time_row(L(S_I_LAST_PLAYED), lastplayed_time(e));
 }
 
 /* The few PARAM.SFO entries worth knowing, in this order, each with its own key as the label */
@@ -214,6 +231,7 @@ static void iso_rows(const Entry *e)
         }
     }
     modified_row(e);
+    last_played_row(e);
 
     IsoReader r;
     if (iso_open(&r, e->path) < 0)
@@ -256,6 +274,7 @@ static void pbp_rows(const Entry *e)
         S.measure_row = s_n - 1;
     }
     modified_row(e);
+    last_played_row(e);
 
     u32 h[2 + PBP_SECTIONS];
     memset(h, 0, sizeof(h));
@@ -277,6 +296,7 @@ static void umd_rows(const Entry *e)
 {
     add_row(L(S_I_TYPE), L(S_I_UMD));
     add_row(L(S_I_LOCATION), L(S_I_UMD_DRIVE));
+    last_played_row(e);
     SceIoStat st;
     if (sceIoGetstat(UMD_ROOT "PSP_GAME/PARAM.SFO", &st) >= 0 && st.st_size > 0 && st.st_size <= MAX_SFO) {
         u8 *sfo = malloc(st.st_size);
@@ -410,11 +430,16 @@ int info_update(const UiInput *in, float dt)
         return 1;
     }
 
-    /* keep the selected row visible, as in the settings */
-    float target = 0, y = S.sel * ROW_H, visible = LIST_BOTTOM - LIST_TOP - ROW_H;
-    if (y > visible)
-        target = y - visible;
-    S.scroll = approach(S.scroll, target, 14.0f, dt);
+    /* the highlight moves through the rows that are shown, and the list moves only when it would leave them (as in Settings, the File Manager and Manage
+     * Saved Data); a caption above the row that comes to the top comes with it */
+    if (S.sel < S.top) {
+        S.top = S.sel;
+        while (S.top > 0 && s_rows[S.top - 1].header)
+            S.top--;
+    }
+    if (S.sel > S.top + LIST_ROWS - 1)
+        S.top = S.sel - (LIST_ROWS - 1);
+    S.scroll = approach(S.scroll, S.top * ROW_H, 14.0f, dt);
     return 0;
 }
 
@@ -429,7 +454,7 @@ static void draw_left(float a, float slide)
     if (slot && slot->state == SLOT_READY && slot->tex)
         gfx_tex(slot->tex, x, y, w, h, RGBA(255, 255, 255, (int)(255 * a)));
     else
-        gfx_round_rect(x, y, w, h, w / 12, fade(theme_cur()->card, a));
+        gfx_round_rect(x, y, w, h, w / 12, fade(LOOK_CARD, a));
 
     char lines[3][96];
     int n = text_wrap(S.e.title, 0.6f, w, lines, 3);
@@ -474,6 +499,7 @@ void info_draw(void)
                      clampf((LIST_BOTTOM - y) / (ROW_H * 0.6f), 0, 1);
         draw_row(&s_rows[i], y, i == S.sel, i == s_n - 1, i + 1 == S.sel, a * edge);
     }
+    power_draw(); /* the power popup of SELECT (main.c asks power.c) */
     osd_draw();
     if (a < 1)
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - a))));

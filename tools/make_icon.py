@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # psp5 – made by Mille Weber
 """Ritar psp5:s egen ikon (ICON0.PNG 144×80) och XMB-bakgrund (PIC1.PNG 480×272) till res/.
-Helt egen grafik: mörkblå yta, mjuka ljusvågor och ordet "psp5" i tunn stil.
+Helt egen grafik: mörkblå yta, mjuka ljusvågor och namnet "psp5 authentic" i tunn stil ("psp5" stort, "authentic" under).
     py tools\\make_icon.py
 """
 import math
@@ -14,8 +14,11 @@ FONTS = [
     r"C:\Windows\Fonts\segoeuisl.ttf",  # Segoe UI Semilight – läsbar även i 144×80
     r"C:\Windows\Fonts\segoeuil.ttf",
     r"C:\Windows\Fonts\segoeui.ttf",
+    "/usr/share/fonts/opentype/inter/Inter-Light.otf",  # (Linux: nearest to Segoe UI Semilight)
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 ]
+# the name on the icon: (text, size as a share of the height, where its middle is, as a share of the height from the top)
+NAME = (("psp5", 0.36, 0.40), ("authentic", 0.19, 0.69))
 TOP, BOTTOM = (16, 30, 72), (4, 5, 12)
 
 
@@ -66,24 +69,23 @@ def compose(w, h, scale, with_text):
         img = Image.alpha_composite(img, Image.merge("RGBA", (*Image.new("RGB", (W, H), color).split(), mask)))
 
     if with_text:
-        f = font(int(H * 0.42))
-        d = ImageDraw.Draw(img)
-        # svag glöd bakom texten
-        halo = Image.new("L", (W, H), 0)
-        ImageDraw.Draw(halo).text((W / 2, H / 2), "psp5", font=f, fill=150, anchor="mm")
-        halo = halo.filter(ImageFilter.GaussianBlur(4 * scale))
-        img = Image.alpha_composite(img, Image.merge("RGBA", (*Image.new("RGB", (W, H), (120, 170, 255)).split(), halo)))
-        d = ImageDraw.Draw(img)
-        d.text((W / 2, H / 2), "psp5", font=f, fill=(245, 248, 255, 255), anchor="mm")
+        for text, size, mid in NAME:
+            f = font(int(H * size))
+            # svag glöd bakom texten
+            halo = Image.new("L", (W, H), 0)
+            ImageDraw.Draw(halo).text((W / 2, H * mid), text, font=f, fill=150, anchor="mm")
+            halo = halo.filter(ImageFilter.GaussianBlur(4 * scale))
+            img = Image.alpha_composite(img, Image.merge("RGBA", (*Image.new("RGB", (W, H), (120, 170, 255)).split(), halo)))
+            ImageDraw.Draw(img).text((W / 2, H * mid), text, font=f, fill=(245, 248, 255, 255), anchor="mm")
     return img.resize((w, h), Image.LANCZOS)
 
 
-def icon():
+def icon(out=None):
     img = compose(144, 80, 4, True)
     mask = Image.new("L", (144 * 4, 80 * 4), 0)
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, 144 * 4 - 1, 80 * 4 - 1), 9 * 4, fill=255)
     img.putalpha(mask.resize((144, 80), Image.LANCZOS))
-    img.save(RES / "ICON0.PNG", optimize=True)
+    img.save(out or RES / "ICON0.PNG", optimize=True)
 
 
 def pic1():

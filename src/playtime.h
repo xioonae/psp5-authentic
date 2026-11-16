@@ -23,6 +23,13 @@ void playtime_set_self(const char *path);
  * files are removed). Call it again to forget what was read. */
 void playtime_load(const char *dir);
 
+/* The games that the plugin saw played since psp5 was last open (the files that playtime_load() added), oldest first, each by its name
+ * (entry_cover_key()): how many, the name of the one at `i` (0 up; "" past the last), and "taken" when Home has put them first (they are listed only once).
+ * The time of each is also kept in lastplayed.c. */
+int playtime_plays(void);
+const char *playtime_play_key(int i);
+void playtime_plays_taken(void);
+
 /* The seconds the game has been played, 0 when nothing is known. */
 unsigned playtime_seconds(const Entry *e);
 

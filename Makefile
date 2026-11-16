@@ -1,8 +1,8 @@
 # psp5 – made by Mille Weber
 TARGET = psp5
-OBJS = src/main.o src/scan.o src/sfo.o src/iso.o src/lzo.o src/folders.o src/playtime.o src/launch.o \
+OBJS = src/main.o src/scan.o src/sfo.o src/iso.o src/lzo.o src/folders.o src/playtime.o src/lastplayed.o src/launch.o \
        src/gfx.o src/image.o src/art.o src/loader.o src/ui.o \
-       src/arkcfg.o src/plugins.o src/system.o src/settings.o src/testrun.o src/sound.o src/lang.o src/config.o src/boot.o src/music.o src/umd.o src/theme.o src/osd.o src/files.o src/diacritic.o src/icons.o src/reccache.o src/info.o src/gameops.o src/popup.o src/saves.o src/home.o src/ark4stub.o src/awake.o src/helper.o src/controls.o src/wifi.o src/netstub.o
+       src/arkcfg.o src/plugins.o src/system.o src/settings.o src/testrun.o src/sound.o src/lang.o src/config.o src/boot.o src/music.o src/umd.o src/theme.o src/osd.o src/fontasync.o src/logs.o src/files.o src/diacritic.o src/icons.o src/reccache.o src/info.o src/gameops.o src/gamesize.o src/storage.o src/popup.o src/saves.o src/home.o src/power.o src/ark4stub.o src/awake.o src/helper.o src/controls.o src/kbd.o src/adts.o src/downmix.o src/textbuf.o src/textedit.o src/wifi.o src/netstub.o src/ftp.o src/netsock.o src/netlink.o src/ftpscreen.o src/datetime.o src/musicui.o src/media.o src/imageview.o src/videoplay.o src/video.o src/mp4.o src/mpegps.o src/h264sei.o src/unit.o src/aac.o src/tscale.o src/h264dec.o src/h264rec.o src/h264lf.o src/meboot.o src/hwavc.o src/hwpipe.o src/mpegvsh.o src/videomem.o
 
 CFLAGS = -O2 -G0 -Wall -Wno-unused-parameter -Wno-stringop-truncation -Wno-format-truncation -Iplugin $(EXTRA) $(ARKFLAGS)
 ASFLAGS = $(CFLAGS)
@@ -17,14 +17,14 @@ ARKCTRL = -larkctrl
 endif
 
 LIBS = -lintrafont -lpng -ljpeg -lcisoread -llz4 -lz -lm \
-       -lpspmp3 -lpspgu -lpspumd -lpsprtc -lpsppower -lpsputility -lpspusb -lpspusbstor -lpspaudio -lpspwlan -lpspreg \
+       -lpspmp3 -lpspatrac3 -lpspmpeg -lpspmpegbase -lpspaudiocodec -lpspgu -lpspumd -lpsprtc -lpsppower -lpsputility -lpspusb -lpspusbstor -lpspaudio -lpspwlan -lpspreg \
        -lpspsystemctrl_user $(ARKCTRL) -lpspkubridge
 
 BUILD_PRX = 1
 PSP_FW_VERSION = 660
 
 EXTRA_TARGETS = EBOOT.PBP
-PSP_EBOOT_TITLE = psp5
+PSP_EBOOT_TITLE = psp5 authentic
 # EFAWARE: on a PSP Go, ARK-4 starts psp5 from the internal storage with the Memory Stick as ms0: (so the games on both are found)
 SFOFLAGS = -d EFAWARE=1
 PSP_EBOOT_ICON = res/ICON0.PNG
@@ -32,6 +32,9 @@ PSP_EBOOT_PIC1 = res/PIC1.PNG
 
 PSPSDK = $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
+
+# the software decoders are the heaviest loops of psp5: -O3 made a picture about 8 % faster in PPSSPP (instructions counted)
+src/h264dec.o src/h264rec.o src/h264lf.o: CFLAGS := $(filter-out -O2,$(CFLAGS)) -O3
 
 # The helper plugin (plugin/psp5time.c, a kernel module that ARK loads into a game) is built first and carried inside psp5 as a C array
 # (src/helper.c writes it out at every start with ARK, and adds its two lines to PLUGINS.TXT the first time).

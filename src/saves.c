@@ -1,5 +1,7 @@
 /* psp5 – made by Mille Weber */
-/* Manage Saved Data (see saves.h). Three parts:
+/* Manage Saved Data and Games and Apps (see saves.h). Games and Apps is the same screen with the games and apps of the console in the list instead of
+ * the saves (S.mode): the same list, Sort button and popup, marks, question, progress and hints; it has more ways to sort, and what it deletes is what
+ * gameops_target() allows. Three parts:
  *  - a reading thread: lists PSP/SAVEDATA, then fills in each save (PARAM.SFO, size, which game it belongs to);
  *  - a delete thread with a progress panel that can be cancelled;
  *  - the screen: the list on the left (like the file manager), the details of the highlighted save on the right.
@@ -23,23 +25,30 @@
 #include <string.h>
 #include <strings.h>
 #include "saves.h"
+#include "logs.h"
+#include "art.h"
 #include "controls.h"
 #include "gameops.h"
+#include "gamesize.h"
 #include "image.h"
 #include "lang.h"
+#include "lastplayed.h"
 #include "osd.h"
+#include "power.h"
+#include "playtime.h"
 #include "popup.h"
+#include "look.h"
 #include "sfo.h"
 #include "sound.h"
 #include "system.h"
 #include "theme.h"
+#include "datetime.h"
 
 #define SAVE_ROOT  "PSP/SAVEDATA"
-#define PATH_LEN   160
+#define PATH_LEN   256
 #define MAX_SFO    (32 * 1024)
 #define MAX_ICON   (256 * 1024)
-#define ICON_W     144 /* ICON0.PNG of a save */
-#define ICON_H     80
+/* (ICON_W x ICON_H, art.h, is the size of the ICON0.PNG of a save and of a game) */
 
 /* the same look as the file manager's list, with the information screen's details on the right */
 #define LIST_X   24.0f
@@ -72,11 +81,15 @@ typedef struct {
     u32 time;        /* when it was changed, packed like Entry.file_time */
     u8 matched;      /* `game` is the title of a game or app in the list */
     u8 locked;       /* must never be deleted (known as soon as the folder is listed) */
+    int entry;       /* Games and Apps: the game's place in the list */
+    u32 used_time, used_secs; /* Games and Apps: when it was played last (like Entry.file_time), and for how many seconds in all */
     volatile u8 ready; /* the reading thread is done with this one (set last) */
     /* from here on only the main thread writes */
     u8 marked, laid;
     char row_main[64], row_sub[64], row_size[16];
     float sub_x;
+    float main_room;  /* the room of the name in the row */
+    u8 name_over;     /* the name is wider than that: the highlighted row scrolls it (the others show it cut off) */
 } Save;
 
 /* --- the reading thread --- */
@@ -86,6 +99,7 @@ static struct {
     Save *volatile items; /* published once, when `listed` is set; the thread then fills in the entries */
     volatile int count;
     const EntryList *games;
+    int dev; /* only this storage (0 = ms0:, 1 = ef0:), -1 = both */
 } T = { .thread = -1 };
 
 /* --- the delete thread --- */
@@ -93,18 +107,25 @@ static struct {
     SceUID thread;
     volatile int running, cancel, result;
     volatile u32 done;
-    u32 total;
+    volatile u32 total; /* (Games and Apps add the size of each folder as they get to it) */
     char current[64];
     int n;
     char (*paths)[PATH_LEN];
     int *index; /* of each path in the list */
 } W = { .thread = -1 };
 
-enum { SORT_DATE, SORT_SIZE, SORT_NAME, SORT_COUNT };
+enum { MODE_SAVES, MODE_GAMES };
+/* the ways to sort: Manage Saved Data, in the order of its popup, and Games and Apps */
+enum { SORT_DATE, SORT_NAME, SORT_SIZE, SORT_COUNT };
+enum { GSORT_LEAST, GSORT_USED_NEW, GSORT_USED_OLD, GSORT_NAME_AZ, GSORT_NAME_ZA, GSORT_SIZE_BIG, GSORT_SIZE_SMALL, GSORT_COUNT };
 
 static struct {
     float open, time, scroll;
+    int mode;             /* MODE_SAVES or MODE_GAMES */
+    int gs_version;       /* Games and Apps: gamesize_version() when the sizes were last taken */
     int sel, top;
+    int name_for;         /* the row whose name scrolls (name_t seconds since it was highlighted) */
+    float name_t;
     int sort;
     int sort_focus;       /* the Sort button under the title is selected, not a row (↑ from the first row) */
     float sort_anim;      /* 0..1: how selected it looks */
@@ -130,7 +151,12 @@ static struct {
     float pic_dwell, pic_alpha;
 } S;
 
+/* the games and apps that were deleted while the screen was open: their places in the game list (kept after saves_close(), until the next open) */
+static int *s_gone;
+static int s_gone_n;
+
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
+static int sort_count(void) { return S.mode == MODE_GAMES ? GSORT_COUNT : SORT_COUNT; }
 static u32 fade(u32 c, float a) { return COLOR_ALPHA(c, (int)(((c >> 24) & 0xFF) * clampf(a, 0, 1))); }
 
 /* `text` on one line of at most `max_w` pixels: the largest size from max_size down to min_size that fits, and if
@@ -176,6 +202,17 @@ static int deletable(const char *dev, const char *dir)
     if (!strncasecmp(dir, "ARK_", 4))
         return 0;
     return 1;
+}
+
+/* What a delete takes: the folder of the save, or the file or folder of the game. 0 if it is not allowed. */
+static int item_path(char *out, int size, const Save *s)
+{
+    if (S.mode == MODE_SAVES) {
+        save_path(out, size, s);
+        return deletable(s->dev, s->dir);
+    }
+    int is_dir;
+    return s->entry >= 0 && s->entry < T.games->count && gameops_target(&T.games->items[s->entry], out, size, &is_dir);
 }
 
 /* The name of the folder an app lives in: "ms0:/PSP/GAME/Foo/EBOOT.PBP" -> "Foo". "" if there is none. */
@@ -326,6 +363,74 @@ static int cmp_name(const void *a, const void *b)
     return r ? r : cmp_date(a, b);
 }
 
+/* Games and Apps */
+static int cmp_gname(const void *a, const void *b)
+{
+    const Save *x = a, *y = b;
+    int r = strcasecmp(x->game, y->game);
+    return r ? r : x->entry - y->entry;
+}
+static int cmp_gname_za(const void *a, const void *b)
+{
+    const Save *x = a, *y = b;
+    int r = strcasecmp(y->game, x->game);
+    return r ? r : x->entry - y->entry;
+}
+static int cmp_gsize_big(const void *a, const void *b)
+{
+    const Save *x = a, *y = b;
+    if (x->bytes != y->bytes)
+        return x->bytes > y->bytes ? -1 : 1;
+    return cmp_gname(a, b);
+}
+static int cmp_gsize_small(const void *a, const void *b)
+{
+    const Save *x = a, *y = b;
+    if (x->bytes != y->bytes)
+        return x->bytes < y->bytes ? -1 : 1;
+    return cmp_gname(a, b);
+}
+static int cmp_gused_new(const void *a, const void *b)
+{
+    const Save *x = a, *y = b;
+    if (x->used_time != y->used_time)
+        return x->used_time > y->used_time ? -1 : 1; /* (never played: no time, last) */
+    return cmp_gname(a, b);
+}
+static int cmp_gused_old(const void *a, const void *b)
+{
+    const Save *x = a, *y = b;
+    if (!x->used_time != !y->used_time)
+        return x->used_time ? -1 : 1; /* never played: last, whichever way */
+    if (x->used_time != y->used_time)
+        return x->used_time < y->used_time ? -1 : 1;
+    return cmp_gname(a, b);
+}
+static int cmp_gleast(const void *a, const void *b)
+{
+    const Save *x = a, *y = b;
+    if (x->used_secs != y->used_secs)
+        return x->used_secs < y->used_secs ? -1 : 1;
+    return cmp_gname(a, b);
+}
+
+/* the comparison of the way to sort S.sort in S.mode */
+static int (*sorter(void))(const void *, const void *)
+{
+    if (S.mode == MODE_GAMES) {
+        switch (S.sort) {
+        case GSORT_LEAST:      return cmp_gleast;
+        case GSORT_USED_NEW:   return cmp_gused_new;
+        case GSORT_USED_OLD:   return cmp_gused_old;
+        case GSORT_NAME_ZA:    return cmp_gname_za;
+        case GSORT_SIZE_BIG:   return cmp_gsize_big;
+        case GSORT_SIZE_SMALL: return cmp_gsize_small;
+        default:               return cmp_gname;
+        }
+    }
+    return S.sort == SORT_SIZE ? cmp_size : S.sort == SORT_NAME ? cmp_name : cmp_date;
+}
+
 /* The folders of PSP/SAVEDATA on the card(s), newest first. The number; *out is freed by the caller. */
 static int list_folders(Save **out)
 {
@@ -333,6 +438,8 @@ static int list_folders(Save **out)
     int n = 0, cap = 0;
     static const char *const devs[2] = { "ms0:/", "ef0:/" };
     for (int d = 0; d < (sys_ms_is_ef() ? 1 : 2); d++) {
+        if (T.dev >= 0 && d != T.dev)
+            continue;
         char root[40];
         snprintf(root, sizeof(root), "%s%s", devs[d], SAVE_ROOT);
         SceUID fd = sceIoDopen(root);
@@ -404,9 +511,25 @@ static int worker(SceSize args, void *argp)
         const char *path = W.paths[i];
         const char *slash = strrchr(path, '/');
         snprintf(W.current, sizeof(W.current), "%s", slash ? slash + 1 : path);
+        SceIoStat st;
+        if (S.mode == MODE_GAMES) { /* a game: its file (ISO), or its folder, which is counted first for the progress */
+            if (sceIoGetstat(path, &st) < 0) {
+                W.done++;
+            } else if (FIO_S_ISDIR(st.st_mode)) {
+                unsigned long long bytes;
+                u32 items;
+                gameops_tree_stats(path, &bytes, &items, &W.cancel);
+                W.total += items;
+                r = gameops_tree_delete(path, &W.cancel, &W.done, NULL, 0);
+            } else if (sceIoRemove(path) < 0) {
+                r = DEL_FAILED;
+            } else {
+                W.done++;
+            }
+            continue;
+        }
         char sfo[PATH_LEN + 16];
         snprintf(sfo, sizeof(sfo), "%s/PARAM.SFO", path);
-        SceIoStat st;
         if (sceIoGetstat(sfo, &st) >= 0) { /* first: whatever happens next, this is no longer a save */
             if (sceIoRemove(sfo) < 0) {
                 r = DEL_FAILED;
@@ -453,6 +576,11 @@ static void free_pic(void)
     S.pic_alpha = 0;
 }
 
+static int cmp_int_desc(const void *a, const void *b)
+{
+    return *(const int *)b - *(const int *)a;
+}
+
 /* After a delete: drop the saves that are gone from the list, unmark the rest */
 static void prune(void)
 {
@@ -463,7 +591,11 @@ static void prune(void)
         if (sceIoGetstat(W.paths[k], &st) >= 0)
             continue;
         it[W.index[k]].dir[0] = 0; /* marks it as gone */
+        if (S.mode == MODE_GAMES && s_gone && s_gone_n < T.games->count)
+            s_gone[s_gone_n++] = it[W.index[k]].entry;
     }
+    if (s_gone_n > 1)
+        qsort(s_gone, s_gone_n, sizeof(int), cmp_int_desc); /* the last place first: the caller can remove them one by one */
     for (int i = 0; i < T.count; i++) {
         if (!it[i].dir[0]) {
             if (i < S.sel)
@@ -497,6 +629,8 @@ static void finish_delete(void)
     W.index = NULL;
     W.n = 0;
     refresh_space();
+    if (r != DEL_OK && r != DEL_CANCELLED)
+        logs_fail(LOG_SYSTEM, "Saved data could not be deleted: some of it could not be removed (the answer was %d).", r);
     toast(L(r == DEL_OK ? S_DELETED : r == DEL_CANCELLED ? S_F_CANCELLED : S_F_FAILED));
     sound_play(r == DEL_OK ? SND_SELECT : SND_ERROR);
 }
@@ -509,9 +643,8 @@ static void start_delete(void)
     W.index = malloc((size_t)count * sizeof(*W.index));
     W.total = 0;
     for (int i = 0; W.paths && W.index && i < count; i++) {
-        if (!is_target(i, any) || !it[i].ready || !deletable(it[i].dev, it[i].dir))
+        if (!is_target(i, any) || !it[i].ready || !item_path(W.paths[n], PATH_LEN, &it[i]))
             continue;
-        save_path(W.paths[n], PATH_LEN, &it[i]);
         W.index[n++] = i;
         W.total += it[i].entries ? it[i].entries : 1;
     }
@@ -535,6 +668,7 @@ static void start_delete(void)
         W.paths = NULL;
         W.index = NULL;
         W.n = 0;
+        logs_fail(LOG_SYSTEM, "Saved data could not be deleted: the deleting could not start (no thread or nothing chosen).");
         toast(L(S_F_FAILED));
         sound_play(SND_ERROR);
     }
@@ -543,15 +677,70 @@ static void start_delete(void)
 /* ---------------------------------------------------------------------- */
 /* opening, updating */
 
-void saves_open(const EntryList *games)
+static void reset(const EntryList *games, int dev, int mode)
 {
     memset(&S, 0, sizeof(S));
     memset(&T, 0, sizeof(T));
     memset(&W, 0, sizeof(W));
     T.thread = W.thread = -1;
     T.games = games;
+    T.dev = dev;
+    S.mode = mode;
     S.pic_sel = S.pan_for = -1;
+    free(s_gone);
+    s_gone = NULL;
+    s_gone_n = 0;
     refresh_space();
+}
+
+/* Games and Apps: the list is made at once, from the game list (a game's size is the folder it is in, which is counted in the background: gamesize.c) */
+void saves_open_games(const EntryList *games, int dev)
+{
+    reset(games, dev, MODE_GAMES);
+    S.sort = GSORT_LEAST; /* the first of the popup */
+    Save *list = calloc(games->count ? games->count : 1, sizeof(Save));
+    s_gone = malloc((games->count ? games->count : 1) * sizeof(int));
+    int n = 0;
+    for (int i = 0; list && i < games->count; i++) {
+        const Entry *e = &games->items[i];
+        if (e->type == ENTRY_UMD || (dev >= 0 && (e->path[0] == 'e') != dev))
+            continue;
+        Save *s = &list[n++];
+        snprintf(s->dev, sizeof(s->dev), "%s", e->path[0] == 'e' ? "ef0:/" : "ms0:/");
+        snprintf(s->dir, sizeof(s->dir), "%d", i); /* (a name that is never empty and never the same: the place in the list) */
+        snprintf(s->game, sizeof(s->game), "%s", e->title);
+        s->entry = i;
+        s->matched = 1;
+        s->ready = 1;
+        s->bytes = gamesize_of(e);
+        s->time = e->file_time;
+        s->used_time = lastplayed_time(e);
+        s->used_secs = playtime_seconds(e);
+        char target[PATH_LEN];
+        int is_dir;
+        s->locked = !gameops_target(e, target, sizeof(target), &is_dir);
+    }
+    S.gs_version = gamesize_version();
+    if (n > 1)
+        qsort(list, n, sizeof(Save), sorter());
+    T.items = list;
+    T.count = list ? n : 0;
+    T.listed = T.done = 1;
+}
+
+int saves_gone_count(void)
+{
+    return s_gone_n;
+}
+
+int saves_gone_entry(int i)
+{
+    return i >= 0 && i < s_gone_n ? s_gone[i] : -1;
+}
+
+void saves_open_on(const EntryList *games, int dev)
+{
+    reset(games, dev, MODE_SAVES);
     T.thread = sceKernelCreateThread("psp5_saves", scan_thread, 0x30, 0x10000, PSP_THREAD_ATTR_USER, NULL);
     if (T.thread >= 0 && sceKernelStartThread(T.thread, 0, NULL) < 0) {
         sceKernelDeleteThread(T.thread);
@@ -559,6 +748,11 @@ void saves_open(const EntryList *games)
     }
     if (T.thread < 0) /* no thread: read here, on the spot (the screen waits, but it works) */
         scan_thread(0, NULL);
+}
+
+void saves_open(const EntryList *games)
+{
+    saves_open_on(games, -1);
 }
 
 void saves_close(void)
@@ -623,12 +817,7 @@ static void watch_new_entries(void)
 
 static void fmt_time(char *out, int size, u32 t)
 {
-    if (!t) {
-        out[0] = 0;
-        return;
-    }
-    snprintf(out, size, "%04u-%02u-%02u %02u:%02u", (unsigned)((t >> 26) + 1980), (unsigned)((t >> 22) & 15),
-             (unsigned)((t >> 17) & 31), (unsigned)((t >> 12) & 31), (unsigned)((t >> 6) & 63));
+    dt_text_stored(out, size, t); /* as the player chose in Settings -> System -> Date and Time; an empty text for 0 */
 }
 
 /* The row's texts, cut to fit: the game, then (if there is room) the title of the save in a dimmer colour */
@@ -643,11 +832,13 @@ static void lay_row(Save *s)
     const char *sub = s->ready && s->title[0] && strcmp(s->title, name) ? s->title : "";
     float full = text_width(0.58f, 0, name);
     float main_max = sub[0] ? avail * 0.62f : avail;
+    s->main_room = main_max;
+    s->name_over = full > main_max;
     if (full > main_max)
         text_ellipsis(s->row_main, sizeof(s->row_main), name, 0.58f, main_max);
     else
         snprintf(s->row_main, sizeof(s->row_main), "%s", name);
-    s->sub_x = text_width(0.58f, 0, s->row_main) + 8;
+    s->sub_x = s->name_over ? main_max + 8 : text_width(0.58f, 0, s->row_main) + 8; /* (the highlighted row scrolls the name over the whole room) */
     if (sub[0] && avail - s->sub_x > 36)
         text_ellipsis(s->row_sub, sizeof(s->row_sub), sub, 0.5f, avail - s->sub_x);
 }
@@ -665,6 +856,27 @@ static void lay_panel(void)
     S.pan_ready = s->ready;
     if (!s->ready)
         return;
+    if (S.mode == MODE_GAMES) { /* the title, the game ID, when it was played last and how long */
+        const Entry *e = &T.games->items[s->entry];
+        S.pan_name_n = text_wrap(s->game, 0.6f, PANEL_W, S.pan_name, 2);
+        char what[160]; /* the game ID; an app or a PS1 game has none: the name of its folder, a file without one: its file name */
+        if (e->game_id[0])
+            snprintf(what, sizeof(what), "%s", e->game_id);
+        else if (e->type == ENTRY_ISO)
+            snprintf(what, sizeof(what), "%s", strrchr(e->path, '/') ? strrchr(e->path, '/') + 1 : e->path);
+        else
+            app_folder(e, what, sizeof(what));
+        text_ellipsis(S.pan_title, sizeof(S.pan_title), what[0] ? what : e->path, 0.52f, PANEL_W);
+        char line[96], when[24];
+        if (s->used_time) {
+            fmt_time(when, sizeof(when), s->used_time);
+            snprintf(line, sizeof(line), "%s: %s", L(S_I_LAST_PLAYED), when);
+            S.pan_desc_n = text_wrap(line, 0.5f, PANEL_W, S.pan_desc, 2);
+        }
+        text_ellipsis(S.pan_lock, sizeof(S.pan_lock), L(S_GA_PROTECTED), 0.5f, PANEL_W);
+        fmt_time(S.pan_date, sizeof(S.pan_date), s->time);
+        return;
+    }
     char name[200];
     if (s->matched || !s->game[0])
         snprintf(name, sizeof(name), "%s", s->game[0] ? s->game : s->dir);
@@ -680,6 +892,8 @@ static void lay_panel(void)
 /* The picture (ICON0.PNG) of a save, or NULL */
 static Texture *load_pic(const Save *s)
 {
+    if (S.mode == MODE_GAMES)
+        return art_load_icon(&T.games->items[s->entry]); /* (rounded already, and kept in psp5's cache) */
     char path[PATH_LEN + 16];
     save_path(path, PATH_LEN, s);
     size_t base = strlen(path);
@@ -707,23 +921,48 @@ static Texture *load_pic(const Save *s)
     return t;
 }
 
-/* The sorting chosen in the Sort popup; the highlighted save stays highlighted */
-static void set_sort(int sort)
+/* Sorts the list again; the highlighted one stays highlighted */
+static void resort(void)
 {
-    if (!T.done || T.count < 2 || sort == S.sort)
-        return;
-    char dev[6], dir[64];
-    snprintf(dev, sizeof(dev), "%s", T.items[S.sel].dev);
-    snprintf(dir, sizeof(dir), "%s", T.items[S.sel].dir);
-    S.sort = sort;
-    qsort(T.items, T.count, sizeof(Save), S.sort == SORT_SIZE ? cmp_size : S.sort == SORT_NAME ? cmp_name : cmp_date);
+    char dev[6] = "", dir[64] = "";
+    if (T.count) {
+        snprintf(dev, sizeof(dev), "%s", T.items[S.sel].dev);
+        snprintf(dir, sizeof(dir), "%s", T.items[S.sel].dir);
+    }
+    qsort(T.items, T.count, sizeof(Save), sorter());
     for (int i = 0; i < T.count; i++)
         if (!strcmp(T.items[i].dir, dir) && !strcmp(T.items[i].dev, dev))
             S.sel = i;
     S.top = (int)clampf(S.sel - ROWS / 2, 0, T.count > ROWS ? T.count - ROWS : 0);
     S.pan_for = -1;
     free_pic();
+}
+
+/* The sorting chosen in the Sort popup */
+static void set_sort(int sort)
+{
+    if (!T.done || T.count < 2 || sort == S.sort || sort < 0 || sort >= sort_count())
+        return;
+    S.sort = sort;
+    resort();
+    S.sel = S.top = 0; /* a new way to sort starts the list from the beginning (the highlight does not follow the game it was on) */
+    S.scroll = 0;
     sound_play(SND_SELECT);
+}
+
+/* Games and Apps: a folder has been counted since the sizes were taken: take them again (and sort again, if the sorting is by size) */
+static void refresh_sizes(void)
+{
+    if (S.mode != MODE_GAMES || S.gs_version == gamesize_version())
+        return;
+    S.gs_version = gamesize_version();
+    for (int i = 0; i < T.count; i++) {
+        T.items[i].bytes = gamesize_of(&T.games->items[T.items[i].entry]);
+        T.items[i].laid = 0;
+    }
+    if (T.count > 1 && (S.sort == GSORT_SIZE_BIG || S.sort == GSORT_SIZE_SMALL))
+        resort();
+    S.pan_for = -1;
 }
 
 static int all_marked(void)
@@ -757,14 +996,12 @@ static void mark_highlighted(void)
         return;
     Save *s = &T.items[S.sel];
     if (s->locked) {
-        toast(L(S_SV_PROTECTED));
+        toast(L(S.mode == MODE_GAMES ? S_GA_PROTECTED : S_SV_PROTECTED));
         sound_play(SND_ERROR);
         return;
     }
-    s->marked ^= 1;
+    s->marked ^= 1; /* (the highlight stays on the row) */
     sound_play(SND_SELECT);
-    if (S.sel < T.count - 1)
-        S.sel++;
 }
 
 /* ✕: ask before deleting the marked saves (or the highlighted one) */
@@ -783,19 +1020,24 @@ static void open_ask(void)
     }
     if (!T.done || n == 0) { /* still reading, or only system data */
         if (T.done)
-            toast(L(S_SV_PROTECTED));
+            toast(L(S.mode == MODE_GAMES ? S_GA_PROTECTED : S_SV_PROTECTED));
         sound_play(SND_ERROR);
         return;
     }
     char num[24], text[256];
     gameops_fmt_size(num, sizeof(num), bytes);
     snprintf(S.ask_size, sizeof(S.ask_size), L(S_SV_SELECTED), n, num);
-    snprintf(text, sizeof(text), "%s %s", L(S_SV_DEL_ASK), L(S_DEL_FOREVER));
+    snprintf(text, sizeof(text), "%s %s", L(S.mode == MODE_GAMES ? S_GA_DEL_ASK : S_SV_DEL_ASK), L(S_DEL_FOREVER));
     S.ask_nl = text_wrap(text, 0.5f, POPUP_ASK_W - 24, S.ask_lines, 4);
     S.ask_n = n;
     S.ask = 1;
     S.ask_sel = 1; /* Cancel is preselected, so nothing is deleted by mistake */
     sound_play(SND_SELECT);
+}
+
+int saves_modal(void)
+{
+    return W.thread >= 0 || S.ask || S.menu;
 }
 
 int saves_update(const UiInput *in, float dt)
@@ -808,6 +1050,7 @@ int saves_update(const UiInput *in, float dt)
     if (S.toast_time > 0)
         S.toast_time -= dt;
     watch_new_entries();
+    refresh_sizes();
 
     if (W.thread >= 0) { /* a delete is running: only the back button (cancel) */
         if (!W.running)
@@ -842,7 +1085,7 @@ int saves_update(const UiInput *in, float dt)
 
     if (S.menu) { /* the Sort popup: ↑ ↓ choose, ✕ sorts, ○ closes (the button stays selected) */
         if (move) {
-            int next = (int)clampf(S.menu_sel + move, 0, SORT_COUNT - 1);
+            int next = (int)clampf(S.menu_sel + move, 0, sort_count() - 1);
             if (next != S.menu_sel)
                 sound_play(SND_MOVE);
             S.menu_sel = next;
@@ -913,6 +1156,12 @@ int saves_update(const UiInput *in, float dt)
         S.top = S.sel - (ROWS - 1);
     S.scroll += (S.top - S.scroll) * clampf(dt * 16, 0, 1);
 
+    /* the name of the highlighted row scrolls when it is too long, from the moment the highlight came to it */
+    if (S.name_for != S.sel) {
+        S.name_for = S.sel;
+        S.name_t = 0;
+    }
+    S.name_t += dt;
     /* the details, and the picture once the highlight has rested for a moment */
     if (n && (S.pan_for != S.sel || S.pan_ready != T.items[S.sel].ready))
         lay_panel();
@@ -933,14 +1182,6 @@ int saves_update(const UiInput *in, float dt)
 
 /* ---------------------------------------------------------------------- */
 /* drawing */
-
-static void draw_check(float cx, float cy, float a)
-{
-    gfx_circle(cx, cy, 6, fade(theme_toggle_on(theme_cur()), a));
-    float xy[6] = { cx - 3, cy, cx - 1, cy + 2.2f, cx + 3, cy - 2.4f };
-    u32 col[3] = { fade(LIGHT, a), fade(LIGHT, a), fade(LIGHT, a) };
-    gfx_stroke(xy, col, 3, 1.5f);
-}
 
 /* a padlock for the saves that can't be deleted */
 static void draw_lock(float cx, float cy, float a)
@@ -965,8 +1206,6 @@ static void draw_rows(float a, float slide)
             lay_row(s);
         int sel = i == S.sel && !S.ask;
         float ka = a * (1 - S.sort_anim); /* the highlight gives way to the Sort button's */
-        if (s->marked)
-            gfx_rect(LIST_X, y, LIST_W, ROW_H, fade(COLOR_ALPHA(theme_cur()->accent, 46), a));
         if (sel) {
             gfx_rect(LIST_X, y, LIST_W, ROW_H, RGBA(255, 255, 255, (int)(16 * ka)));
             gfx_frame(LIST_X, y, LIST_W, ROW_H, 1, fade(RGBA(232, 232, 236, 230), ka));
@@ -976,12 +1215,13 @@ static void draw_rows(float a, float slide)
         float x = ROW_ICON_X + slide, cy = y + ROW_H / 2;
         if (s->locked)
             draw_lock(x + 6, cy, a);
-        else if (s->marked)
-            draw_check(x + 6, cy, a);
         else
-            gfx_ring(x, cy - 6, 12, 12, 6, fade(RGBA(255, 255, 255, 90), a));
+            look_tick(x + LOOK_TICK_SIZE / 2, cy, s->marked, a);
         u32 col = !s->ready ? TEXT_DIM : s->matched ? TEXT_MAIN : RGBA(200, 202, 212, 255); /* no game: a bit dimmer */
-        text_draw(x + 20, y + 16.5f, 0.58f, 0, fade(col, a), ALIGN_LEFT, s->row_main);
+        if (sel && s->name_over) /* the highlighted name does not shrink or stay cut: it scrolls after a moment */
+            text_draw_marquee(x + 20, y + 16.5f, 0.58f, 0, fade(col, a), s->main_room, s->ready && s->game[0] ? s->game : s->dir, S.name_t);
+        else
+            text_draw(x + 20, y + 16.5f, 0.58f, 0, fade(col, a), ALIGN_LEFT, s->row_main);
         if (s->row_sub[0])
             text_draw(x + 20 + s->sub_x, y + 16.5f, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_LEFT, s->row_sub);
         if (s->row_size[0])
@@ -1002,7 +1242,7 @@ static void draw_panel(float a, float slide)
     if (S.pic && S.pic_sel == S.sel)
         gfx_tex(S.pic, x, y, PIC_W, PIC_H, RGBA(255, 255, 255, (int)(255 * a * S.pic_alpha)));
     else
-        gfx_round_rect(x, y, PIC_W, PIC_H, PIC_W / 12, fade(theme_cur()->card, a));
+        gfx_round_rect(x, y, PIC_W, PIC_H, PIC_W / 12, fade(LOOK_CARD, a));
     if (!T.listed || S.sel >= T.count || !S.pan_ready)
         return;
     const Save *s = &T.items[S.sel];
@@ -1034,12 +1274,14 @@ typedef struct {
 
 #define HEADER_RIGHT (LIST_X + LIST_W + 16 + PANEL_W) /* 456: the right edge of the details */
 #define SORT_BASELINE 52.0f
+#define SORT_TEXT_SIZE 0.56f /* the size of the Sort text (it shrinks to 0.4 when the line is long): the size of the Library's */
 #define SORT_FRAME_H  20.0f /* the frame of the Sort button is centred on its text, which shrinks when the label is long */
 
 static StrId sort_name(int sort)
 {
-    static const StrId names[SORT_COUNT] = { S_SV_UPDATED, S_I_SIZE, S_SORT_NAME };
-    return names[sort];
+    static const StrId saves[SORT_COUNT] = { S_SV_UPDATED, S_SORT_NAME, S_I_SIZE };
+    static const StrId games[GSORT_COUNT] = { S_SORT_LEAST, S_SORT_USED_NEW, S_SORT_USED_OLD, S_SORT_NAME_AZ, S_SORT_NAME_ZA, S_SORT_SIZE_BIG, S_SORT_SIZE_SMALL };
+    return S.mode == MODE_GAMES ? games[sort] : saves[sort];
 }
 #define BAR_W        120.0f
 
@@ -1079,7 +1321,7 @@ static void header_layout(Header *h)
 
     /* the title: not into the free-space text, not over the bar */
     float title_x = LIST_X + 4, limit = HEADER_RIGHT - (h->has_free ? fmaxf(free_w, BAR_W) : 0) - 12;
-    h->title_size = fit_line(h->title, sizeof(h->title), L(S_SAVES), 0.95f, 0.5f, fmaxf(limit - title_x, 80));
+    h->title_size = fit_line(h->title, sizeof(h->title), L(S.mode == MODE_GAMES ? S_CS_GAMES : S_SAVES), 0.95f, 0.5f, fmaxf(limit - title_x, 80));
 
     /* the Sort button, "Sort: Last updated": its frame starts where the rows' highlight does (LIST_X), the text 9 px in, so it
      * stands right above the rows' circles; not into the selection */
@@ -1087,7 +1329,7 @@ static void header_layout(Header *h)
     snprintf(line, sizeof(line), "%s: %s", L(S_SORT), L(sort_name(S.sort)));
     h->sort_x = SORT_X;
     limit = h->has_sel ? HEADER_RIGHT - sel_w - 12 : HEADER_RIGHT - BAR_W - 12;
-    h->sort_size = fit_line(h->sort, sizeof(h->sort), line, 0.5f, 0.4f, fmaxf(limit - h->sort_x - 9, 60));
+    h->sort_size = fit_line(h->sort, sizeof(h->sort), line, SORT_TEXT_SIZE, 0.4f, fmaxf(limit - h->sort_x - 9, 60));
     h->sort_w = text_width(h->sort_size, 0, h->sort);
 }
 
@@ -1104,12 +1346,11 @@ static void draw_header(float a, float slide)
         popup_frame_around(popup_label_mid(SORT_BASELINE, h.sort_size), SORT_FRAME_H, &fy, &fh);
         popup_choice(h.sort_x - 9 + slide, fy, h.sort_w + 18, fh, on * a);
     }
-    text_draw(h.sort_x + slide, SORT_BASELINE, h.sort_size, 0, fade(on > 0.5f ? TEXT_MAIN : TEXT_DIM, a), ALIGN_LEFT, h.sort);
+    text_draw(h.sort_x + slide, SORT_BASELINE, h.sort_size, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, h.sort); /* (as white as the rest of the text) */
 
     if (h.has_free) { /* as in the file manager */
         text_draw(HEADER_RIGHT, 28, 0.5f, 0, fade(TEXT_DIM, a), ALIGN_RIGHT, h.free);
-        gfx_round_rect(HEADER_RIGHT - BAR_W, 34, BAR_W, 4, 2, fade(RGBA(255, 255, 255, 40), a));
-        gfx_round_rect(HEADER_RIGHT - BAR_W, 34, BAR_W * clampf(h.used, 0.02f, 1), 4, 2, fade(theme_cur()->accent, a));
+        look_bar(HEADER_RIGHT - BAR_W, 34, BAR_W, 4, BAR_W * clampf(h.used, 0.02f, 1), a); /* (a straight end) */
     }
     if (h.has_sel)
         text_draw(HEADER_RIGHT, 52, 0.5f, 0, fade(TEXT_MAIN, a), ALIGN_RIGHT, h.sel);
@@ -1157,9 +1398,8 @@ static void draw_hints(float a)
     Hint h[4];
     float size, w = hints_layout(h, &size);
     float x = SCREEN_W - 22 - w, y = 252;
-    gfx_round_rect(x - 9, y - 10, w + 18, 20, 10, RGBA(0, 0, 0, (int)(110 * a)));
     for (int i = 0; i < 4; i++) {
-        gfx_button(x + 6.5f, y, 6.5f, h[i].btn, fade(LIGHT, a), fade(DARK, a));
+        gfx_button(x + 6.5f, y, 6.5f, h[i].btn, look_fade(LOOK_HINT_PLATE, a), look_fade(LOOK_HINT_MARK, a));
         x += 18;
         text_draw(x, y + 4.5f, size, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, h[i].text);
         x += ceilf(text_width(size, 0, h[i].text)) + 14;
@@ -1168,6 +1408,7 @@ static void draw_hints(float a)
 
 /* The Sort popup, under the Sort button: the same panel and choices as the Library's (ui.c, popup.c) */
 #define SORT_MENU_W 200.0f
+_Static_assert((int)(64 + 2 * POPUP_EDGE + GSORT_COUNT * POPUP_ITEM) <= SCREEN_H - 2, "the Sort popup of Games and Apps (the longest one) ends above the bottom of the screen");
 
 static void draw_sort_menu(void)
 {
@@ -1175,10 +1416,11 @@ static void draw_sort_menu(void)
     if (a <= 0)
         return;
     popup_dim(a);
-    float w = SORT_MENU_W, h = POPUP_EDGE + SORT_COUNT * POPUP_ITEM + POPUP_EDGE;
+    int count = sort_count();
+    float w = S.mode == MODE_GAMES ? SORT_MENU_W + 56 : SORT_MENU_W, h = POPUP_EDGE + count * POPUP_ITEM + POPUP_EDGE;
     float x = LIST_X - (1 - a) * 10, y = 64;
     popup_panel(x, y, w, h, POPUP_DARK, a);
-    for (int k = 0; k < SORT_COUNT; k++) {
+    for (int k = 0; k < count; k++) {
         float ry = y + POPUP_EDGE + k * POPUP_ITEM;
         const char *label = L(sort_name(k));
         u32 col = POPUP_TEXT;
@@ -1207,7 +1449,7 @@ static void draw_progress(void)
     if (W.thread < 0)
         return;
     float f = W.total ? clampf((float)W.done / (float)W.total, 0, 1) : 0;
-    popup_progress(L(S_F_DELETING), W.current, f, theme_cur()->accent, controls_glyph(PSP_CTRL_CIRCLE), L(S_F_CANCEL));
+    popup_progress(L(S_F_DELETING), W.current, f, controls_glyph(PSP_CTRL_CIRCLE), L(S_F_CANCEL));
 }
 
 void saves_draw(void)
@@ -1219,7 +1461,7 @@ void saves_draw(void)
     if (!T.listed) {
         text_draw(SCREEN_W / 2, 140, 0.66f, 0, fade(TEXT_DIM, a), ALIGN_CENTER, "...");
     } else if (!T.count) {
-        text_draw(SCREEN_W / 2, 140, 0.66f, 0, fade(TEXT_DIM, a), ALIGN_CENTER, T.done ? L(S_SV_NONE) : "...");
+        text_draw(SCREEN_W / 2, 140, 0.66f, 0, fade(TEXT_DIM, a), ALIGN_CENTER, T.done ? L(S.mode == MODE_GAMES ? S_NO_GAMES : S_SV_NONE) : "...");
     } else {
         draw_rows(a, slide);
         draw_panel(a, slide);
@@ -1232,6 +1474,7 @@ void saves_draw(void)
         float ta = clampf(S.toast_time / 0.4f, 0, 1);
         popup_toast(S.toast, ta);
     }
+    power_draw(); /* the power popup of SELECT (main.c asks power.c) */
     osd_draw();
     if (a < 1)
         gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - a))));

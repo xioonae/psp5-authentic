@@ -235,6 +235,58 @@ static void note_shape(float s, Shape *p)
     memcpy(p->beam, b, sizeof(b));
 }
 
+/* The note of the Music card: the picture "Music Icon.png" (82 x 83 pixels of white on black) measured and put in the same parts as the note above. In units of the side s:
+ * the heads (r 0.139) at (-0.349, 0.343) and (0.343, 0.283), the stems 0.072 wide against the outer edge of the heads, the tops of the stems at -0.452 and -0.5 (the beam
+ * is tilted: it rises 0.048 s over its length) and the beam 0.18 thick. The heads are smaller and more to the left than those of the little note. */
+static void music_shape(float s, Shape *p)
+{
+    float rad = 0.139f * s, sw = 0.072f * s;
+    float lx = -0.349f * s, rx = 0.343f * s, ly = 0.343f * s, ry = 0.283f * s;
+    float top_l = -0.452f * s, top_r = -0.5f * s, beam = 0.18f * s;
+    const float n[8] = { lx, ly, rx, ry, top_l, top_r, rad, sw };
+    const float b[8] = { lx + rad - sw, top_l, rx + rad, top_r, rx + rad, top_r + beam, lx + rad - sw, top_l + beam };
+    memcpy(p->note, n, sizeof(n));
+    memcpy(p->beam, b, sizeof(b));
+}
+
+/* The film frame of the Videos card, measured from "Video Icon.png" (the shape is 500 x 260 in the picture; in units of its width u): the outer rounded rectangle 1 x 0.52, three
+ * rounded holes (0.13 x 0.08) on each side, rows at 0.12, 0.26 and 0.41 from the top, and the square hole in the middle (0.42 x 0.37). */
+static float sd_video(const Shape *p, float px, float py)
+{
+    float u = p->u;
+    float d = sd_rbox(px, py, 0.5f * u, 0.26f * u, 0.03f * u);
+    float hole = sd_rbox(px, py - 0.005f * u, 0.21f * u, 0.185f * u, 0.004f * u);
+    static const float rows[3] = { 0.12f, 0.26f, 0.41f };
+    for (int i = 0; i < 3; i++) {
+        float cy = (rows[i] - 0.26f) * u;
+        hole = fminf(hole, sd_rbox(px + 0.355f * u, py - cy, 0.065f * u, 0.04f * u, 0.035f * u));
+        hole = fminf(hole, sd_rbox(px - 0.355f * u, py - cy, 0.065f * u, 0.04f * u, 0.035f * u));
+    }
+    return fmaxf(d, -hole);
+}
+
+/* The picture frame of the Images card, measured from "Image Icon.png" (105 x 79 in the picture; the points below are in those pixels, from the top left of the shape): the frame (about 9 thick), the
+ * mountain line (4 peaks and valleys, 8 thick), the corner at the bottom right cut away along a slanted line and a turned-up piece of paper in its place. In units of the width u. */
+static float sd_images(const Shape *p, float px, float py)
+{
+    float u = p->u, k = u / 105.0f, ox = -52.5f * k, oy = -39.5f * k; /* (bx, by) -> px = ox + bx k, py = oy + by k */
+    float outer = sd_rbox(px, py, 52.5f * k, 39.5f * k, 1.2f * k);
+    float inner = sd_rbox(px, py, 43.0f * k, 31.0f * k, 0);
+    float ring = fmaxf(outer, -inner);
+    static const float m[5][2] = { { 4, 52 }, { 38, 18 }, { 56, 43 }, { 74, 27 }, { 104, 54 } };
+    float mt = 1e9f;
+    for (int i = 0; i < 5; i++) {
+        mt = fminf(mt, len2(px - (ox + m[i][0] * k), py - (oy + m[i][1] * k)) - 3.8f * k);
+        if (i < 4)
+            mt = fminf(mt, sd_line(px, py, ox + m[i][0] * k, oy + m[i][1] * k, ox + m[i + 1][0] * k, oy + m[i + 1][1] * k, 3.8f * k));
+    }
+    float d = fminf(ring, fmaxf(mt, outer));
+    const float cut[6] = { ox + 113 * k, oy + 41 * k, ox + 66 * k, oy + 88 * k, ox + 115 * k, oy + 92 * k };
+    d = fmaxf(d, -sd_poly(cut, 3, px, py));
+    const float flap[6] = { ox + 80 * k, oy + 56 * k, ox + 98 * k, oy + 55 * k, ox + 78 * k, oy + 74 * k };
+    return fminf(d, sd_poly(flap, 3, px, py));
+}
+
 static float sd_note(const Shape *p, float px, float py)
 {
     const float *n = p->note;
@@ -358,9 +410,14 @@ static float shape_distance(const Shape *p, float px, float py)
     case ICON_TRI_L:
         return sd_poly(p->tri, 3, px, py);
     case ICON_NOTE:
+    case ICON_MUSIC:
         return sd_note(p, px, py);
     case ICON_SPEAKER:
         return sd_speaker(p, px, py);
+    case ICON_VIDEO:
+        return sd_video(p, px, py);
+    case ICON_IMAGES:
+        return sd_images(p, px, py);
     case ICON_LIBRARY:
         return sd_library(&p->lib, px, py);
     case ICON_FOLDER:
@@ -370,6 +427,47 @@ static float shape_distance(const Shape *p, float px, float py)
     default: /* ICON_GEAR */
         return fmaxf(sd_poly(p->gear, GEAR_PTS, px, py), -(len2(px, py) - 0.34f * p->r));
     }
+}
+
+/* --- the cube ---
+ *
+ * A cube seen from a corner: a hexagon with its corners r above and below the middle and 0.875 r to each side (so the slanted edges rise 30
+ * degrees), cut into three faces that meet in the middle: the top, the left and the right one. A picture has one colour, so the faces
+ * get their own brightness as the opacity of the image (CUBE_TONE: the top one full, the left one four fifths, the right one a half): over a
+ * dark ground they look like three tones of the colour the picture is drawn in. Every pixel is sampled 8 x 8 times and gets the average
+ * of the tones of the faces its samples fall in, so the outline and the edges between the faces are soft to the same degree as the other icons. */
+static const int CUBE_TONE[3] = { 255, 199, 128 };
+
+static void cube_faces(float r, float f[3][8])
+{
+    const float w = 0.875f * r, h = 0.5f * r;
+    const float top[8] = { 0, -r, w, -h, 0, 0, -w, -h };
+    const float left[8] = { -w, -h, 0, 0, 0, r, -w, h };
+    const float right[8] = { 0, 0, w, -h, w, h, 0, r };
+    memcpy(f[0], top, sizeof(top));
+    memcpy(f[1], left, sizeof(left));
+    memcpy(f[2], right, sizeof(right));
+}
+
+static void cube_render(float r, float cx, float cy, int tw, int th, unsigned char *out)
+{
+    enum { SS = 8 };
+    float f[3][8];
+    cube_faces(r, f);
+    for (int y = 0; y < th; y++)
+        for (int x = 0; x < tw; x++) {
+            int sum = 0;
+            for (int j = 0; j < SS; j++)
+                for (int i = 0; i < SS; i++) {
+                    float px = x + (i + 0.5f) / SS - cx, py = y + (j + 0.5f) / SS - cy;
+                    for (int k = 0; k < 3; k++)
+                        if (sd_poly(f[k], 4, px, py) < 0) {
+                            sum += CUBE_TONE[k];
+                            break;
+                        }
+                }
+            out[y * tw + x] = (unsigned char)(sum / (float)(SS * SS) + 0.5f);
+        }
 }
 
 /* --- the logo of the boot screen ---
@@ -500,10 +598,51 @@ static void logo_render(float w, float h, float cx, float cy, int tw, int th, un
     }
 }
 
+/* The pictures that the screens ask for the first time they are drawn are stored ready (iconbake_data.inc, made by tools/gen_icon_bake.py from this very function): the pictures of the Music, Videos
+ * and Images cards, the cube, the note, the cog, the Wi-Fi sign and a few more took 0.3 to 1 second together on a PSP when the Media tab or Settings came into view the first time (every sample of
+ * every pixel is a distance to a shape). A picture is found by exactly the numbers it is asked for; any other is calculated as before. The host test icons/iconbake_test.py checks that the file is up to
+ * date. Each picture is stored as pairs (coverage, run length), row after row, as the Library card's (libicon_data.inc). */
+typedef struct {
+    unsigned char kind;
+    unsigned short tw, th;
+    float w, h, r, cx, cy;
+    unsigned short start; /* in icon_baked_data */
+} IconBake;
+
+#ifdef ICON_NO_BAKED /* (tools/gen_icon_bake.py builds this file without the stored pictures, to make them) */
+#define ICON_BAKED_COUNT 0
+static const IconBake icon_baked[1] = { { 0 } };
+static const unsigned char icon_baked_data[1] = { 0 };
+#else
+#include "iconbake_data.inc"
+#endif
+
+static int baked_render(int kind, float w, float h, float r, float cx, float cy, int tw, int th, unsigned char *out)
+{
+    for (int i = 0; i < ICON_BAKED_COUNT; i++) {
+        const IconBake *b = &icon_baked[i];
+        if (b->kind != kind || b->tw != tw || b->th != th || b->w != w || b->h != h || b->r != r || b->cx != cx || b->cy != cy)
+            continue;
+        const unsigned char *p = icon_baked_data + b->start;
+        for (int n = 0; n < tw * th; p += 2) { /* pairs: coverage, run */
+            memset(out + n, p[0], p[1]);
+            n += p[1];
+        }
+        return 1;
+    }
+    return 0;
+}
+
 void icon_render(int kind, float w, float h, float r, float cx, float cy, int tw, int th, unsigned char *out)
 {
+    if (baked_render(kind, w, h, r, cx, cy, tw, th, out))
+        return;
     if (kind == ICON_LOGO) {
         logo_render(w, h, cx, cy, tw, th, out);
+        return;
+    }
+    if (kind == ICON_CUBE) {
+        cube_render(r, cx, cy, tw, th, out);
         return;
     }
     Shape sh = { .kind = kind, .w = w, .h = h, .r = r };
@@ -525,6 +664,10 @@ void icon_render(int kind, float w, float h, float r, float cx, float cy, int tw
         bolt_polygon(r, sh.bolt);
     if (kind == ICON_NOTE)
         note_shape(2 * r, &sh);
+    if (kind == ICON_MUSIC)
+        music_shape(2 * r, &sh);
+    if (kind == ICON_VIDEO || kind == ICON_IMAGES)
+        sh.u = 2 * r; /* the width of the picture */
     if (kind == ICON_SPEAKER)
         speaker_shape(r / 4.5f, &sh);
     if (kind == ICON_LIBRARY)
@@ -551,7 +694,7 @@ void icon_render(int kind, float w, float h, float r, float cx, float cy, int tw
     float feature = kind == ICON_DISC ? r
                   : kind == ICON_RRECT || kind == ICON_RRING || kind == ICON_RFRAME || kind == ICON_RFRAME_S
                       ? fminf(r, fminf(w, h) / 2) : 99;
-    int fine = kind == ICON_BOLT || kind == ICON_TRI_R || kind == ICON_TRI_L || kind == ICON_NOTE || kind == ICON_SPEAKER || kind == ICON_WIFI;
+    int fine = kind == ICON_BOLT || kind == ICON_TRI_R || kind == ICON_TRI_L || kind == ICON_NOTE || kind == ICON_MUSIC || kind == ICON_VIDEO || kind == ICON_IMAGES || kind == ICON_SPEAKER || kind == ICON_WIFI;
     if (kind == ICON_LIBRARY && h < 32)
         fine = 1; /* its corners are a pixel or two across at the small size */
     if (kind == ICON_FOLDER && h < 24)

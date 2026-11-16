@@ -17,6 +17,7 @@
 #include "launch.h"
 #include "settings.h"
 #include "system.h"
+#include "logs.h"
 #include "testrun.h"
 #include "sound.h"
 #include "lang.h"
@@ -24,23 +25,31 @@
 #include "controls.h"
 #include "boot.h"
 #include "music.h"
+#include "musicui.h"
 #include "umd.h"
 #include "theme.h"
+#include "look.h"
 #include "osd.h"
 #include "files.h"
 #include "wifi.h"
+#include "ftpscreen.h"
 #include "info.h"
 #include "gameops.h"
 #include "saves.h"
 #include "home.h"
 #include "playtime.h"
+#include "lastplayed.h"
+#include "power.h"
 #include "helper.h"
 
 PSP_MODULE_INFO("psp5", PSP_MODULE_USER, 0, 1);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
-/* Lämna 7 MB fritt: ARK:s RECOVERY.PRX (4 MB egen heap), MP3-avkodarens moduler och
- * trådarnas stackar. Resten (~17 MB på PSP-1000) räcker gott – psp5 använder under 10 MB. */
-PSP_HEAP_SIZE_KB(-7168);
+/* The heap is all the free memory except what is kept back: PSP_HEAP_SIZE_KB(-1) means "all of it", and PSP_HEAP_THRESHOLD_SIZE_KB says how much of it to leave.
+ * (With this SDK the number of a negative PSP_HEAP_SIZE_KB, the old -7168, is NOT how much is left: it was read as "all of it" and only 512 KB stayed free, which a
+ * PSP-1000 showed: 618496 bytes free of the 24 MB.) 8 MB are kept for what does not live in the heap: ARK's RECOVERY.PRX (4 MB of its own), the MP3 decoder, the
+ * network modules and the stacks of the threads. On a PSP-1000 that leaves the heap about 13 MB, which is more than psp5 needs. */
+PSP_HEAP_SIZE_KB(-1);
+PSP_HEAP_THRESHOLD_SIZE_KB(8192);
 
 /* psp5:s egna filer (omslag, cache) – på lagringen psp5 startades från (ms0: eller PSP Go:s ef0:) */
 #define DATA_DIR PSP5_DATA_DIR
@@ -59,6 +68,7 @@ static int s_safe;     /* felsäker start: ingen startskärm, musik eller UMD, c
 static int s_start_ok; /* starten är klar och startskyddet borttaget */
 static volatile int s_sleeping; /* PSP:n går in i viloläge – skärmen hålls svart */
 static volatile int s_resumed;  /* PSP:n har vaknat klart – visa startskärmen */
+static volatile unsigned s_wakes; /* how many times the PSP has woken (RESUME_COMPLETE): written by the power callback only (no atomic instruction), read by the loops: an open video player leaves (videoplay_woke) */
 static char s_self[256];
 static char s_list_cache[256];
 static char s_ingame_mark[32], s_start_mark[32], s_cache_dir[32]; /* i DATA_DIR, sätts i main */
@@ -72,9 +82,10 @@ static int exit_callback(int arg1, int arg2, void *common)
 
 static int power_callback(int unknown, int flags, void *common)
 {
-    if (flags & PSP_POWER_CB_RESUME_COMPLETE)
+    if (flags & PSP_POWER_CB_RESUME_COMPLETE) {
         s_resumed = 1;
-    else if (flags & PSP_POWER_CB_SUSPENDING)
+        s_wakes = s_wakes + 1;
+    } else if (flags & PSP_POWER_CB_SUSPENDING)
         s_sleeping = 1;
     return 0;
 }
@@ -165,6 +176,74 @@ static void start_confirmed(void)
     sys_resume_launcher();
 }
 
+/* The player popup of the PSP's sound button (musicui.h): drawn by osd_draw() at the end of every frame of every screen */
+static MusicUi *s_mini_mu;
+static void mini_overlay(void)
+{
+    if (s_mini_mu)
+        musicui_mini_draw(s_mini_mu);
+}
+
+/* The sound button, once a frame, in every screen where the music goes on (the main loop, the File Manager, the FTP screen): it opens the popup, the popup gets the buttons while it is open
+ * (and the button that closes it), and the screen below gets none (*in is made neutral: 1 is returned). `allow` = no game is being started. `keep_cover` = the cover is still shown by a screen. */
+static int note_popup(MusicUi *mu, UiInput *in, float dt, int allow, int keep_cover)
+{
+    int note = allow && !s_sleeping ? osd_note_pressed() : 0;
+    int closed = 0;
+    if (!mu->mini && note)
+        musicui_mini_open(mu);
+    else if (mu->mini || mu->mini_anim > 0) {
+        closed = musicui_mini_update(mu, in->pressed, in->held, in->lx, in->ly, dt, note);
+        if (closed && !keep_cover)
+            musicui_release_cover(mu);
+    }
+    if (mu->mini || note || closed) { /* (also in the frame that ○ closes it: that press is the popup's, the screen below does not get it) */
+        UiInput none = UI_NO_INPUT;
+        *in = none; /* the screen below is not touched while the popup is open */
+        if (music_needs_cjk())
+            font_ensure_cjk_later(); /* (Japanese or Russian titles: loaded once, in a thread) */
+        return 1;
+    }
+    return 0;
+}
+
+/* The File Manager and the FTP screen keep the music going (they are screens of their own, with their own loop, and the Ui of the launcher is gone: the popup has a MusicUi of its own) */
+static MusicUi s_mode_mu;
+static int s_mode_paused; /* the PSP went to sleep and the music was paused: it goes on when the PSP wakes */
+static void mode_music_begin(void)
+{
+    musicui_init(&s_mode_mu);
+    s_mode_paused = 0;
+    s_mini_mu = &s_mode_mu;
+    osd_set_overlay(mini_overlay);
+}
+static void mode_music_end(void)
+{
+    osd_set_overlay(NULL);
+    s_mini_mu = NULL;
+    musicui_free(&s_mode_mu);
+    if (s_mode_paused && music_state() == MUSIC_PAUSED)
+        music_toggle_pause();
+    s_mode_paused = 0;
+}
+/* once a frame in such a screen: the music is paused while the PSP sleeps (as the launcher does) and goes on when it wakes */
+static void mode_music_sleep(void)
+{
+    if (!s_sleeping)
+        return;
+    if (!s_mode_paused && music_state() == MUSIC_PLAYING) {
+        music_toggle_pause();
+        s_mode_paused = 1;
+    }
+    if (s_resumed) {
+        s_sleeping = s_resumed = 0;
+        if (s_mode_paused) {
+            music_toggle_pause();
+            s_mode_paused = 0;
+        }
+    }
+}
+
 /* Bygger upp allt: grafik, typsnitt, spellista, laddartråd. */
 static void app_start(EntryList *list, Ui *ui, int boot)
 {
@@ -173,8 +252,11 @@ static void app_start(EntryList *list, Ui *ui, int boot)
     sound_init();
     if (!s_safe)
         umd_start(); /* skivan hinner snurra upp under startskärmen */
-    if (boot && g_boot_anim && !s_safe)
+    if (boot)
+        files_warm_space(); /* (the free space of the storages is counted in the background while the start screen plays: the first count takes seconds) */
+    if (boot && g_boot_anim && !s_safe) {
         boot_run(&s_running); /* startskärmen, innan spelen läses in */
+    }
     s_scan_start = sceKernelGetSystemTimeWide();
     scan_all(list, s_self, s_list_cache, scan_progress);
     Entry disc;
@@ -185,9 +267,11 @@ static void app_start(EntryList *list, Ui *ui, int boot)
         font_ensure_cjk(); /* t.ex. japanska speltitlar */
     loader_start(list);
     if (!s_safe)
-        music_init(); /* läser in ms0:/MUSIC i bakgrunden */
+        music_init(); /* loads the decoders and starts the player thread (the songs of a folder are listed when the Music screen opens it) */
     controls_psp_assignment(sys_confirm_is_circle()); /* what the PSP's own setting says; Settings > Controls may have other buttons do the jobs */
     ui_init(ui, list, launch_supported());
+    s_mini_mu = &ui->mu;
+    osd_set_overlay(mini_overlay);
 }
 
 /* Viloläge med sidoknappen: när PSP:n somnar ritas skärmen svart, så att det är
@@ -200,6 +284,7 @@ static void sleep_and_wake(Ui *ui)
     int music = music_state() == MUSIC_PLAYING;
     if (music)
         music_toggle_pause();
+    ui_sleep(ui, 1); /* a video that plays is paused */
     sound_prepare_boot(); /* startljudet frigjordes efter förra startskärmen */
 
     /* Svart i båda bildbuffertarna, sedan vilar psp5 utan att rita: grafikkretsen ska
@@ -229,20 +314,31 @@ static void sleep_and_wake(Ui *ui)
     boot_run(&s_running);
     if (music)
         music_toggle_pause();
+    ui_sleep(ui, 0);
     ui_replay_intro(ui);
 }
 
-/* Frigör allt i omvänd ordning – inför spelstart, USB-läge eller avslut. */
-static void app_stop(EntryList *list, Ui *ui)
+/* Frigör allt i omvänd ordning – inför spelstart, USB-läge eller avslut. `keep_music`: the music goes on (the File Manager and the FTP screen: their screens have no use for the
+ * memory of the music, and the songs are played from the same card they work on). */
+static void app_stop_ex(EntryList *list, Ui *ui, int keep_music)
 {
+    logs_flush(); /* (what the logs have been given is on the card before a game starts or psp5 ends) */
     umd_stop();
-    loader_stop(); /* före music_term: laddaren läser musiklistan (omslagen) */
-    music_term();
+    osd_set_overlay(NULL);
+    s_mini_mu = NULL;
+    loader_stop(); /* (before music_term: the loader reads the covers of the songs) */
+    if (!keep_music)
+        music_term();
     sound_term();
     ui_free(ui);
     font_term();
     gfx_term();
     scan_free(list);
+}
+
+static void app_stop(EntryList *list, Ui *ui)
+{
+    app_stop_ex(list, ui, 0);
 }
 
 /* UMD-skivan har satts i eller tagits ut: lägg in den först i listan eller ta bort den. */
@@ -286,9 +382,32 @@ static void delete_finished(EntryList *list, Ui *ui, int index, int result)
         ui_toast(ui, L(S_DELETED));
         sound_play(SND_SELECT);
     } else {
+        if (result != DEL_CANCELLED)
+            logs_fail(LOG_SYSTEM, "A game or app could not be deleted: some of its files could not be removed (the answer was %d).", result);
         ui_toast(ui, L(result == DEL_CANCELLED ? S_F_CANCELLED : S_F_FAILED));
         sound_play(SND_ERROR);
     }
+}
+
+/* The games and apps that Games and Apps deleted (saves_gone_*, the last place first): they leave the game list, Home and the cache of pictures. */
+static void games_deleted(EntryList *list, Ui *ui)
+{
+    int n = saves_gone_count();
+    if (n <= 0)
+        return;
+    loader_stop(); /* the loader's places follow the indexes of the list */
+    for (int k = 0; k < n; k++) {
+        int at = saves_gone_entry(k);
+        if (at < 0 || at >= list->count)
+            continue;
+        Entry gone = list->items[at];
+        ui_forget_entry(ui, &list->items[at]); /* (the entry of the list itself: another copy of the game in the list would keep it on Home) */
+        art_forget(&gone);
+        scan_remove_at(list, at);
+    }
+    loader_start(list);
+    ui_relist_gone(ui);
+    ui_toast(ui, L(S_DELETED));
 }
 
 /* The pad as the screens see it: controls_map() turns the buttons that are pressed into the names the screens use (confirm, back, options, the
@@ -309,21 +428,37 @@ static void read_pad(UiInput *in, u32 *old)
     *old = pad.Buttons;
 }
 
-/* USB-läge: inget annat rör minneskortet medan datorn är ansluten. */
-static void usb_mode(void)
+/* The power popup of the SELECT button on the screens that are not Games, Library and Music (those have it in ui.c): SELECT opens it, unless `can_open` is 0 (the
+ * screen has a popup of its own or a job running); while it is open the screen gets no buttons (`in` is cleared, also for the press that closes it). Returns what the player
+ * chose (SA_XMB, SA_SUSPEND, SA_SHUTDOWN, SA_RESTART, SA_RECOVERY), else SA_NONE. Call it every frame, before the screen's own update. */
+static int power_step(UiInput *in, float dt, int can_open)
+{
+    int act = power_frame(in, dt, can_open);
+    if (act != SA_NONE)
+        sound_wait(400); /* let the sound be heard before anything closes, as on the main screen */
+    return act;
+}
+
+/* USB-läge: inget annat rör minneskortet medan datorn är ansluten. Returns what the player chose in the power popup there (SA_*), else 0: USB is stopped first, and the caller does it. */
+static int usb_mode(void)
 {
     gfx_init();
     font_init(lang_needs_cjk());
     if (!sys_usb_start()) {
         gfx_term();
         font_term();
-        return;
+        return SA_NONE;
     }
+    power_reset();
+    int pending = SA_NONE;
     u32 old = ~0u; /* ignore the button that started the mode, whichever it is (the confirm button) */
     float t = 0;
     while (s_running) {
         UiInput in;
         read_pad(&in, &old);
+        pending = power_step(&in, 1 / 60.0f, 1);
+        if (pending != SA_NONE)
+            break;
         if (in.pressed & PSP_CTRL_CIRCLE) /* back */
             break;
         t += 1 / 60.0f;
@@ -343,10 +478,10 @@ static void usb_mode(void)
         { /* knapptips som i filhanteraren: en mörk kapsel nere till höger */
             int btn = controls_glyph(PSP_CTRL_CIRCLE);
             float bw = gfx_button_width(btn), w = bw + 5 + ceilf(text_width(0.56f, 0, L(S_USB_EXIT))), x = SCREEN_W - 22 - w, y = 252; /* (whole pixels) */
-            gfx_round_rect(x - 9, y - 10, w + 18, 20, 10, RGBA(0, 0, 0, 110));
-            gfx_button(x + bw / 2, y, 6.5f, btn, RGBA(236, 236, 240, 255), RGBA(20, 20, 26, 255));
+            gfx_button(x + bw / 2, y, 6.5f, btn, LOOK_HINT_PLATE, LOOK_HINT_MARK);
             text_draw(x + bw + 5, y + 4.5f, 0.56f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, L(S_USB_EXIT));
         }
+        power_draw();
         osd_draw();
         gfx_end();
     }
@@ -354,6 +489,7 @@ static void usb_mode(void)
     s_sleeping = s_resumed = 0; /* viloläge under USB-läget: ingen startskärm efteråt */
     font_term();
     gfx_term();
+    return pending;
 }
 
 /* The PSP's own screen for choosing a Wi-Fi connection (wifi.c). Everything else is closed, as in the other modes. s_wifi_failed: the network could not be started. */
@@ -367,14 +503,19 @@ static void wifi_mode(void)
     gfx_term();
 }
 
-/* Filhanteraren: allt annat är stängt, så inget annat läser eller skriver filer under tiden. */
-static void files_mode(void)
+/* The FTP server (ftpscreen.c): everything else is closed, as in the other modes. Returns what the player chose in the power popup there (SA_*), else 0: the server and the
+ * network are stopped first, and the caller does it (as after USB Mode: a connection does not survive Sleep). */
+static int ftp_mode(void)
 {
     gfx_init();
     font_init(lang_needs_cjk());
     sound_init();
-    files_open();
-    u32 old = ~0u; /* ignore the button that opened it, whichever it is (the confirm button) */
+    mode_music_begin();
+    ftpscreen_open(&s_running);
+    power_reset();
+    int pending = SA_NONE;
+    u32 old = ~0u; /* ignore the button that started the mode, whichever it is (the confirm button) */
+    float t = 0;
     u64 last = sceKernelGetSystemTimeWide();
     while (s_running) {
         UiInput in;
@@ -385,15 +526,94 @@ static void files_mode(void)
         if (dt > 0.05f)
             dt = 0.05f;
         osd_update(dt);
+        mode_music_sleep();
+        note_popup(&s_mode_mu, &in, dt, 1, 0); /* the player of the sound button (the buttons are the popup's while it is open) */
+        pending = power_step(&in, dt, 1);
+        if (pending != SA_NONE)
+            break;
+        if (ftpscreen_update(&in, dt, (unsigned)(now / 1000)))
+            break;
+        scePowerTick(PSP_POWER_TICK_SUSPEND); /* it must not go to sleep while a computer is connected (the screen's own backlight timer goes on) */
+        t += dt;
+        ftpscreen_draw(t);
+        power_draw();
+        osd_draw();
+        /* between the pictures the server is asked a few times more (the wait for the next vertical blank is spent on it): a computer's next command is answered in a few
+         * milliseconds, not after the whole frame */
+        for (int k = 0; k < 4; k++) {
+            u64 spent = sceKernelGetSystemTimeWide() - now;
+            if (spent > 10000)
+                break;
+            sceKernelDelayThread(2000);
+            ftpscreen_poll((unsigned)(sceKernelGetSystemTimeWide() / 1000));
+        }
+        gfx_end();
+    }
+    ftpscreen_close();
+    mode_music_end();
+    sound_term();
+    s_sleeping = s_resumed = 0;
+    font_term();
+    gfx_term();
+    return pending;
+}
+
+/* Filhanteraren: allt annat är stängt, så inget annat läser eller skriver filer under tiden. Returns what the player chose in the power popup there that leaves
+ * psp5 (SA_SHUTDOWN, SA_RESTART, SA_RECOVERY), else 0: the File Manager is closed first, and the caller does it (Sleep is done on the spot, as with the PSP's own switch). */
+static int files_mode(int pick)
+{
+    gfx_init();
+    font_init(lang_needs_cjk());
+    sound_init();
+    if (pick) /* Manage Plugins: only to choose a plugin file (files_picked() has it when this returns) */
+        files_open_pick();
+    else
+        files_open();
+    mode_music_begin();
+    power_reset();
+    int pending = SA_NONE;
+    u32 old = ~0u; /* ignore the button that opened it, whichever it is (the confirm button) */
+    u64 last = sceKernelGetSystemTimeWide();
+    unsigned wakes_seen = s_wakes;
+    while (s_running) {
+        UiInput in;
+        read_pad(&in, &old);
+        u64 now = sceKernelGetSystemTimeWide();
+        float dt = (now - last) / 1000000.0f;
+        last = now;
+        if (testrun_take_resume())
+            s_wakes = s_wakes + 1; /* (a test script's "resume") */
+        if (s_wakes != wakes_seen) { /* the PSP has slept and woken: a video that is open leaves */
+            wakes_seen = s_wakes;
+            files_woke();
+        }
+        if (dt > 0.05f)
+            dt = 0.05f;
+        osd_update(dt);
+        mode_music_sleep();
+        files_sleep(s_sleeping); /* a video that is open waits while the PSP sleeps */
+        note_popup(&s_mode_mu, &in, dt, 1, 0); /* the player of the sound button (the buttons are the popup's while it is open) */
+        int pwr = power_step(&in, dt, !files_modal());
+        if (pwr == SA_SUSPEND) {
+            files_sleep(1);
+            sys_suspend();
+            files_sleep(0);
+            old = s_raw;
+        } else if (pwr != SA_NONE) {
+            pending = pwr;
+            break;
+        }
         if (files_update(&in, dt))
             break;
         files_draw();
     }
     files_close();
+    mode_music_end();
     sound_term();
     s_sleeping = s_resumed = 0;
     font_term();
     gfx_term();
+    return pending;
 }
 
 static void delete_dir_files(const char *dir)
@@ -414,6 +634,28 @@ static void delete_dir_files(const char *dir)
     sceIoDclose(d);
 }
 
+/* An action that leaves psp5 (everything of psp5 is stopped already): the system takes over. */
+static void leave_for(int action)
+{
+    switch (action) {
+    case SA_XMB:      sceIoRemove(START_MARK); sys_exit_xmb(); break; /* (the start guard goes, the launcher mode stays paused: sys_exit_xmb) */
+    case SA_RESTART:  sys_restart(); break;
+    case SA_SHUTDOWN: sys_shutdown(); break;
+    case SA_RECOVERY: sys_recovery(); break;
+    }
+    for (;;)
+        sceKernelDelayThread(100000); /* systemet tar över */
+}
+
+/* The File Manager or the USB screen is over and the player chose something in the power popup there (SA_NONE = nothing): Sleep comes back, the others leave psp5. */
+static void after_visit(int action)
+{
+    if (action == SA_SUSPEND)
+        sys_suspend();
+    else if (action != SA_NONE)
+        leave_for(action);
+}
+
 /* Utför en åtgärd från inställningarna. Returnerar 1 om appen ska byggas upp igen. */
 static int run_action(int action, EntryList *list, Ui *ui)
 {
@@ -429,16 +671,24 @@ static int run_action(int action, EntryList *list, Ui *ui)
         return 0;
     case SA_USB:
         app_stop(list, ui);
-        usb_mode();
+        after_visit(usb_mode());
         return 1; /* filer kan ha ändrats – skanna om */
     case SA_FILES:
-        app_stop(list, ui);
-        files_mode();
+        app_stop_ex(list, ui, 1); /* the music goes on in the File Manager */
+        after_visit(files_mode(0));
+        return 1;
+    case SA_PLUGIN_PICK:
+        app_stop_ex(list, ui, 1);
+        after_visit(files_mode(1));
         return 1;
     case SA_WIFI:
         app_stop(list, ui);
         wifi_mode();
         return 1;
+    case SA_FTP:
+        app_stop_ex(list, ui, 1); /* ... and in the FTP screen */
+        after_visit(ftp_mode());
+        return 1; /* files may have changed: scan again */
     case SA_CLEAR_CACHE:
         app_stop(list, ui);
         delete_dir_files(s_cache_dir);
@@ -446,14 +696,8 @@ static int run_action(int action, EntryList *list, Ui *ui)
     }
     /* resten lämnar psp5 – frigör allt först */
     app_stop(list, ui);
-    switch (action) {
-    case SA_XMB:      sys_exit_xmb(); break;
-    case SA_RESTART:  sys_restart(); break;
-    case SA_SHUTDOWN: sys_shutdown(); break;
-    case SA_RECOVERY: sys_recovery(); break;
-    }
-    for (;;)
-        sceKernelDelayThread(100000); /* systemet tar över */
+    leave_for(action);
+    return 0;
 }
 
 int main(int argc, char *argv[])
@@ -466,7 +710,10 @@ int main(int argc, char *argv[])
     snprintf(s_cache_dir, sizeof(s_cache_dir), "%s/cache", DATA_DIR);
     snprintf(s_list_cache, sizeof(s_list_cache), "%s/cache/list.bin", DATA_DIR);
     sceIoMkdir(DATA_DIR, 0777);
+    logs_init(); /* the logs of the parts of the program (PSP5/logs): what a run that did not end left (logs.h) becomes an entry now */
     int failed = start_begin(); /* först av allt – före allt som kan hänga sig */
+    if (failed > 0)
+        logs_fail(LOG_SYSTEM, "The last start of psp5 did not finish (%d start%s in a row that did not): this start is a safe start (the cache is cleared, the start sound is left out)%s.", failed, failed == 1 ? "" : "s", failed >= 2 ? ", and the PSP is given back to the XMB" : "");
     art_init(DATA_DIR);
     config_load(DATA_DIR); /* ljud och språk */
     sys_init(s_self);
@@ -496,6 +743,7 @@ int main(int argc, char *argv[])
     Ui ui;
     helper_setup(); /* the plugin that counts the time played: written / replaced, and put in PLUGINS.TXT the first time */
     playtime_set_self(s_self);
+    lastplayed_load(DATA_DIR); /* when each game was played last (the plugin's files add the games that were started from the XMB) */
     playtime_load(DATA_DIR); /* adds the time that the plugin has kept since psp5 was last open */
     app_start(&list, &ui, !take_ingame_mark()); /* ingen startskärm efter ett spel */
     if (s_safe)
@@ -512,11 +760,18 @@ int main(int argc, char *argv[])
     u32 old = 0;
     float up = 0; /* sekunder i menyn – för startskyddet */
     u64 last = sceKernelGetSystemTimeWide();
+    unsigned wakes_seen = s_wakes;
     while (s_running) {
         if (testrun_take_sleep())
             s_sleeping = 1;
-        if (testrun_take_resume())
+        if (testrun_take_resume()) {
             s_resumed = 1;
+            s_wakes = s_wakes + 1; /* (a test script's "resume" is a wake-up too) */
+        }
+        if (s_wakes != wakes_seen) { /* the PSP has slept and woken: a video that was open does not go on (its file does not read any more) */
+            wakes_seen = s_wakes;
+            ui_woke(&ui);
+        }
         if (s_sleeping || s_resumed) {
             if (g_boot_anim && ui.launch < 0 && !s_safe) {
                 sleep_and_wake(&ui);
@@ -537,23 +792,68 @@ int main(int argc, char *argv[])
         osd_update(dt);
         if (!s_start_ok) {
             up += dt;
-            if (up >= START_OK_AFTER && !music_scanning())
-                start_confirmed(); /* menyn och musiklistan fungerar */
+            if (up >= START_OK_AFTER)
+                start_confirmed(); /* the menu works */
         }
+        /* The sound button: the player as a popup over whatever screen is open (musicui.h). While it is open it gets the buttons and the screen below gets none;
+         * the button that closes it is not passed on either. */
+        note_popup(&ui.mu, &in, dt, ui.launch < 0 && !ui_video_open(&ui), ui.tab == TAB_MUSIC && ui.mscreen == 0); /* (not over a video: the music is off then and the player has the sound) */
 
+        if (in_saves) { /* Games and Apps, Manage Saved Data (opened from Settings > Storage): the list stands still while the screen is open */
+            UiInput none = UI_NO_INPUT;
+            int pwr = power_step(&in, dt, !saves_modal());
+            int close = saves_update(&in, dt);
+            ui_update(&ui, &none, dt);
+            if (pwr != SA_NONE) { /* chosen in the power popup (SELECT): Sleep comes back to this screen, the others leave psp5 */
+                if (pwr != SA_SUSPEND)
+                    saves_close();
+                run_action(pwr, &list, &ui);
+                old = s_raw;
+                continue;
+            }
+            if (close) {
+                saves_close();
+                in_saves = 0;
+                games_deleted(&list, &ui); /* the games and apps that were deleted leave the list */
+                settings_back(); /* ... and Settings counts its storage again */
+                if (in_settings)
+                    settings_draw();
+                else
+                    ui_draw(&ui);
+            } else {
+                saves_draw();
+            }
+            continue;
+        }
         if (in_settings) {
+            int pwr = power_step(&in, dt, !settings_modal()); /* SELECT: the power popup, as on the main screen */
             int action = settings_update(&in, dt);
+            if (pwr != SA_NONE)
+                action = pwr;
             if (action == SA_CLOSE) {
                 in_settings = 0;
                 if (settings_commit())
                     ui_toast(&ui, L(S_SAVED));
+            } else if (action == SA_GAMES || action == SA_SAVES) { /* a screen of its own, over Settings: ○ comes back to the same row */
+                power_reset();
+                if (action == SA_GAMES)
+                    saves_open_games(&list, settings_action_dev());
+                else
+                    saves_open_on(&list, settings_action_dev());
+                in_saves = 1;
+                old = s_raw;
+                continue;
             } else if (action != SA_NONE) {
                 settings_commit();
                 if (run_action(action, &list, &ui)) {
                     app_start(&list, &ui, 0);
-                    if (action == SA_WIFI) { /* the PSP's own screen was a visit: back in Settings, on the same row (not the main screen) */
-                        if (s_wifi_failed)
+                    if (settings_is_visit(action)) { /* the PSP's own screen, the File Manager, USB Mode: back in Settings, on the same row (not the main screen) */
+                        char plugin[512];
+                        if (action == SA_WIFI && s_wifi_failed) {
+                            logs_fail(LOG_FTP, "The PSP's Wi-Fi screen of Settings reported a failure: no connection was made.");
                             settings_notice(L(S_WIFI_FAILED));
+                        } else if (action == SA_PLUGIN_PICK && files_picked(plugin, sizeof(plugin)))
+                            settings_plugin_new(plugin); /* the File Manager gave a plugin: the page for installing it */
                     } else {
                         in_settings = 0;
                     }
@@ -575,27 +875,22 @@ int main(int argc, char *argv[])
          * UMD-uppdatering), bilder och bakgrund fortsätter laddas */
         if (in_info) {
             UiInput none = UI_NO_INPUT;
+            int pwr = power_step(&in, dt, 1);
             int close = info_update(&in, dt);
             ui_update(&ui, &none, dt);
+            if (pwr != SA_NONE) { /* chosen in the power popup (SELECT): Sleep comes back to this screen, the others leave psp5 */
+                if (pwr != SA_SUSPEND)
+                    info_close();
+                run_action(pwr, &list, &ui);
+                old = s_raw;
+                continue;
+            }
             if (close) {
                 info_close();
                 in_info = 0;
                 ui_draw(&ui);
             } else {
                 info_draw();
-            }
-            continue;
-        }
-        if (in_saves) { /* sparad data: samma sak, listan står still medan skärmen är öppen */
-            UiInput none = UI_NO_INPUT;
-            int close = saves_update(&in, dt);
-            ui_update(&ui, &none, dt);
-            if (close) {
-                saves_close();
-                in_saves = 0;
-                ui_draw(&ui);
-            } else {
-                saves_draw();
             }
             continue;
         }
@@ -619,6 +914,7 @@ int main(int argc, char *argv[])
             /* The menu works: switch on a paused launcher mode before Settings reads it, or "Boot psp5" shows as off until the
              * first game is started. */
             start_confirmed();
+            power_reset();
             settings_open();
             /* The sound comes after the reading (the font from flash0, ARK's files): heavy reading while it played made a
              * scratching noise for about 0.1 s. */
@@ -626,21 +922,17 @@ int main(int argc, char *argv[])
             in_settings = 1;
             continue;
         }
-        if (action == UI_SLEEP || action == UI_SHUTDOWN || action == UI_RESTART || action == UI_RECOVERY) {
-            /* the power popup of the SELECT button: the same four actions as in Settings (only sleep comes back) */
-            run_action(action == UI_SLEEP ? SA_SUSPEND : action == UI_SHUTDOWN ? SA_SHUTDOWN : action == UI_RESTART ? SA_RESTART : SA_RECOVERY,
+        if (action == UI_XMB || action == UI_SLEEP || action == UI_SHUTDOWN || action == UI_RESTART || action == UI_RECOVERY) {
+            /* the power popup of the SELECT button, the same choices as on the other screens (only sleep comes back) */
+            run_action(action == UI_XMB ? SA_XMB : action == UI_SLEEP ? SA_SUSPEND : action == UI_SHUTDOWN ? SA_SHUTDOWN : action == UI_RESTART ? SA_RESTART : SA_RECOVERY,
                        &list, &ui);
             old = s_raw;
             continue;
         }
         if (action == UI_INFO && ui_selected(&ui) >= 0) {
+            power_reset();
             info_open(&list.items[ui_selected(&ui)], ui_selected(&ui));
             in_info = 1;
-            continue;
-        }
-        if (action == UI_SAVES) {
-            saves_open(&list);
-            in_saves = 1;
             continue;
         }
         if (action == UI_DELETE && ui_selected(&ui) >= 0) {
@@ -649,6 +941,7 @@ int main(int argc, char *argv[])
             if (gameops_delete_start(&list.items[index])) {
                 deleting = index;
             } else {
+                logs_fail(LOG_SYSTEM, "A game or app could not be deleted: the deleting could not start (no thread or no memory).");
                 loader_start(&list);
                 ui_relist(&ui, 0, 0);
                 ui_toast(&ui, L(S_F_FAILED));
@@ -659,6 +952,7 @@ int main(int argc, char *argv[])
         if (action == UI_LAUNCH && ui_selected(&ui) >= 0) {
             Entry chosen = list.items[ui_selected(&ui)];
             home_note_launch(&chosen); /* the card becomes the newest one on Home */
+            lastplayed_note_launch(&chosen); /* ... and the one that was played last (Information, Games and Apps) */
             sound_wait(700);      /* låt startljudet klinga ut */
             app_stop(&list, &ui); /* frigör allt minne innan spelet laddas */
             start_confirmed();    /* ett spel som hänger sig räknas inte mot psp5 */
@@ -667,6 +961,7 @@ int main(int argc, char *argv[])
             /* hit kommer vi bara om starten misslyckades */
             sceIoRemove(INGAME_MARK);
             app_start(&list, &ui, 0);
+            logs_fail(LOG_SYSTEM, "A game or app could not be started: the PSP did not load it.");
             ui_toast(&ui, L(S_LAUNCH_FAILED));
             continue;
         }

@@ -19,6 +19,9 @@ typedef struct {
     int stride;   /* pixlar per rad i minnet */
     int psm;      /* GU_PSM_8888 eller GU_PSM_5650 */
     void *data;
+    int swizzled; /* the pixels are in the order the GE reads fastest (tex_swizzle), not row after row: nothing may read or write them as rows any more */
+    int vram;     /* the pixels are in video memory, which the GE reads much faster than main memory, and are not this texture's to free (the shapes of gfx_init) */
+    int opaque;   /* the picture is drawn without blending whatever its alpha says (a video picture from the PSP's own decoder, GU_PSM_8888, whose alpha is not known) */
 } Texture;
 
 enum { ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT };
@@ -36,7 +39,12 @@ void gfx_gradient_v(float x, float y, float w, float h, u32 top, u32 bottom);
 void gfx_gradient_v_opaque(float x, float y, float w, float h, u32 top, u32 bottom);
 void gfx_gradient_h(float x, float y, float w, float h, u32 left, u32 right);
 void gfx_line(float x0, float y0, float x1, float y1, u32 color);
+/* A thin line through the points xy[2n] (not smoothed), each point with its own colour: gfx_polyline() is for many lines (16 bytes of the display list a point). */
+void gfx_polyline(const float *xy, const u32 *colors, int n);
 void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint);
+/* a picture of three 8 bit planes (Y, then U and V with half the width and height; row lengths ystride and cstride, at most 512 and 256, in main memory, written out of the cache), w x h, drawn by the
+ * graphics chip into the rectangle x, y, dw, dh with the colours of BT.601 (video range) */
+void gfx_yuv(const unsigned char *const plane[3], int w, int h, int ystride, int cstride, float x, float y, float dw, float dh);
 /* A picture of the whole screen, kept in video memory, for something that looks the same every frame (the background):
  * draw it once between gfx_snapshot_begin() and gfx_snapshot_end() (the drawing goes into the picture, not onto the screen),
  * then gfx_snapshot_draw() puts the picture on the screen - one opaque image, far cheaper than drawing it all again. The
@@ -45,6 +53,8 @@ unsigned gfx_snapshot_serial(void);
 void gfx_snapshot_begin(void);
 void gfx_snapshot_end(void);
 void gfx_snapshot_draw(void);
+/* The same picture, but every pixel is the mean of 2 x 2 pixels of it (half a pixel down and to the right; the first column and row are as they were): lines that were drawn one pixel wide, which have steps, come out smooth. */
+void gfx_snapshot_draw_soft(void);
 /* Rundad rektangel med kantutjämning: kanterna på hela pixlar, hörnen exakt kantutjämnade */
 void gfx_round_rect(float x, float y, float w, float h, float r, u32 color);
 /* Mjuk skugga/glöd: rektangeln utökas med `spread` åt alla håll */
@@ -65,16 +75,26 @@ void gfx_edge_ring(float x, float y, float w, float h, float r, int thin, u32 co
 void gfx_bolt(float cx, float cy, float r, u32 color);
 /* The Wi-Fi sign in a box of side 2 r centred on (cx, cy): a small square with three soft quarter circle arcs round it (r = 7 is 14 px) */
 void gfx_wifi(float cx, float cy, float r, u32 color);
+/* The cube of Settings' System row (see icons.c, ICON_CUBE) in a box of side 2 r centred on (cx, cy): three faces of their own brightness in one soft
+ * edged image, in the colour (and opacity) it is given: the top face as it is, the left one four fifths, the right one a half. */
+void gfx_cube(float cx, float cy, float r, u32 color);
 /* Mjukkantad triangel i rutan x, y, w, h: dir > 0 pekar åt höger (spetsen mitt på högra sidan), dir < 0 åt vänster */
 void gfx_triangle(float x, float y, float w, float h, int dir, u32 color);
 /* Musiknot i en ruta med sidan `size`, centrerad i (cx, cy) – en enda bild, så inget blandas dubbelt där delarna möts */
 void gfx_note(float cx, float cy, float size, u32 color);
 /* Högtalare (9 × 15 px): vänsterkanten vid x, mitten på höjden y */
 void gfx_speaker(float x, float y, u32 color);
+/* The same loudspeaker, `scale` times as big (the player's button is a little smaller than the volume popup's): its left edge at x, the middle at height y. */
+void gfx_speaker_scaled(float x, float y, float scale, u32 color);
 /* The picture of the Library card (six squares with a game controller in front), centred in the card whose pixels are the whole-pixel
  * box l, t, w, h, about two thirds of its height. Everything in it is on whole pixels and it is one image, so it looks the same
  * wherever the card is and the controller is exactly the same on its left and right. */
 void gfx_library_icon(int l, int t, int w, int h, u32 color);
+/* The picture of the Music card of the Media tab (the note of the reference), centred in the card box and two thirds of its height (see gfx.c) */
+void gfx_music_icon(int l, int t, int w, int h, u32 color);
+/* the pictures of the Videos and Images cards of Media (the film frame and the picture frame of the reference pictures), the same way */
+void gfx_video_icon(int l, int t, int w, int h, u32 color);
+void gfx_images_icon(int l, int t, int w, int h, u32 color);
 /* The logo of the boot screen, `h` pixels high (and icon_logo_width(h) wide), its top left corner on the whole pixel (x, y), in one colour (the alpha
  * of the colour fades it). Drawn from its outline into one small image (about 90 x 70 pixels, once: it stays in the icon cache), so it costs a single
  * sprite per frame and is as smooth as the glyphs of the font; with no room for the image (it has to be less than 96 pixels wide with its border,
@@ -97,12 +117,31 @@ void gfx_blend_add(int on);
 /* Tjock linje genom n punkter (xy[2*n]) med en färg per punkt */
 /* Prick med radien r i en enda sprite – billig för många partiklar. soft = mjuk kant */
 void gfx_dot(float cx, float cy, float r, u32 color, int soft);
+/* `n` dots in ONE draw call, in the order given: exactly what `n` calls of gfx_dot() with the same `soft` draw, with the same pixels. A call of the display
+ * list costs the PSP two kernel calls (sceGuGetMemory and sceGuDrawArray each tell the GE how far the list goes), so hundreds of dots are cheap in one and
+ * slow one by one. At most GFX_DOTS_MAX in a call (more are drawn in several). */
+typedef struct { float x, y, r; u32 color; } GfxDot;
+#define GFX_DOTS_MAX 256
+void gfx_dots(const GfxDot *d, int n, int soft);
 /* Fyrhörning med en färg per hörn, ordning som triangelremsa (0-1 överst, 2-3 nederst) */
 void gfx_quad(const float *xy, const u32 *colors);
 /* Ritar bara inom rektangeln tills gfx_clip_reset */
 void gfx_clip(float x, float y, float w, float h);
 void gfx_clip_reset(void);
+/* A name that is wider than its room does not shrink: it stands still for a moment, scrolls to its end, stays there a moment, and starts again.
+ * text_marquee_offset() is how far it has gone `t` seconds after it appeared (0 while it waits and when it fits: overflow <= 0);
+ * text_draw_marquee() draws it from x on, left aligned, in `room` pixels (nothing is drawn outside them) and scrolled for `t` seconds. */
+#define MARQUEE_WAIT  1.2f  /* seconds it stands at the start */
+#define MARQUEE_END   1.0f  /* ... and at the end */
+#define MARQUEE_SPEED 36.0f /* pixels a second */
+float text_marquee_offset(float overflow, float t);
+void text_draw_marquee(float x, float y, float size, int bold, u32 color, float room, const char *s, float t);
+/* The filled part of a bar: the left end rounded like the bar's (radius r), the right end a straight edge at x + w. Inside the clip that is set now (it is put back). */
+void gfx_bar_fill(float x, float y, float w, float h, float r, u32 color);
 void gfx_stroke(const float *xy, const u32 *colors, int n, float width);
+/* A closed outline through the n points xy[2n] (the last joins the first), one colour, with the same smooth edges as gfx_stroke() at any place (the symbols of PS1 float on fractions of a pixel).
+ * Every corner is a mitre and there are no ends, so nothing is drawn twice where it closes: a colour with some alpha has the same alpha all the way round. */
+void gfx_stroke_loop(const float *xy, int n, float width, u32 color);
 
 enum { BTN_CROSS, BTN_CIRCLE, BTN_TRIANGLE, BTN_SQUARE, BTN_START, BTN_SELECT };
 /* Egenritad knappsymbol i en rund platta. START and SELECT are not round: a small pill with the word in it, 14 high (`r` is ignored for them,
@@ -114,12 +153,23 @@ float gfx_button_width(int kind);
 Texture *tex_create(int w, int h, int psm);
 void tex_free(Texture *t);
 void tex_flush(Texture *t); /* skriv tillbaka dcache efter CPU-ändringar */
+/* Puts the pixels of a finished texture in the order the GE reads fastest: blocks of 16 bytes by 8 rows, one after the other. The GE reads a texture in main memory
+ * through a small cache, and with the rows one after the other it has to fetch a new line for every row it steps down (the cards' pictures are shrunk, so it steps
+ * down a lot); a swizzled one is read much faster. The picture comes out exactly the same. Do it last: after it nothing can read or write the pixels as rows
+ * (Texture.swizzled; tex_round_corners() and ntx_save() refuse). Below the picture the texture gets some rows more (copies of its last row, up to a whole block of 8: at least
+ * one). Returns 1 when the texture is swizzled (also when it was), 0 when not (no texture, no memory: it is left as it was). */
+int tex_swizzle(Texture *t);
 
 /* Text (intraFont, systemtypsnitt läses från flash0). `need_jpn` laddar japanskt alternativtypsnitt. */
 void font_init(int need_jpn);
-void font_term(void);
+void font_term(void); /* the screen is over: the fonts stay loaded (font_init takes them again) */
+void font_unload(void); /* really unloads them */
 /* Laddar det japanska typsnittet (kanji, kana, kyrilliska) om det inte redan är laddat. */
 void font_ensure_cjk(void);
+/* The same in a thread: the font is in use from the frame after it is loaded (some 0.7 s on a PSP-1000, which is no frozen picture). For a screen that does not need it for measuring at once. */
+void font_ensure_cjk_later(void);
+/* for fontasync.c: puts a font that it has loaded (jpn0.pgf) in use as the alternative font; 0 when there is one already or no Latin font */
+int font_attach_cjk(void *font); /* (an intraFont *) */
 float text_width(float size, int bold, const char *s);
 void text_draw(float x, float y, float size, int bold, u32 color, int align, const char *s);
 /* Största storlek ≤ size (ner till min_size) där texten ryms inom max_w */

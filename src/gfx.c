@@ -3,6 +3,7 @@
  * rundade former via 9-slice och text via intraFont. */
 #include <pspkernel.h>
 #include <pspdisplay.h>
+#include <pspge.h>
 #include <pspgu.h>
 #include <intraFont.h>
 #include <malloc.h>
@@ -13,6 +14,12 @@
 #include "diacritic.h"
 #include "icons.h"
 #include "testrun.h"
+
+/* the Japanese font loaded in a thread (fontasync.c, see font_ensure_cjk_later below): weak, so that the programs of the tests on a PC, which do not have it, still link */
+void fontasync_start(void) __attribute__((weak));
+void fontasync_poll(void) __attribute__((weak));
+void fontasync_wait(void) __attribute__((weak));
+void fontasync_cancel(void) __attribute__((weak));
 
 #define BUF_W 512
 #define FB_SIZE (BUF_W * SCREEN_H * 4)
@@ -45,6 +52,8 @@ static int pow2(int v)
     return p;
 }
 
+static int swizzled_rows(const Texture *t);
+
 Texture *tex_create(int w, int h, int psm)
 {
     Texture *t = calloc(1, sizeof(Texture));
@@ -73,14 +82,53 @@ void tex_free(Texture *t)
         return;
     if (t == s_bound)
         s_bound = NULL; /* en ny textur kan få samma adress */
-    free(t->data);
+    if (!t->vram) /* (video memory is not freed) */
+        free(t->data);
     free(t);
 }
 
 void tex_flush(Texture *t)
 {
     int bpp = t->psm == GU_PSM_8888 ? 4 : 2;
-    sceKernelDcacheWritebackRange(t->data, t->stride * (t->h + 1) * bpp);
+    sceKernelDcacheWritebackRange(t->data, t->stride * (t->swizzled ? swizzled_rows(t) : t->h + 1) * bpp);
+}
+
+/* The pixels in the order of the GE's own blocks (16 bytes by 8 rows, the blocks in rows). The picture is padded below to a whole number of blocks with copies of its last row, at least one row, as
+ * the one extra row is in a linear texture: where the filter reads past the bottom edge (a weight of nothing, at the last half texel) it sees what it saw before, and never memory that is not the
+ * texture's. */
+static int swizzled_rows(const Texture *t)
+{
+    return (t->h + 8) / 8 * 8; /* the height and at least one more, up to a multiple of 8 */
+}
+
+int tex_swizzle(Texture *t)
+{
+    if (!t || !t->data)
+        return 0;
+    if (t->swizzled)
+        return 1;
+    int bpp = t->psm == GU_PSM_8888 ? 4 : 2;
+    int row = t->stride * bpp;
+    if (row <= 0 || row % 16 || t->h <= 0)
+        return 0;
+    int rows = swizzled_rows(t);
+    u8 *out = memalign(16, (size_t)row * rows);
+    if (!out)
+        return 0;
+    const u8 *in = t->data;
+    u8 *dst = out;
+    for (int by = 0; by < rows / 8; by++)
+        for (int bx = 0; bx < row / 16; bx++)
+            for (int j = 0; j < 8; j++) {
+                int y = by * 8 + j;
+                memcpy(dst, in + (size_t)(y < t->h ? y : t->h - 1) * row + bx * 16, 16);
+                dst += 16;
+            }
+    free(t->data);
+    t->data = out;
+    t->swizzled = 1;
+    tex_flush(t);
+    return 1;
 }
 
 enum { SHAPE_DISC, SHAPE_SOFT, SHAPE_RING };
@@ -116,6 +164,28 @@ static Texture *make_shape(int kind)
     return t;
 }
 
+/* The small shapes (the disc, the soft glow, the ring) are drawn all the time, from the cards' shadows to the hundreds of specks of dust, each a little sprite that shrinks the whole 64 x 64 picture
+ * to a few pixels, so the GE reads texels spread over all of it. Main memory is slow for that, video memory is fast: they live in video memory, behind the screen buffers and the snapshot (they
+ * take 2 x 557 056 + 557 056 bytes of the 2 MB), swizzled, one slot each. Video memory is lost when the PSP sleeps: gfx_init() makes them again. A shape that cannot be moved stays in main memory. */
+#define SHAPE_VRAM (3 * FB_SIZE)
+#define SHAPE_SLOT 0x5000 /* 20 480 bytes: a swizzled shape is 72 rows of 256 bytes, 18 432 */
+
+static Texture *shape_to_vram(Texture *t, int slot)
+{
+    if (!t || !tex_swizzle(t))
+        return t;
+    size_t bytes = (size_t)t->stride * 4 * swizzled_rows(t);
+    if (bytes > SHAPE_SLOT)
+        return t;
+    u8 *vram = (u8 *)sceGeEdramGetAddr() + SHAPE_VRAM + slot * SHAPE_SLOT;
+    memcpy(vram, t->data, bytes);
+    free(t->data);
+    t->data = vram;
+    t->vram = 1;
+    tex_flush(t);
+    return t;
+}
+
 /* --- grundläggande GU --- */
 
 void gfx_init(void)
@@ -140,19 +210,24 @@ void gfx_init(void)
     sceDisplayWaitVblankStart();
     sceGuDisplay(GU_TRUE);
 
-    s_disc = make_shape(SHAPE_DISC);
-    s_soft = make_shape(SHAPE_SOFT);
-    s_ring = make_shape(SHAPE_RING);
+    tex_free(s_disc); /* (again after a sleep: the old ones are in video memory that is gone) */
+    tex_free(s_soft);
+    tex_free(s_ring);
+    s_disc = shape_to_vram(make_shape(SHAPE_DISC), 0);
+    s_soft = shape_to_vram(make_shape(SHAPE_SOFT), 1);
+    s_ring = shape_to_vram(make_shape(SHAPE_RING), 2);
 }
 
 static void icons_free(int only_unused);
 
 static void library_free(void);
+static void music_icon_free(void);
 
 void gfx_term(void)
 {
     icons_free(0);
     library_free();
+    music_icon_free();
     tex_free(s_disc);
     tex_free(s_soft);
     tex_free(s_ring);
@@ -164,6 +239,8 @@ void gfx_term(void)
 void gfx_begin(u32 clear_color)
 {
     s_frame++;
+    if (fontasync_poll)
+        fontasync_poll();
     icons_free(1); /* the last frame is finished, so images it did not use can go */
     sceGuStart(GU_DIRECT, s_list);
     s_bound = NULL;
@@ -194,7 +271,7 @@ static void bind_filter(const Texture *t, int filter)
     sceGuEnable(GU_TEXTURE_2D);
     if (t != s_bound) {
         s_bound = t;
-        sceGuTexMode(t->psm, 0, 0, 0);
+        sceGuTexMode(t->psm, 0, 0, t->swizzled);
         sceGuTexImage(0, t->tw, t->th, t->stride, t->data);
         sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
         sceGuTexWrap(GU_CLAMP, GU_CLAMP);
@@ -259,6 +336,19 @@ void gfx_line(float x0, float y0, float x1, float y1, u32 color)
     sceGuDrawArray(GU_LINES, CVERT_FMT, 2, 0, v);
 }
 
+/* A line through the points xy[2n], one pixel wide and not smoothed (the GE has no line smoothing; gfx_stroke is the smooth one, six vertices a point), the
+ * colour of every point on its own: the line goes from one colour to the next. 16 bytes of the display list a point: it is for the many thin lines of a picture. */
+void gfx_polyline(const float *xy, const u32 *colors, int n)
+{
+    if (n < 2)
+        return;
+    CVert *v = sceGuGetMemory(n * sizeof(CVert));
+    for (int i = 0; i < n; i++)
+        v[i] = (CVert){ colors[i], xy[i * 2], xy[i * 2 + 1], 0 };
+    sceGuDisable(GU_TEXTURE_2D);
+    sceGuDrawArray(GU_LINE_STRIP, CVERT_FMT, n, 0, v);
+}
+
 void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint)
 {
     if (!t)
@@ -287,7 +377,7 @@ void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint)
     }
     bind(t);
     /* en bild utan alfakanal (bakgrunder) med full täckning behöver ingen blandning */
-    int opaque = t->psm == GU_PSM_5650 && (tint >> 24) == 255;
+    int opaque = (t->psm == GU_PSM_5650 || t->opaque) && (tint >> 24) == 255;
     if (opaque)
         sceGuDisable(GU_BLEND);
     sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2 * n, 0, v);
@@ -295,12 +385,97 @@ void gfx_tex(const Texture *t, float x, float y, float w, float h, u32 tint)
         sceGuEnable(GU_BLEND);
 }
 
+/* --- a picture of three planes (Y, U and V, 8 bits each, 4:2:0): the graphics chip makes the colours ---
+ *
+ * The video player's software decoder (h264dec.c) hands over planes. Making RGB of them on the CPU cost as much as decoding the picture, so the GE does it: each plane is an 8 bit texture with a palette, and
+ * the picture is drawn in five passes on top of each other: the luma as grey (replaces what is there), then what the V and the U plane add to the red, green and blue (added), then what they take away
+ * (subtracted). The palettes hold the BT.601 factors for the video range (R = 1.164 (Y - 16) + 1.596 (V - 128), G = 1.164 (Y - 16) - 0.391 (U - 128) - 0.813 (V - 128), B = 1.164 (Y - 16) + 2.018 (U - 128)):
+ * a colour cannot be negative, so what V and U add and what they take away are two palettes each. A channel gets either an addition or a subtraction from a plane, never both, so the clamping of each
+ * pass changes nothing except for green, which gets something from both planes: V (adding, then taking away) comes first and then U, which is right for the saturated bright colours (yellow, cyan) and
+ * a few steps off, at most, for a pixel that is both very bright and has chroma that pulls the green up and down by a lot. The chroma planes are drawn twice as big with the chip's linear filter, which also smooths them. */
+static u32 __attribute__((aligned(64))) s_yuv_clut[5][256];
+static int s_yuv_ready;
+
+static int yuv_clamp(float v)
+{
+    int i = (int)(v + 0.5f);
+    return i < 0 ? 0 : i > 255 ? 255 : i;
+}
+
+static void yuv_clut_init(void)
+{
+    for (int i = 0; i < 256; i++) {
+        float d = (float)(i - 128);
+        int y = yuv_clamp(1.164f * (float)(i - 16));
+        s_yuv_clut[0][i] = RGBA(y, y, y, 255);
+        s_yuv_clut[1][i] = RGBA(yuv_clamp(1.596f * d), yuv_clamp(-0.813f * d), 0, 255);   /* V adds */
+        s_yuv_clut[2][i] = RGBA(0, yuv_clamp(-0.391f * d), yuv_clamp(2.018f * d), 255);   /* U adds */
+        s_yuv_clut[3][i] = RGBA(yuv_clamp(-1.596f * d), yuv_clamp(0.813f * d), 0, 255);   /* V takes away */
+        s_yuv_clut[4][i] = RGBA(0, yuv_clamp(0.391f * d), yuv_clamp(-2.018f * d), 255);   /* U takes away */
+    }
+    sceKernelDcacheWritebackRange(s_yuv_clut, sizeof(s_yuv_clut));
+    s_yuv_ready = 1;
+}
+
+static int yuv_pow2(int n)
+{
+    int p = 1;
+    while (p < n)
+        p <<= 1;
+    return p;
+}
+
+void gfx_yuv(const unsigned char *const plane[3], int w, int h, int ystride, int cstride, float x, float y, float dw, float dh)
+{
+    if (!s_yuv_ready)
+        yuv_clut_init();
+    /* plane, palette, how it is put on what is there: 0 = replaces, 1 = added, 2 = subtracted */
+    static const struct { int plane, clut, mode; } PASS[5] = { { 0, 0, 0 }, { 2, 1, 1 }, { 2, 3, 2 }, { 1, 2, 1 }, { 1, 4, 2 } };
+    sceGuEnable(GU_TEXTURE_2D);
+    sceGuClutMode(GU_PSM_8888, 0, 0xFF, 0);
+    sceGuTexFunc(GU_TFX_REPLACE, GU_TCC_RGB);
+    sceGuTexWrap(GU_CLAMP, GU_CLAMP);
+    sceGuTexFilter(GU_LINEAR, GU_LINEAR);
+    for (int p = 0; p < 5; p++) {
+        int c = PASS[p].plane != 0;
+        int tw = c ? (w + 1) / 2 : w, th = c ? (h + 1) / 2 : h; /* the texels of the plane */
+        sceGuTexMode(GU_PSM_T8, 0, 0, 0);
+        sceGuClutLoad(32, s_yuv_clut[PASS[p].clut]);
+        sceGuTexImage(0, yuv_pow2(tw), yuv_pow2(th), c ? cstride : ystride, plane[PASS[p].plane]);
+        sceGuTexFlush();
+        if (PASS[p].mode == 0) {
+            sceGuDisable(GU_BLEND);
+        } else {
+            sceGuEnable(GU_BLEND);
+            sceGuBlendFunc(PASS[p].mode == 1 ? GU_ADD : GU_REVERSE_SUBTRACT, GU_FIX, GU_FIX, 0xFFFFFFFF, 0xFFFFFFFF);
+        }
+        /* in strips of 64 texels, as gfx_tex does: the chip reads a texture through a small cache */
+        int n = (tw + 63) / 64;
+        TVert *v = sceGuGetMemory(2 * n * sizeof(TVert));
+        float scale = dw / (float)tw; /* screen pixels per texel */
+        float xs = x, us = 0;
+        for (int k = 0; k < n; k++) {
+            float ue = k < n - 1 ? 64.0f * (k + 1) : (float)tw, xe = k < n - 1 ? floorf(x + ue * scale + 0.5f) : x + dw;
+            v[k * 2] = (TVert){ us, 0, 0xFFFFFFFF, xs, y, 0 };
+            v[k * 2 + 1] = (TVert){ ue, (float)th, 0xFFFFFFFF, xe, y + dh, 0 };
+            xs = xe;
+            us = ue;
+        }
+        sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2 * n, 0, v);
+    }
+    /* everything else is drawn as before */
+    sceGuBlendFunc(GU_ADD, GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA, 0, 0);
+    sceGuEnable(GU_BLEND);
+    s_bound = NULL;
+    s_filter = -1;
+}
+
 /* --- the snapshot: a picture of the screen in video memory --- */
 
 /* It lies behind the two screen buffers (they take 2 x 557 056 bytes of the 2 MB) and is laid out like one: 512 pixels a
  * row, 8888. 0x04000000 is where the video memory starts for the GE when it reads a texture. */
 #define SNAP_OFFSET (2 * FB_SIZE)
-static Texture s_snap = { SCREEN_W, SCREEN_H, 512, 512, BUF_W, GU_PSM_8888, (void *)(0x04000000 + SNAP_OFFSET) };
+static Texture s_snap = { SCREEN_W, SCREEN_H, 512, 512, BUF_W, GU_PSM_8888, (void *)(0x04000000 + SNAP_OFFSET), 0, 0 };
 
 unsigned gfx_snapshot_serial(void)
 {
@@ -323,10 +498,10 @@ void gfx_snapshot_end(void)
     sceGuTexFlush();
 }
 
+/* In strips of 64 pixels, one sprite each, all in one call: the GE reads a wide image slowly (see gfx_tex). One texel on one screen pixel, so the
+ * picture comes out exactly as it was drawn. */
 void gfx_snapshot_draw(void)
 {
-    /* In strips of 64 pixels, one sprite each, all in one call: the GE reads a wide image slowly (see gfx_tex). One
-     * texel on one screen pixel, so the picture comes out exactly as it was drawn. */
     const int n = (SCREEN_W + 63) / 64;
     TVert *v = sceGuGetMemory(2 * n * sizeof(TVert));
     const u32 white = RGBA(255, 255, 255, 255);
@@ -338,6 +513,33 @@ void gfx_snapshot_draw(void)
     bind_filter(&s_snap, GU_NEAREST);
     sceGuDisable(GU_BLEND); /* the picture covers the whole screen and has no see-through parts */
     sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2 * n, 0, v);
+    sceGuEnable(GU_BLEND);
+}
+
+/* The same picture read smoothly, with every sprite half a pixel off its place: each pixel is the mean of 2 x 2 texels, so lines that were drawn one pixel wide (which
+ * have steps) come out smooth, and the picture is half a pixel down and to the right. (The position of the sprite is moved, not its texture coordinates: a sprite that is
+ * drawn one texel to a pixel is read as it is whatever the coordinates say, by PPSSPP at least.) It reads only texels of the picture; the first column and row, which
+ * would read past it, are drawn as they are. */
+void gfx_snapshot_draw_soft(void)
+{
+    const int n = (SCREEN_W - 1 + 63) / 64;
+    TVert *v = sceGuGetMemory((2 * n + 4) * sizeof(TVert));
+    const u32 white = RGBA(255, 255, 255, 255);
+    for (int k = 0; k < n; k++) {
+        float a = 1.0f + 64.0f * k, b = a + 64 > SCREEN_W ? (float)SCREEN_W : a + 64; /* the pixels a to b - 1 of columns 1 to 479, and of rows 1 to 271 */
+        v[k * 2] = (TVert){ a, 1, white, a + 0.5f, 1.5f, 0 }; /* (texture u, v, colour, then x, y) */
+        v[k * 2 + 1] = (TVert){ b, SCREEN_H, white, b + 0.5f, SCREEN_H + 0.5f, 0 };
+    }
+    TVert *edge = v + 2 * n;
+    edge[0] = (TVert){ 0, 0, white, 0, 0, 0 }; /* the first column */
+    edge[1] = (TVert){ 1, SCREEN_H, white, 1, SCREEN_H, 0 };
+    edge[2] = (TVert){ 1, 0, white, 1, 0, 0 }; /* and the first row, from that column on */
+    edge[3] = (TVert){ SCREEN_W, 1, white, SCREEN_W, 1, 0 };
+    sceGuDisable(GU_BLEND);
+    bind_filter(&s_snap, GU_LINEAR);
+    sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2 * n, 0, v);
+    bind_filter(&s_snap, GU_NEAREST);
+    sceGuDrawArray(GU_SPRITES, TVERT_FMT, 4, 0, edge);
     sceGuEnable(GU_BLEND);
 }
 
@@ -624,6 +826,35 @@ void gfx_wifi(float cx, float cy, float r, u32 color)
     }
 }
 
+/* a quad in one colour (the corners go 1, 2, 4, 3: gfx_quad draws a strip) */
+static void flat_quad(const float *xy, u32 color)
+{
+    const u32 c[4] = { color, color, color, color };
+    gfx_quad(xy, c);
+}
+
+/* The cube in a box of side 2 r centred on (cx, cy): one image like the cog wheel (see cube_render in icons.c). The old way, when there is no room for
+ * the image, is three flat faces of the same brightnesses. */
+void gfx_cube(float cx, float cy, float r, u32 color)
+{
+    IconBox b;
+    float rq = quarter(r);
+    icon_box(ICON_CUBE, cx, cy, 0, 0, rq, &b);
+    const Texture *tex = icon_get(ICON_CUBE, 0, 0, rq, &b);
+    if (tex) {
+        icon_blit(tex, &b, color);
+        return;
+    }
+    const float w = 0.875f * r, h = 0.5f * r;
+    const float top[8] = { cx, cy - r, cx + w, cy - h, cx - w, cy - h, cx, cy };
+    const float left[8] = { cx - w, cy - h, cx, cy, cx - w, cy + h, cx, cy + r };
+    const float right[8] = { cx, cy, cx + w, cy - h, cx, cy + r, cx + w, cy + h };
+    const u32 a = (color >> 24) & 255;
+    flat_quad(top, color);
+    flat_quad(left, COLOR_ALPHA(color, a * 199 / 255));
+    flat_quad(right, COLOR_ALPHA(color, a * 128 / 255));
+}
+
 /* The straight back edge is put on a whole pixel line (it moves by half a pixel at most, and the width is
  * a whole number of pixels), so only the two slanted sides need smoothing. */
 void gfx_triangle(float x, float y, float w, float h, int dir, u32 color)
@@ -690,6 +921,22 @@ void gfx_speaker(float x, float y, u32 color)
     gfx_quad(cone, cc);
 }
 
+void gfx_speaker_scaled(float x, float y, float scale, u32 color)
+{
+    float rad = 4.5f * scale;
+    IconBox b;
+    icon_box(ICON_SPEAKER, x + rad, y, 0, 0, rad, &b);
+    const Texture *tex = icon_get(ICON_SPEAKER, 0, 0, rad, &b);
+    if (tex) {
+        icon_blit(tex, &b, color);
+        return;
+    }
+    gfx_rect(x, y - 3 * scale, 4 * scale, 6 * scale, color);
+    float cone[8] = { x + 3.5f * scale, y - 3 * scale, x + 9 * scale, y - 7.5f * scale, x + 3.5f * scale, y + 3 * scale, x + 9 * scale, y + 7.5f * scale };
+    u32 cc[4] = { color, color, color, color };
+    gfx_quad(cone, cc);
+}
+
 /* The images of the Library picture, one for each height it has been drawn at. They are not in the cache above, which lets go of
  * what was not used for a frame: the card goes through about twenty heights when it grows or shrinks, one new height per frame,
  * and making an image is not something a frame can afford (icon_library_image has the ready-made ones for those heights, so
@@ -741,6 +988,108 @@ void gfx_library_icon(int l, int t, int w, int h, u32 color)
     for (int i = 0; i < 6; i++)
         gfx_round_rect(x + (i % 3) * 25 * u, y + (i / 3) * 25 * u, 19 * u, 19 * u, 3 * u, color);
     gfx_round_rect(x + 27 * u, y + 41 * u, 56 * u, 27 * u, 12 * u, color);
+}
+
+/* The picture of the Music card of the Media tab: the note of "Music Icon.png" (ICON_MUSIC), 41 pixels high at the full size of the card (two thirds of its height,
+ * as the Library's picture) and drawn smaller while the card slides in or out. It is one image made once; the sizes between are that image scaled, so nothing is
+ * calculated while the card moves (the full size is one image pixel on one screen pixel, so it is as sharp as the other pictures). It stays until gfx_term. */
+#define MUSIC_ICON_S 41
+#define MUSIC_ICON_N (MUSIC_ICON_S + 2) /* with a transparent pixel round it */
+/* The Videos and Images cards have the same kind of picture: the film frame of "Video Icon.png" and the picture frame of "Image Icon.png" (ICON_VIDEO, ICON_IMAGES). They are wider than
+ * the note, so each is made in its own square: the film frame is 1.17 times the note's side wide, the picture frame 1.12 times. */
+enum { CARD_ICON_MUSIC, CARD_ICON_VIDEO, CARD_ICON_IMAGES, CARD_ICONS };
+static const int CARD_ICON_KIND[CARD_ICONS] = { ICON_MUSIC, ICON_VIDEO, ICON_IMAGES };
+static const float CARD_ICON_WIDE[CARD_ICONS] = { 1.0f, 1.17f, 1.12f };
+static int card_icon_n(int which)
+{
+    return (int)ceilf(MUSIC_ICON_S * CARD_ICON_WIDE[which]) + 2;
+}
+static Texture *s_card_icon[CARD_ICONS];
+
+static void music_icon_free(void)
+{
+    for (int i = 0; i < CARD_ICONS; i++) {
+        tex_free(s_card_icon[i]);
+        s_card_icon[i] = NULL;
+    }
+}
+
+static const Texture *card_icon_image(int which)
+{
+    if (!s_card_icon[which]) {
+        int n = card_icon_n(which);
+        unsigned char *cov = malloc((size_t)n * n);
+        Texture *t = cov ? tex_create(n, n, GU_PSM_8888) : NULL;
+        if (!t) {
+            free(cov);
+            return NULL;
+        }
+        icon_render(CARD_ICON_KIND[which], 0, 0, MUSIC_ICON_S * CARD_ICON_WIDE[which] / 2.0f, n / 2.0f, n / 2.0f, n, n, cov);
+        u32 *px = t->data;
+        for (int y = 0; y < n; y++)
+            for (int x = 0; x < n; x++)
+                px[y * t->stride + x] = RGBA(255, 255, 255, cov[y * n + x]);
+        tex_flush(t);
+        free(cov);
+        s_card_icon[which] = t;
+    }
+    return s_card_icon[which];
+}
+
+static const Texture *music_icon_image(void)
+{
+    return card_icon_image(CARD_ICON_MUSIC);
+}
+
+/* the picture of a card, centred in the card box l, t, w, h: MUSIC_ICON_S high-ish (41 pixels at the biggest card) and scaled smaller with the card */
+static void card_icon(int which, int l, int t, int w, int h, u32 color)
+{
+    int s = (int)floorf(h * 0.66f + 0.5f);
+    float k = s / (float)MUSIC_ICON_S;
+    int n = card_icon_n(which);
+    int d = (int)floorf(n * k + 0.5f);
+    int x = l + (w - d + 1) / 2, y = t + (h - d + 1) / 2;
+    const Texture *tex = card_icon_image(which);
+    if (tex) {
+        if (d == n) {
+            IconBox b = { d, d, x, y, d / 2.0f, d / 2.0f, 0, 0 };
+            icon_blit(tex, &b, color); /* the full size: one pixel for one pixel */
+        } else {
+            gfx_tex(tex, x, y, d, d, color);
+        }
+        return;
+    }
+    gfx_note(l + w / 2.0f, t + h / 2.0f, s, color); /* the image could not be made: the little note */
+}
+
+void gfx_video_icon(int l, int t, int w, int h, u32 color)
+{
+    card_icon(CARD_ICON_VIDEO, l, t, w, h, color);
+}
+
+void gfx_images_icon(int l, int t, int w, int h, u32 color)
+{
+    card_icon(CARD_ICON_IMAGES, l, t, w, h, color);
+}
+
+/* The note, centred in the card box l, t, w, h: 41 pixels high when the card is as high as the biggest card (62), smaller (and then scaled) when it is smaller */
+void gfx_music_icon(int l, int t, int w, int h, u32 color)
+{
+    int s = (int)floorf(h * 0.66f + 0.5f);
+    float k = s / (float)MUSIC_ICON_S;
+    int d = (int)floorf(MUSIC_ICON_N * k + 0.5f);
+    int x = l + (w - d + 1) / 2, y = t + (h - d + 1) / 2;
+    const Texture *tex = music_icon_image();
+    if (tex) {
+        if (d == MUSIC_ICON_N) {
+            IconBox b = { d, d, x, y, d / 2.0f, d / 2.0f, 0, 0 };
+            icon_blit(tex, &b, color); /* the full size: one pixel for one pixel */
+        } else {
+            gfx_tex(tex, x, y, d, d, color);
+        }
+        return;
+    }
+    gfx_note(l + w / 2.0f, t + h / 2.0f, s, color); /* the image could not be made: the little note */
 }
 
 /* The folder picture p: from the cache above (a folder is a few hundred pixels and two rounded boxes, cheap to make), and if there is
@@ -874,8 +1223,16 @@ void gfx_button(float cx, float cy, float r, int kind, u32 plate, u32 mark)
 
 /* --- text --- */
 
+/* The fonts stay loaded from one screen to the next: psp5 builds itself up again after every visit (File Manager, USB Mode, FTP, Wi-Fi) and every one of them used to load both fonts twice, 0.39 to 0.44
+ * seconds each time on a PSP-1000 (the PSP-1000 timings, `font_init`). Their pictures are in memory (intraFont does not use video memory), so they also survive gfx_term(); font_init() takes what is loaded
+ * and font_term() only forgets the widths. font_unload() is the real end of them (nothing in psp5 needs it: the program ends or starts a game). */
 void font_init(int need_jpn)
 {
+    if (s_font) {
+        if (need_jpn)
+            font_ensure_cjk();
+        return;
+    }
     widths_forget();
     intraFontInit();
     s_font = intraFontLoad("flash0:/font/ltn0.pgf", INTRAFONT_CACHE_LARGE | INTRAFONT_CACHE_ALL);
@@ -895,21 +1252,59 @@ void font_init(int need_jpn)
     }
 }
 
-void font_ensure_cjk(void)
+static void cjk_attach(intraFont *j)
 {
-    if (s_jpn || !s_font)
-        return;
-    s_jpn = intraFontLoad("flash0:/font/jpn0.pgf", INTRAFONT_STRING_UTF8);
-    if (!s_jpn)
-        return;
+    s_jpn = j;
     widths_forget(); /* with the extra font some letters get other widths */
     intraFontSetAltFont(s_font, s_jpn);
     if (s_bold != s_font)
         intraFontSetAltFont(s_bold, s_jpn);
 }
 
+/* The Japanese font is a large file: loading it takes some 0.7 seconds on a PSP-1000, which was a frozen picture the first time a song with a Cyrillic or Japanese title was shown (the PSP-1000 timings: a
+ * frame of 667 ms in the Music screen). font_ensure_cjk_later() has fontasync.c load it in a thread of its own; the frame after it is loaded (gfx_begin) it is put in use, and the letters that are not in
+ * the Latin font come with it. font_ensure_cjk() is still the one that has the font when it returns (it waits for the thread when one is at it). fontasync.c is not in the programs of the tests
+ * on a PC: the four functions below are weak, and without it the font is loaded here, at once. */
+
+int font_attach_cjk(void *j)
+{
+    if (s_jpn || !s_font || !j)
+        return 0;
+    cjk_attach((intraFont *)j);
+    return 1;
+}
+
+void font_ensure_cjk_later(void)
+{
+    if (s_jpn || !s_font)
+        return;
+    if (fontasync_start)
+        fontasync_start();
+    else
+        font_ensure_cjk();
+}
+
+void font_ensure_cjk(void)
+{
+    if (fontasync_wait)
+        fontasync_wait(); /* (a font that the thread is loading is waited for and taken, and not loaded twice) */
+    if (s_jpn || !s_font)
+        return;
+    intraFont *j = intraFontLoad("flash0:/font/jpn0.pgf", INTRAFONT_STRING_UTF8);
+    if (!j)
+        return;
+    cjk_attach(j);
+}
+
 void font_term(void)
 {
+    widths_forget(); /* (the fonts stay: see font_init) */
+}
+
+void font_unload(void)
+{
+    if (fontasync_cancel)
+        fontasync_cancel(); /* (a font that the thread was loading is dropped) */
     widths_forget();
     if (s_bold && s_bold != s_font)
         intraFontUnload(s_bold);
@@ -1198,6 +1593,59 @@ void gfx_stroke(const float *xy, const u32 *colors, int n, float width)
         sceGuDrawArray(GU_TRIANGLE_STRIP, CVERT_FMT, m * 2, 0, strip[s]);
 }
 
+/* The same ramps as gfx_stroke(), round a closed path: a cross-section at every point (the mitre of the two sides that meet there) and the first once more to close it, drawn as the same three strips. */
+void gfx_stroke_loop(const float *in, int count, float width, u32 color)
+{
+    /* the points, none twice in a row and not the first again at the end (a loop closed by giving its first point again is the same loop): every side has a length and a direction */
+    float xy[STROKE_MAX * 2];
+    int n = 0;
+    for (int i = 0; i < count && n < STROKE_MAX; i++) {
+        if (n > 0 && fabsf(in[i * 2] - xy[n * 2 - 2]) < 1e-4f && fabsf(in[i * 2 + 1] - xy[n * 2 - 1]) < 1e-4f)
+            continue;
+        xy[n * 2] = in[i * 2];
+        xy[n * 2 + 1] = in[i * 2 + 1];
+        n++;
+    }
+    while (n > 1 && fabsf(xy[n * 2 - 2] - xy[0]) < 1e-4f && fabsf(xy[n * 2 - 1] - xy[1]) < 1e-4f)
+        n--;
+    if (n < 3)
+        return;
+    float dx[STROKE_MAX], dy[STROKE_MAX]; /* the unit direction of the side from point i to the next */
+    for (int i = 0; i < n; i++) {
+        int j = (i + 1) % n;
+        float ex = xy[j * 2] - xy[i * 2], ey = xy[j * 2 + 1] - xy[i * 2 + 1], len = sqrtf(ex * ex + ey * ey);
+        dx[i] = ex / len, dy[i] = ey / len;
+    }
+    const float hw = fmaxf(width, 1.0f) / 2, peak = fminf(width, 1.0f);
+    const float off[4] = { -(hw + 0.5f), -(hw - 0.5f), hw - 0.5f, hw + 0.5f };
+    const u32 edge = stroke_alpha(color, 0), mid = stroke_alpha(color, peak);
+    int m = n + 1;
+    CVert *v = sceGuGetMemory(m * 6 * sizeof(CVert));
+    CVert *strip[3] = { v, v + 2 * m, v + 4 * m };
+    for (int j = 0; j < m; j++) {
+        int i = j % n, before = (i + n - 1) % n;
+        float ax = -dy[before], ay = dx[before], bx = -dy[i], by = dx[i]; /* the normals of the side that comes in and the one that goes out */
+        float mx = ax + bx, my = ay + by, ml = sqrtf(mx * mx + my * my), nx, ny;
+        if (ml < 1e-4f) { /* turns right back on itself */
+            nx = ax, ny = ay;
+        } else {
+            mx /= ml, my /= ml;
+            float k = 1.0f / fmaxf(mx * ax + my * ay, 0.5f);
+            nx = mx * k, ny = my * k;
+        }
+        CVert c[4];
+        for (int k = 0; k < 4; k++)
+            c[k] = (CVert){ k == 0 || k == 3 ? edge : mid, xy[i * 2] + nx * off[k], xy[i * 2 + 1] + ny * off[k], 0 };
+        for (int s = 0; s < 3; s++) {
+            strip[s][j * 2] = c[s];
+            strip[s][j * 2 + 1] = c[s + 1];
+        }
+    }
+    sceGuDisable(GU_TEXTURE_2D);
+    for (int s = 0; s < 3; s++)
+        sceGuDrawArray(GU_TRIANGLE_STRIP, CVERT_FMT, m * 2, 0, strip[s]);
+}
+
 void gfx_dot(float cx, float cy, float r, u32 color, int soft)
 {
     TVert *v = sceGuGetMemory(2 * sizeof(TVert));
@@ -1207,14 +1655,78 @@ void gfx_dot(float cx, float cy, float r, u32 color, int soft)
     sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2, 0, v);
 }
 
+void gfx_dots(const GfxDot *d, int n, int soft)
+{
+    while (n > 0) {
+        int m = n < GFX_DOTS_MAX ? n : GFX_DOTS_MAX;
+        TVert *v = sceGuGetMemory(2 * m * sizeof(TVert));
+        for (int i = 0; i < m; i++) {
+            v[i * 2] = (TVert){ 0, 0, d[i].color, d[i].x - d[i].r, d[i].y - d[i].r, 0 };
+            v[i * 2 + 1] = (TVert){ SHAPE_SIZE, SHAPE_SIZE, d[i].color, d[i].x + d[i].r, d[i].y + d[i].r, 0 };
+        }
+        bind(soft ? s_soft : s_disc);
+        sceGuDrawArray(GU_SPRITES, TVERT_FMT, 2 * m, 0, v);
+        d += m;
+        n -= m;
+    }
+}
+
+static int s_clip_x, s_clip_y, s_clip_w = SCREEN_W, s_clip_h = SCREEN_H; /* the clip that is set (gfx_bar_fill puts it back) */
+
 void gfx_clip(float x, float y, float w, float h)
 {
-    sceGuScissor((int)x, (int)y, (int)w, (int)h);
+    s_clip_x = (int)x, s_clip_y = (int)y, s_clip_w = (int)w, s_clip_h = (int)h;
+    sceGuScissor(s_clip_x, s_clip_y, s_clip_w, s_clip_h);
 }
 
 void gfx_clip_reset(void)
 {
+    s_clip_x = s_clip_y = 0, s_clip_w = SCREEN_W, s_clip_h = SCREEN_H;
     sceGuScissor(0, 0, SCREEN_W, SCREEN_H);
+}
+
+float text_marquee_offset(float overflow, float t)
+{
+    if (overflow <= 0 || t < 0)
+        return 0;
+    float run = overflow / MARQUEE_SPEED, cycle = MARQUEE_WAIT + run + MARQUEE_END;
+    t -= cycle * floorf(t / cycle);
+    if (t < MARQUEE_WAIT)
+        return 0;
+    if (t < MARQUEE_WAIT + run)
+        return (t - MARQUEE_WAIT) * MARQUEE_SPEED;
+    return overflow;
+}
+
+void text_draw_marquee(float x, float y, float size, int bold, u32 color, float room, const char *s, float t)
+{
+    float w = text_width(size, bold, s);
+    if (w <= room) {
+        text_draw(x, y, size, bold, color, ALIGN_LEFT, s);
+        return;
+    }
+    int x0 = (int)floorf(x), x1 = (int)floorf(x + room);
+    if (x0 < s_clip_x)
+        x0 = s_clip_x;
+    if (x1 > s_clip_x + s_clip_w)
+        x1 = s_clip_x + s_clip_w;
+    if (x1 <= x0)
+        return;
+    sceGuScissor(x0, s_clip_y, x1 - x0, s_clip_h);
+    text_draw(x - floorf(text_marquee_offset(w - room, t) + 0.5f), y, size, bold, color, ALIGN_LEFT, s);
+    sceGuScissor(s_clip_x, s_clip_y, s_clip_w, s_clip_h);
+}
+
+/* A rounded bar one radius too long, cut off at x + w: the left end is round, the right end is straight, and nothing is drawn twice (a fade stays even) */
+void gfx_bar_fill(float x, float y, float w, float h, float r, u32 color)
+{
+    int left = (int)floorf(x + 0.5f), right = (int)floorf(x + w + 0.5f); /* (whole pixels: a part of a bar is as wide as its pixels) */
+    int x0 = s_clip_x > left ? s_clip_x : left, x1 = s_clip_x + s_clip_w < right ? s_clip_x + s_clip_w : right;
+    if (x1 <= x0)
+        return;
+    sceGuScissor(x0, s_clip_y, x1 - x0, s_clip_h);
+    gfx_round_rect(left, y, right - left + 2 * r, h, r, color);
+    sceGuScissor(s_clip_x, s_clip_y, s_clip_w, s_clip_h);
 }
 
 void gfx_quad(const float *xy, const u32 *colors)

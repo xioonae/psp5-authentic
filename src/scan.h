@@ -23,7 +23,14 @@ typedef struct {
     u32 pic_offset, pic_size;
     /* för att känna igen oförändrade filer i listcachen */
     u32 file_size, file_time;
+    /* A PBOOT.PBP beside the EBOOT.PBP (TempGBA's single-game folders keep the game's name and pictures there): which of the pictures above
+     * lie in it (ENTRY_ICON_IN_PBOOT, ENTRY_PIC_IN_PBOOT; the offsets then belong to that file), and its size and time packed in one number
+     * (0 = there is none), so that the list cache and the cached pictures notice when it changes. */
+    u32 pboot_flags, pboot_stamp;
 } Entry;
+
+#define ENTRY_ICON_IN_PBOOT 1
+#define ENTRY_PIC_IN_PBOOT  2
 
 typedef struct {
     Entry *items;
@@ -48,8 +55,12 @@ void scan_remove_front(EntryList *list);
 /* Tar bort post nummer i (ett raderat spel). Efterföljande poster får ett index mindre. */
 void scan_remove_at(EntryList *list, int i);
 
-/* Titel och spel-ID ur en PARAM.SFO. */
+/* Titel och spel-ID ur en PARAM.SFO. A title that is missing, empty or only blanks changes nothing: the name the entry already has (the
+ * folder of a game, the file name of an image) stays. */
 void entry_read_sfo(Entry *e, const u8 *sfo, u32 size);
+
+/* The PBOOT.PBP that lies beside the EBOOT.PBP of an entry (whether it is there or not). */
+void entry_pboot_path(const Entry *e, char *out, int out_size);
 
 /* Namn för egna omslag: DISC_ID för ISO och UMD, mappnamnet för EBOOT. */
 void entry_cover_key(const Entry *e, char *out, int out_size);

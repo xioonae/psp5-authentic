@@ -1,101 +1,222 @@
-# psp5-authentic
+# psp5 authentic
 
 A launcher for PSPs with **ARK-4 or ARK-5** that looks and feels like the user interface of a modern **home console** –
 on the PSP's 480×272 screen. You move through it with the D-pad alone.
 
-psp5-authentic is a fork of [psp5](https://github.com/08Weber/psp5) by Mille Weber (08Weber), based on psp5 v1.5.3. It has
+psp5 authentic is a fork of [psp5](https://github.com/08Weber/psp5), originally made by Mille Weber (08Weber) and forked by Xioonae, based on psp5 v1.5.3. It has
 one goal of its own: to come **as close as possible to the real home console experience**. It follows the console's look and feel
 wherever it can, but it doesn't copy the console in everything.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/games.png" alt="Games"><br><sub><b>Games</b> – the games you played last and the ones you pinned, with the Library as the last card</sub></td>
-    <td width="50%"><img src="docs/screenshots/options.png" alt="Options of a game"><br><sub><b>Options</b> (START) – saved data, information, pin to or remove from Home, delete</sub></td>
+    <td width="50%"><img src="docs/screenshots/games.png" alt="Games"><br><sub><b>Games</b> – the games you played last, the ones you keep in Home and then the newest you added, with the Library as the last card</sub></td>
+    <td width="50%"><img src="docs/screenshots/options.png" alt="Options of a game"><br><sub><b>Options</b> (START) – delete, information and the <i>Keep in Home</i> switch</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/library.png" alt="Library"><br><sub><b>Library</b> – everything on the card in one grid, sorted by name or by what you added last</sub></td>
+    <td width="50%"><img src="docs/screenshots/library.png" alt="Library"><br><sub><b>Library</b> – everything on the card in one grid, sorted by name, by when you added a game or by its size, on its own background</sub></td>
     <td width="50%"><img src="docs/screenshots/library-folders.png" alt="Library with folders"><br><sub><b>Folders</b> – the Library can show the folders as cards; the button at the top left chooses what you see</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/information.png" alt="Information"><br><sub><b>Information</b> – what a game or app is, where it is and how big it is</sub></td>
-    <td width="50%"><img src="docs/screenshots/saved-data.png" alt="Manage Saved Data"><br><sub><b>Manage Saved Data</b> – look through saves, mark several and delete them, with the space you get back</sub></td>
+    <td width="50%"><img src="docs/screenshots/information.png" alt="Information"><br><sub><b>Information</b> – what a game or app is, where it is, how big it is and when you played it last</sub></td>
+    <td width="50%"><img src="docs/screenshots/saved-data.png" alt="Manage Saved Data"><br><sub><b>Manage Saved Data</b> (Settings → Storage → Console Storage) – look through saves, mark several and delete them, with the space you get back</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/music.png" alt="Music"><br><sub><b>Music</b> – your MP3s with album art; the music keeps playing while you browse your games</sub></td>
+    <td width="50%"><img src="docs/screenshots/console-storage.png" alt="Console Storage"><br><sub><b>Console Storage</b> (Settings → Storage) – the size, a bar of what is on the storage and the free space; <i>Games and Apps</i> and <i>Saved Data</i> open their lists</sub></td>
+    <td width="50%"><img src="docs/screenshots/games-and-apps.png" alt="Games and Apps"><br><sub><b>Games and Apps</b> – all your games and apps: sort them, mark several and delete them, with the space you get back</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/media.png" alt="Media"><br><sub><b>Media</b> – a row of cards like Games: <i>Music</i>, <i>Videos</i> and <i>Images</i>, on a background drawn in your theme's colours</sub></td>
+    <td width="50%"><img src="docs/screenshots/music.png" alt="Music"><br><sub><b>Music</b> (the Media tab → Music) – your songs in a list like the File Manager's and a player you steer with the buttons; the music keeps playing while you browse your games</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/videos.png" alt="Videos"><br><sub><b>Videos</b> (Media → Videos) – the <code>VIDEO</code> folder of the Memory Stick and of the internal storage, folders and all, in a list that has the whole width</sub></td>
+    <td width="50%"><img src="docs/screenshots/video-player.png" alt="Video player"><br><sub><b>Video player</b> – MP4 (H.264 and AAC) and PMF on the whole screen; the bar, the numbers and L / R show when you press a button and go away after a moment</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/images.png" alt="Images"><br><sub><b>Images</b> (Media → Images) – the <code>PICTURE</code> folder and <code>PSP/PHOTO</code>, folders and all</sub></td>
+    <td width="50%"><img src="docs/screenshots/image-viewer.png" alt="Image viewer"><br><sub><b>Image viewer</b> – JPEG (turned the way the camera says), PNG and BMP on the whole screen; L / R for the one before and after</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/settings.png" alt="Settings"><br><sub><b>Settings</b> – six pages, one list; Confirm opens one, Back goes back</sub></td>
+    <td width="50%"><img src="docs/screenshots/settings-system.png" alt="Settings, System"><br><sub><b>Settings → System</b> – console information, appearance, language, date and time, ARK's settings, performance and plugins</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/settings-console-information.png" alt="Settings, Console Information"><br><sub><b>System → Console Information</b> – model, system software, the version of ARK, MAC address, last IP address, free RAM, battery, and where psp5 authentic comes from</sub></td>
+    <td width="50%"><img src="docs/screenshots/settings-appearance.png" alt="Settings, Appearance"><br><sub><b>System → Appearance</b> – highlight a theme to see it, Confirm to use it (here Cosmic Red)</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/settings-screen-sound.png" alt="Settings, Screen and Sound"><br><sub><b>Settings → Screen and Sound</b> – the PSP's brightness, backlight timer, volume, equalizer and AVLS</sub></td>
+    <td width="50%"><img src="docs/screenshots/settings-controls.png" alt="Settings, Controls"><br><sub><b>Settings → Controls</b> – the PSP's own confirm button, and which button does what in psp5 authentic</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/theme.png" alt="Classic theme"><br><sub><b>Themes</b> – the classic looks of PS1 to PS4 too (here PS3, with <i>Show Game art</i> turned off)</sub></td>
+    <td width="50%"><img src="docs/screenshots/power-menu.png" alt="Power menu"><br><sub><b>Power menu</b> (SELECT) – exit to the XMB, sleep, shut down, restart, recovery menu</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/ftp-server.png" alt="FTP Server"><br><sub><b>FTP Server</b> (Settings → Network) – copy files to and from your computer over Wi-Fi: the address to type, who is connected and the file that is going, with a progress bar</sub></td>
+    <td width="50%"><img src="docs/screenshots/manage-plugins.png" alt="Manage Plugins"><br><sub><b>Manage Plugins</b> (Settings → System → Plugins) – the plugins that are installed and where; Confirm opens one to install it to more places or uninstall it from some</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/install-plugin.png" alt="Install New Plugin"><br><sub><b>Install New Plugin</b> – choose a <code>.prx</code> in the File Manager, then which <code>PLUGINS.TXT</code> to edit and what it runs in (XMB, Games, PS1)</sub></td>
+    <td width="50%"><img src="docs/screenshots/settings-date-time.png" alt="Settings, Date and Time"><br><sub><b>System → Date and Time</b> – the date and time that psp5 authentic shows, with Daylight Saving (one hour less or more), the date format and the 12- or 24-hour clock. The time in the picture is a test value.</sub></td>
+  </tr>
+  <tr>
     <td width="50%"><img src="docs/screenshots/file-manager.png" alt="File Manager"><br><sub><b>File Manager</b> – browse the Memory Stick, mark files and folders, then copy, move or delete them</sub></td>
+    <td width="50%"><img src="docs/screenshots/file-manager-conflict.png" alt="File Manager, a name that is taken"><br><sub><b>File Manager</b> – when a name is taken: <i>Overwrite</i>, <i>Skip</i>, <i>Merge</i> (folders), <i>Rename</i> or <i>Cancel</i>, with <i>Apply to All</i> (△) for the rest</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/settings-controls.png" alt="Settings, Controls"><br><sub><b>Settings → Controls</b> – the PSP's own confirm button, and which button does what in psp5</sub></td>
-    <td width="50%"><img src="docs/screenshots/settings-display.png" alt="Settings, Display and Sound"><br><sub><b>Settings → Display and Sound</b> – the PSP's brightness, backlight timer, volume, equalizer and AVLS</sub></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/settings-about.png" alt="Settings, About"><br><sub><b>Settings → About</b> – model, system software, MAC address, storage and battery</sub></td>
-    <td width="50%"><img src="docs/screenshots/settings-theme.png" alt="Settings, Theme"><br><sub><b>Settings → Theme</b> – highlight a theme to see it, Confirm to use it (here Cosmic Red)</sub></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/theme.png" alt="Classic theme"><br><sub><b>Themes</b> – the classic looks of PS1 to PS4 too (here PS3, with the game art in the background turned off)</sub></td>
-    <td width="50%"><img src="docs/screenshots/power-menu.png" alt="Power menu"><br><sub><b>Power menu</b> (SELECT) – sleep, shut down, restart, recovery menu</sub></td>
+    <td width="50%"><img src="docs/screenshots/file-manager-editor.png" alt="The text editor of the File Manager"><br><sub><b>Text editor</b> – ✕ on a file without formatting opens it (changed when it allows, only read when not); it works a line at a time: ✕ opens the PSP's keyboard with the line, □ adds a line below</sub></td>
+    <td width="50%"><img src="docs/screenshots/file-manager-editor-options.png" alt="The options of the text editor"><br><sub><b>Text editor</b> – START: <i>Save</i>, <i>New line above</i>, <i>Copy</i>, <i>Paste</i>, <i>Delete line</i>, <i>Undo</i>, <i>Go to line</i>; ○ asks whether to save the changes</sub></td>
   </tr>
 </table>
 
-*The screenshots were taken in the PPSSPP emulator with invented demo games, music and saves. The clock shows the time they were taken; the battery, volume and brightness are test values.*
+*The screenshots were taken in the PPSSPP emulator with invented demo games, music and saves. The clock, the dates, the battery, volume and brightness are test values.*
 
 ## What you get
 
-- **Games (Home).** Your last played games and apps plus the ones you pinned, in one row. The selected card is big, with its
-  artwork behind it. ↓ selects the **Play** and **⋯** (options) buttons. A UMD in the drive shows up first.
-- **Time played.** A small clock with the time (*54h*, *45min* or *<1min*) on the right of the bottom row, in Games and in the Library.
-  With ARK, psp5 installs a tiny helper plugin by itself (nothing to switch on). It runs inside every game (PSP games, ISOs, homebrew and PS1 games), **however you started it** (from psp5, from the XMB, with or without psp5 as ARK's launcher),
-  and counts only the time the PSP is awake. The times are added when psp5 starts next. To turn it off, turn off the two `psp5time.prx` lines in *Settings → Plugins*. Without ARK, or with those lines off, nothing is counted.
-- **Options** (START, or Confirm on ⋯). Manage Saved Data, Information, Delete, Remove from / Add to Home, Pin to / Unpin from Home.
-- **Library.** The last card of Games. It opens a grid with everything you have, games and apps together, a **Sort** button (by
-  name or by what you added last) and a **view** button (*All*, *In folders*, *Outside of folders* or *Both in and out of
-  folders*; the folders are cards, Confirm opens one, Back goes back). Folders are the ones the Categories Lite plugin makes. The Library
-  remembers your sorting and view. You can pin the Library card like any other card.
-- **Manage Saved Data.** Lists the saves of all your games. Mark some, delete them and see how much room you get back.
-  ARK's own save folder is locked and can't be deleted.
-- **Music.** Plays the MP3 files in `MUSIC` with title, artist and album art (from the file, or a `cover.jpg` / `folder.jpg`
-  in the folder). It keeps playing while you browse your games.
-- **Settings** (the cog wheel). Several pages:
-  - *psp5* – boot into psp5, sounds, startup animation, battery percentage, language. *Theme* – the colours.
-  - *Controls* – the PSP's own confirm button, and which buttons confirm, go back, open the options and the power menu.
-  - *Display and Sound* – the PSP's own brightness, backlight timer (psp5 remembers it), volume, equalizer and AVLS.
-  - *Network* – the PSP's own Wi-Fi screen. *About* – nickname, model, system software, MAC address, storage, battery.
-  - *Performance* (CPU speed, extra memory, caches), *System*, *Plugins* and *Power and USB* (USB Mode, File Manager, XMB,
-    Sleep, Shut Down, Restart, Recovery Menu).
+Jump to: [Games](#games) · [Media](#media-music-videos-and-images) · [File Manager and FTP Server](#file-manager-and-ftp-server) · [Settings](#settings) · [Themes and startup](#themes-and-startup) · [Top bar and power menu](#top-bar-and-power-menu) · [Sounds, languages, speed](#sounds-languages-and-speed) · [If something goes wrong](#if-something-goes-wrong)
 
-  A setting with several values opens a popup when you press Confirm on it.
-- **Themes.** The colours of the console covers, each with the console's scene behind your games (a beam of light, golden
-  dust, haze), plus the classic looks of PS1 to PS4. Highlight a theme to preview it, Confirm to use it. You can turn the game art
-  in the background off, so the theme is always visible.
-- **Startup.** A short intro like a console's, with a health notice, soft circles and golden dust in your theme's colours.
-  It plays when the PSP starts and wakes up, not when you come back from a game. Any button skips it, and you can turn it off.
-- **Power menu** (SELECT, on every tab). Sleep, Shut Down, Restart, Recovery Menu – Confirm does it at once.
-- **Volume, battery and Wi-Fi.** Pressing the volume buttons slides a volume bar in at the top. The battery has four bars that are lit
-  from the right (one for each quarter); while the PSP charges, a bolt is shown left of the battery and the bars above the level come on
-  one after the other. You can also show the battery percentage (*Settings → psp5*). A Wi-Fi sign is shown while the PSP's Wi-Fi switch is
-  on. At the very end of the top bar is the cog wheel.
-- **File Manager** (*Settings → Power and USB*). Browse the Memory Stick (and the internal storage on a PSP Go) and copy,
-  move, rename, delete or make folders.
-- **Sounds and languages.** Menu sounds (you can turn them off). 11 languages: psp5 follows the PSP's language; Swedish and
-  Czech are picked under *Settings → psp5 → Language*.
-- **Quick and careful.** Only the cards near your selection are loaded, and artwork is cached, so it opens fast after the
-  first start. psp5 never touches flash0 and you can always get back to the XMB.
+### Games
+
+- **Home.** The games and apps you played last, then the newest you added, and the ones you keep in Home, up to ten cards in one row. The selected card is big, with its
+  artwork behind it. ↓ selects the **Play** and **⋯** (options) buttons. A UMD in the drive shows up first. A name that is too long for the screen scrolls after a moment.
+- **Names.** A game is shown with the title that is in the game. If it has none (or an empty one), you see the name of its folder, or the name of its `.iso`, `.cso`, `.zso`, `.dax` or `.jso` file. A folder that
+  has a `PBOOT.PBP` next to its `EBOOT.PBP` (TempGBA's single-game folders) shows the title and the pictures of the `PBOOT.PBP`.
+- **Time played.** A small clock with the time (*54h*, *45min* or *<1min*) on the right of the bottom row, in Games and in the Library.
+  With ARK, psp5 authentic installs a tiny helper plugin by itself (nothing to switch on). It runs inside every game (PSP games, ISOs, homebrew and PS1 games), **however you started it** (from psp5 authentic, from the XMB, with or without psp5 authentic as ARK's launcher),
+  and counts only the time the PSP is awake. The times are added when psp5 authentic starts next. To turn it off, turn off the two `psp5time.prx` lines in *Settings → System → Plugins*. Without ARK, or with those lines off, nothing is counted.
+- **Options** (START, or Confirm on ⋯). Delete, Information (also when you played it last) and **Keep in Home**, a switch that keeps a game among the cards even when you have not played it for a long time (up to nine).
+- **Library.** The last card of Games. It opens a grid with everything you have, games and apps together, a **Sort** button (by
+  name, by what you added or by size, either way round) and a **view** button (*All*, *In folders*, *Outside of folders* or *Both in and out of
+  folders*; the folders are cards, Confirm opens one, Back goes back). Folders are the ones the Categories Lite plugin makes. The Library
+  remembers your sorting and view. The cards are rectangles, as on the console; the selected one has a white frame. Behind it is a background of its own (a drawn
+  ribbon of fine lines on black, in your theme's colours); a game's picture is never shown there.
 
 Games and apps use their own icon and background automatically. If you want your own covers, see *Covers* in
 [INSTALL.md](INSTALL.md).
+
+### Media: Music, Videos and Images
+
+The Media tab is a row of cards like the Games tab: **Music**, **Videos** and **Images**, on a drawn background in your theme's colours.
+Each one opens a list over the whole width of the screen; folders show as folders.
+
+#### Music
+
+- **Where:** only the `MUSIC` folder of the Memory Stick and of the internal storage.
+- **Plays:** MP3, WAV (PCM), **AAC** (`.m4a`, `.m4b` and raw `.aac`) and ATRAC3 / ATRAC3plus (`.at3`, `.oma`, `.aa3`).
+  AAC is AAC-LC, made by the same software decoder as the sound of the videos; a sound with more than two channels (5.1, 7.1) is mixed down to stereo. Not HE-AAC or Apple Lossless.
+- **Shows:** title, artist and album art (from the file, or a `cover.jpg` / `folder.jpg` in the folder).
+- **Player:** a progress bar you can jump in (10 seconds a step), volume, shuffle, repeat (off, one song, the whole folder) and the equalizer.
+- **Keeps playing** while you browse your games or use the File Manager, and the PSP's ♪ button shows the player as a popup.
+
+#### Videos
+
+- **Where:** the `VIDEO` folder.
+- **Plays:** **MP4** (H.264 video with AAC sound, up to 512 x 512) and **PMF / PSMF** (with sound), on the whole screen.
+- **Buttons:** ✕ pauses, ← → jump 10 seconds, L / R play the video before or after, ○ leaves. The bar, the numbers and L / R show when you press a button and go away after a moment.
+- **Resume:** a video that was left in the middle asks whether to *Continue* from there or start *from the beginning*. If the PSP goes to sleep while a video is open, the player leaves when the PSP wakes (the place is remembered, so the question comes next time).
+- **Sound:** AAC-LC, up to 8 channels, mixed down to two.
+
+**Which videos play** (tried on a PSP-1000):
+
+| The video | Plays? |
+|---|---|
+| **Baseline / CAVLC** without B-frames, such as **HandBrake's PSP preset** | Yes, by the PSP's own decoder, at full speed. |
+| **Main profile** with CABAC, **up to three reference frames** (B-frames and weighted prediction in the P pictures are fine) | Yes, by the PSP's own decoder (its Main mode), at full speed, with jumps and the last pictures shown. |
+| **Main profile** that asks for **four or more reference frames**. x264's default settings do, because of their B-pyramid | **No, it says "can't be played".** Make the video again with HandBrake's PSP preset, or with x264 `profile=main`, `b-pyramid=none` and `ref=3` or less. |
+| High profile with the 8x8 transform, B-frames in CAVLC, HE-AAC sound, anything bigger than 512 x 512 | No. |
+
+How it decodes: psp5 asks the PSP's own H.264 decoder (the one on its second processor, the Media Engine) first, for every video it may take; there is no setting for this, `hw=0` in `PSP5/video-opts.txt` leaves it out.
+Only when that decoder cannot be started, or stops while a video plays, psp5 goes on with its own software decoder (for Baseline / CAVLC videos). The details are in [docs/DEVELOPER-NOTES.md](docs/DEVELOPER-NOTES.md).
+If a video does not play, or the PSP stops while one plays, `PSP5/logs/Video.log` says what happened (see [If something goes wrong](#if-something-goes-wrong)).
+
+#### Images
+
+- **Where:** the `PICTURE` folder and `PSP/PHOTO`.
+- **Shows:** **JPEG** (turned the way the camera says), **PNG** and **BMP**, on the whole screen, with L / R for the picture before and after.
+- **While a picture is read** a small wheel turns. The little bar with L, the number and R shows when you press a button and goes away after a moment.
+
+### File Manager and FTP Server
+
+- **File Manager** (*Settings → Storage*). Browse the Memory Stick (and the internal storage on a PSP Go) and copy, move, rename, delete or make folders (the options are on START).
+  When a name is taken it asks: *Overwrite*, *Skip*, *Merge* (folders), *Rename* or *Cancel*, with *Apply to All* for the rest.
+  - **✕ opens the file:** a video in the video player and a picture in the image viewer (L and R go to the one before and after in the folder), a song starts playing (and the songs of the folder after it; the ♪ button of the PSP has the player),
+    and a file that has no formatting (plain text: `.txt`, `.ini`, `.cfg`, `.log` ... anything that is text, up to 1 MB) opens in the **text editor**, which lets you change it when the file allows it and only read it when not.
+  - **The text editor** works a line at a time, as ARK's does: ↑ ↓ choose a line (held, they go faster the longer they are held), L / R eight lines, ✕ opens the PSP's own keyboard with the line in it, □ adds a line below, and START has *Save*, *New line above*, *Copy line*, *Paste line*, *Delete line*, *Undo* and *Go to line*;
+    ○ leaves and asks whether to save when something was changed. A file is written under a temporary name and put in place, so a full card leaves the old file as it was; the line ending (LF or CRLF), a UTF-8 byte order mark and the end of the last line are kept.
+  - A file that is not UTF-8 text (or has a line over 1000 bytes) is only read (START: *Go to line*, *Copy line*), and a file that is not text (a program, an ISO) says that it cannot be opened.
+- **FTP Server** (*Settings → Network → FTP Server*). Copy files to and from the PSP over Wi-Fi: the PSP's own Wi-Fi window opens so that you choose one of your saved connections, and psp5 authentic shows the address to type
+  into an FTP program or the file manager of your computer. It shows who is connected and the file that is going. There is no password, so use it on your own network.
+  If the computer cannot connect, INSTALL.md has a list of what to check (WLAN Power Save of the PSP, the network), and [docs/FTP-TROUBLESHOOTING.md](docs/FTP-TROUBLESHOOTING.md) has a step-by-step workaround for networks where the computer cannot find the PSP (a static ARP entry; Linux, Windows, macOS).
+
+### Settings
+
+- **Settings** (the cog wheel). One list at a time, like the console's: Confirm opens a page, Back goes back one. The first list has six pages:
+  - *psp5 authentic* – boot into psp5 authentic, sounds, startup animation, battery percentage, clear the image cache.
+  - *Network* – the PSP's own Wi-Fi screen and the FTP Server.
+  - *System* – *Console Information* (nickname, model, system software, the whole version of ARK, MAC address, last IP address, free RAM, battery, and where psp5 authentic comes from), *Appearance* (*Show Game art* and the themes),
+    *Language*, *Date and Time* (the date and time that psp5 authentic shows: *Daylight Saving* removes or adds one hour, *Date Format* and *Time Format* choose how they are written; the PSP's own clock is never changed), *ARK-5 Settings* or *ARK-4 Settings* (ARK's own options: USB charge, WPA2, hide pictures, regions ...), *Performance* (CPU speed, extra memory, caches) and *Plugins* (switch each plugin on or off, and *Manage Plugins* to install a new plugin and to install or uninstall one in more or fewer places).
+  - *Storage* – Console Storage (see below), the File Manager and USB Mode.
+  - *Screen and Sound* – the PSP's own brightness, backlight timer (psp5 authentic remembers it), volume, equalizer and AVLS.
+  - *Controls* – the PSP's own confirm button, and which buttons confirm, go back, open the options and the power menu.
+
+  A setting with several values opens a popup when you press Confirm on it.
+  The title of a page is its own name (*Appearance*, not *System > Appearance*).
+  The *last IP address* in Console Information is the one that the Wi-Fi window or the FTP Server got last, kept after a restart; it may have changed since.
+- **Console Storage** (*Settings → Storage*). The size of the storage, a coloured bar and the free space, and four rows with their sizes: **Games and Apps** (the list of all your games and apps: sort, mark and delete them),
+  Media (music, video and pictures), **Saved Data** (*Manage Saved Data*: the saves of all your games, mark some, delete them and see how much room you get back; ARK's own save folder is locked and can't be deleted) and Other.
+  On a PSP Go with a Memory Stick there are two blocks, one for each storage.
+
+### Themes and startup
+
+- **Themes.** A theme is the background: the *Default* and the colours of the console covers, each with the same scene behind your games (a beam of light from a lamp
+  at the top left and a haze at the bottom) and golden-ish dust that drifts and twinkles in the theme's colour, plus the classic looks of PS1 to PS4 in the colours of those consoles' own themes,
+  each with its own moving part: the four symbols for PS1, glowing dots on a turning ring for PS2, a silky ribbon for PS3 and a wave for PS4. Highlight a theme to preview it, Confirm to use it. You can turn *Show Game art*
+  off (it is for the Games tab: the Library has its own background), so the theme is always visible.
+- **Startup.** A short intro like a console's, with a health notice, soft circles and golden dust in your theme's colours.
+  It plays when the PSP starts and wakes up, not when you come back from a game. Any button skips it, and you can turn it off.
+
+### Top bar and power menu
+
+- **Power menu** (SELECT, on every screen: Games, Media, Library, Music, Settings, Information, Manage Saved Data, the File Manager and the USB screen). Exit to XMB, Sleep, Shut down, Restart, Recovery Menu – Confirm does it at once.
+- **Volume, battery and Wi-Fi.** Pressing the volume buttons slides a volume bar in at the top. The battery has four bars that are lit
+  from the right (one for each quarter); while the PSP charges, a bolt is shown left of the battery and the bars above the level come on
+  one after the other. You can also show the battery percentage (*Settings → psp5 authentic*). A Wi-Fi sign is shown while the PSP's Wi-Fi switch is
+  on. At the very end of the top bar is the cog wheel.
+
+### Sounds, languages and speed
+
+- **Sounds and languages.** Menu sounds (you can turn them off). 11 languages: psp5 authentic follows the PSP's language; Swedish and
+  Czech are picked under *Settings → System → Language*.
+- **Quick and careful.** Only the cards near your selection are loaded, and artwork is cached, so it opens fast after the
+  first start. psp5 authentic never touches flash0 and you can always get back to the XMB.
+
+### If something goes wrong
+
+psp5 authentic keeps a short log for each part of the program in the folder `PSP5/logs` on your Memory Stick (or the internal storage of a PSP Go):
+
+| File | What is in it |
+|---|---|
+| `Music.log` | a song that could not be started or stopped on a decoder error |
+| `Video.log` | a video that could not be played, played badly, or a PSP that stopped while one was opened, played or closed |
+| `Picture.log` | a picture that could not be shown |
+| `File Manager.log` | a copy, move, delete, rename or text-editor save that failed |
+| `FTP.log` | the FTP Server or the Wi-Fi connection that failed |
+| `System.log` | a start that did not finish, a game that could not be started or deleted, saved data or a plugin that could not be removed or installed |
+
+Nothing is written while all goes well, so these files are usually not there. An entry has the date, a sentence that says what happened and the steps before it. No file names are written. A log never grows past 16 KB: when it is full the oldest entries go. If the PSP freezes or crashes while one of the steps that can do that is going on (the start of a video's decoder, closing a video, a copy, the start of a song, the FTP Server), psp5 authentic notices at the next start and writes it down too (*the PSP stopped while ...*). Please attach the file when you [open an issue](https://github.com/xioonae/psp5-authentic/issues).
 
 ## Buttons
 
 | Button | What it does |
 |---|---|
-| D-pad or analog stick | **Navigate**: move between cards, rows, tabs and buttons (hold to go faster) |
+| D-pad or analog stick | **Navigate**: move between cards, rows, tabs and buttons (hold to go faster, also in popups) |
 | ✕ | **Confirm**: start a game, open, choose, switch on or off |
 | ○ | **Back**: one step back, close a popup or a screen |
 | START | **Options** of the selected card or file (START again closes them) |
 | SELECT | **Power menu** |
 | L / R | **Switch tabs** (in a long list: a page up / down) |
-| □ △ | Only where a screen has something extra: mark and select all in a list, pause the music |
+| □ △ | Only where a screen has something extra: mark and select all in a list; in Music △ moves between the song list and the player |
 | HOME | Quit to the XMB |
 
 That is what the buttons do by default (✕ and ○ swap when the PSP itself is set to confirm with ○). *Settings → Controls* gives
@@ -103,35 +224,37 @@ confirm, back, options and the power menu to other buttons. The details of each 
 
 ## Install
 
-Download the zip for your PSP from the [Releases](../../releases) page and follow **[INSTALL.md](INSTALL.md)**. It works as a
-normal app, or as ARK's own launcher so your PSP boots straight into it. There is a download for each ARK version (4 or 5),
-also for the PSP Go.
+Download the zip for your ARK version from the [Releases](../../releases) page and follow **[INSTALL.md](INSTALL.md)**. It works as a
+normal app, or as ARK's own launcher so your PSP boots straight into it. There are two downloads, one for ARK-4 and one for
+ARK-5. Each is for every device (PSP-1000, 2000, 3000, PSP Go and PS Vita), and has a `READ ME.txt` with the steps for each of them.
 
 If something goes wrong, hold **SELECT** while the PSP starts: ARK skips its settings and you land in the normal XMB. If a
 start doesn't finish (the PSP froze, for example), the next one is a *safe start* without the startup screen, music and UMD.
-If that fails too, psp5 sends the PSP to the XMB. More help is in [INSTALL.md](INSTALL.md).
+If that fails too, psp5 authentic sends the PSP to the XMB. More help is in [INSTALL.md](INSTALL.md).
 
-## Supported PSPs
+## Supported devices
 
-Works on the **PSP-1000, 2000, 3000 and PSP Go** with **ARK-4 or ARK-5**; it adapts its settings to your model and ARK
-version (the PSP-1000 has no extra memory or USB charging, ARK-4 has fewer CPU speeds). The PS Vita isn't supported.
+Works on the **PSP-1000, 2000, 3000 and PSP Go** with **ARK-4 or ARK-5**, and on the **PS Vita** (1000 and 2000) with **ARK-5**
+(the standalone install, [FasterARK](https://github.com/PSP-Arkfive/FasterARK)). ARK-4 on the Vita should work too, but nobody has
+confirmed it yet. It is the same program on all of them: it adapts its settings to your model and ARK version (the PSP-1000 has
+no extra memory or USB charging, ARK-4 has fewer CPU speeds), and it shows the PSP Go's internal storage whenever the device has one.
 
-If something doesn't work on your PSP, please [open an issue](../../issues) and tell us what you saw, which PSP you have and which
-ARK version.
+If something doesn't work on your device, please [open an issue](../../issues) and tell us what you saw, which device you have
+(PSP-1000, 2000, 3000, PSP Go or PS Vita) and which ARK version.
 
 ## About this fork
 
-psp5-authentic is **Claude's work**: the code and the documentation are written by Claude, an AI assistant made by Anthropic.
+psp5 authentic is **Claude's work**: the code and the documentation are written by Claude, an AI assistant made by Anthropic.
 The person who runs the fork has almost no coding experience. They test every update on their own PSP and report back what
 they see, and the two of them work out the solutions together. So there will be bugs, and reports are what makes the project
 better.
 
-Everything you see is drawn by psp5 itself – no pictures of the interface are used. The start-up screen shows the PlayStation logo, drawn from its outline by
-psp5 (not a picture); it is Sony's trademark (see the notice at the end), and everything else is an own take on that style.
+Everything you see is drawn by psp5 authentic itself – no pictures of the interface are used. The start-up screen shows the PlayStation logo, drawn from its outline by
+psp5 authentic (not a picture); it is Sony's trademark (see the notice at the end), and everything else is an own take on that style.
 
 ## Building it yourself
 
-psp5 is written in C and built with the [pspdev](https://github.com/pspdev/pspdev) toolchain plus
+psp5 authentic is written in C and built with the [pspdev](https://github.com/pspdev/pspdev) toolchain plus
 [psp-cfw-sdk](https://github.com/pspdev/psp-cfw-sdk), which provides ARK's headers and libraries. With pspdev installed:
 
 ```sh
@@ -140,13 +263,13 @@ make ARK=4      # ARK-4 version
 ```
 
 On Windows it is built inside WSL: `tools/setup-wsl.sh` installs the toolchain and `tools/build.sh` builds
-`dist/PSP/GAME/PSP5/EBOOT.PBP` (`tools/build.sh ark4` for ARK-4). Both versions also run on the PSP Go. What each change
+`dist/PSP/GAME/PSP5/EBOOT.PBP` (`tools/build.sh ark4` for ARK-4). Both versions run on every supported device. What each change
 touches in the code is written down in [docs/DEVELOPER-NOTES.md](docs/DEVELOPER-NOTES.md).
 
 ## Thanks
 
 - **Mille Weber (08Weber)**, who made [psp5](https://github.com/08Weber/psp5), the project this fork is based on (v1.5.3).
-- The [ARK-5](https://github.com/PSP-Arkfive) and [ARK-4](https://github.com/PSP-Archive/ARK-4) teams – psp5 starts games and
+- The [ARK-5](https://github.com/PSP-Arkfive) and [ARK-4](https://github.com/PSP-Archive/ARK-4) teams – psp5 authentic starts games and
   stores settings the same way their arkMenu does, and uses ARK's libraries through psp-cfw-sdk.
 - [pspdev](https://github.com/pspdev) for the toolchain, PSPSDK and packages.
 - intraFont, libpng, zlib, LZ4 and libcisoread.
@@ -155,8 +278,8 @@ touches in the code is written down in [docs/DEVELOPER-NOTES.md](docs/DEVELOPER-
 
 GPL-3.0 – see [LICENSE](LICENSE).
 
-psp5-authentic is a modified version of psp5 v1.5.3 by Mille Weber, changed in 2026. The copyright notices of the original
+psp5 authentic is a modified version of psp5 v1.5.3 by Mille Weber, changed in 2026 by Xioonae. The copyright notices of the original
 are kept in the source files; what was changed is listed in the [release notes](CHANGELOG.md).
 
-psp5 and psp5-authentic are unofficial fan projects (by Mille Weber, and a fork of it). They are not affiliated with or
+psp5 and psp5 authentic are unofficial fan projects (psp5 by Mille Weber, and psp5 authentic, a fork of it, by Xioonae). They are not affiliated with or
 endorsed by Sony Interactive Entertainment. "PSP" and "PlayStation" are trademarks of Sony Interactive Entertainment Inc.

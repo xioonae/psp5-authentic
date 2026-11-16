@@ -17,18 +17,27 @@
 #include "sound.h"
 #include "lang.h"
 #include "music.h"
+#include "musicui.h"
+#include "imageview.h"
+#include "videoplay.h"
 #include "system.h"
 #include "theme.h"
 #include "osd.h"
 #include "gameops.h"
+#include "gamesize.h"
 #include "home.h"
+#include "lastplayed.h"
+#include "power.h"
 #include "playtime.h"
 #include "popup.h"
+#include "look.h"
 #include "config.h"
+#include "datetime.h"
 #include "testrun.h"
 
 /* layout (480×272) */
 #define MARGIN     24.0f
+#define TITLE_SIZE 0.66f   /* the size of a game's name (Games and Library), of Play / Open and of the time played: one size for all of them */
 #define BOTTOM_Y   243.0f  /* the middle of the bottom row: Start and Options in Games, the tag and title in the Library.
                             * The highlight of Start is 16 px from the bottom edge, as far as the top bar's ink is from the top. */
 #define ROW_Y      38.0f   /* kortradens överkant */
@@ -48,23 +57,18 @@
 #define CELL_W     ((SCREEN_W - 2 * MARGIN - (GRID_COLS - 1) * GRID_GAP) / GRID_COLS) /* 80: the grid and every card in it are whole pixels */
 #define CELL_H     44.0f   /* (the pictures are 144 x 80, a little wider than this: 20 x 11 is 1.82, they are 1.80) */
 #define ROW_STEP   (CELL_H + 11.0f)
-#define SELECT_GROW_W 6.0f /* the selected card of the grid is this much wider and ... */
-#define SELECT_GROW_H 4.0f /* ... higher, evenly on all sides (whole pixels) */
 #define SORT_SIZE  0.56f   /* the text of the Library's Sort button, and the space between it and the edge of its frame */
 #define SORT_PAD   9.0f
 #define GRID_ROWS  3       /* hela rader som syns */
 #define GRID_BOTTOM 230.0f /* rutnätet klipps här, ovanför titeln */
 
-/* musik: låtlista till vänster, "spelas nu" till höger */
-#define MLIST_Y    50.0f
-#define MROW_H     26.0f
-#define MROWS      7
-#define PANEL_X    306.0f
-
 #define BG_DELAY   0.18f /* stå still så här länge innan bakgrunden laddas */
 #define BG_FADE    3.5f  /* övertoningshastighet (1/s) */
+#define BG_DIP     8.0f  /* the dip to black while the background under the pictures is swapped (1/s: 0.125 s down, 0.125 s up) */
+#define DIM_SPEED 4.0f /* how fast the background goes dark behind an opened card (Library, Music) and bright again: 1 / 4 s */
+#define DIM_ALPHA_MUSIC 150   /* how dark the open Media screens (Music, Videos, Images) are: the colour (8, 8, 12) at this strength of 255 (the same as the Library) */
+#define DIM_ALPHA_LIBRARY 150 /* ... and the open Library (its background is made of fine lines on black, which a strong darkening nearly takes away: 150 is what the maintainer chose) */
 #define LAUNCH_LEN 0.45f
-#define SEEK_HOLD  0.35f /* så länge ← / → hålls innan musiken spolar */
 
 #define CLEAR_COLOR RGBA(10, 10, 14, 255)
 #define TEXT_MAIN   RGBA(242, 242, 246, 255)
@@ -72,7 +76,21 @@
 #define LIGHT       RGBA(238, 238, 242, 255)
 #define DARK        RGBA(18, 18, 22, 255)
 
-static const StrId TAB_NAMES[TAB_COUNT] = { S_TAB_GAMES, S_TAB_MUSIC, S_TAB_LIBRARY };
+static const StrId TAB_NAMES[TAB_COUNT] = { S_TAB_GAMES, S_TAB_MEDIA, S_TAB_LIBRARY, S_TAB_MUSIC };
+
+/* the name of a tab in the top bar: the screen of the Media cards has the name of the card that opened it (Music, Videos or Images) */
+static StrId tab_name(const Ui *ui, int t)
+{
+    if (t == TAB_MUSIC)
+        return ui->mscreen == 1 ? S_TAB_VIDEOS : ui->mscreen == 2 ? S_TAB_IMAGES : S_TAB_MUSIC;
+    return TAB_NAMES[t];
+}
+
+/* the list of the open Media screen */
+static MusicUi *screen_mu(Ui *ui)
+{
+    return ui->mscreen == 1 ? &ui->vu : ui->mscreen == 2 ? &ui->iu : &ui->mu;
+}
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 static float lerpf(float a, float b, float t) { return a + (b - a) * t; }
@@ -115,53 +133,141 @@ int ui_selected(const Ui *ui)
     return i >= 0 ? i : -1; /* (the Library card is not a game) */
 }
 
-/* The tabs the top bar shows, left to right: Games and Music; inside the Library only the word "Library", where Games would be
+/* The tabs the top bar shows, left to right: Games and Media; inside the Library (or Music) only its name, where Games would be
  * (it is not a tab: update_top_bar does not let it be selected) */
 static int top_tabs(const Ui *ui, int out[2])
 {
-    if (ui->tab == TAB_LIBRARY) {
-        out[0] = TAB_LIBRARY;
+    if (ui->tab == TAB_LIBRARY || ui->tab == TAB_MUSIC) {
+        out[0] = ui->tab;
         return 1;
     }
     out[0] = TAB_GAMES;
-    out[1] = TAB_MUSIC;
+    out[1] = TAB_MEDIA;
     return 2;
 }
 
-/* biblioteket sorteras efter namn eller efter när filen lades till – UMD-skivan alltid först */
+/* a screen that a card opens (the Library, Music): the top bar has only its name */
+static int is_screen(int tab)
+{
+    return tab == TAB_LIBRARY || tab == TAB_MUSIC;
+}
+
+/* The Library is sorted by name, by when a game was added (its file time) or by size, either way round – the disc always first */
+_Static_assert(LIB_SORT_COUNT == CONFIG_LIB_SORTS, "config.h must know every way to sort the Library");
 static const EntryList *s_sort_list;
+static int cmp_disc(const Entry *x, const Entry *y)
+{
+    if ((x->type == ENTRY_UMD) != (y->type == ENTRY_UMD))
+        return x->type == ENTRY_UMD ? -1 : 1;
+    return 0;
+}
 static int cmp_name(const void *a, const void *b)
 {
     const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
-    if ((x->type == ENTRY_UMD) != (y->type == ENTRY_UMD))
-        return x->type == ENTRY_UMD ? -1 : 1;
+    int d = cmp_disc(x, y);
+    if (d)
+        return d;
     int c = strcasecmp(x->title, y->title);
     return c ? c : *(const int *)a - *(const int *)b;
 }
-static int cmp_recent(const void *a, const void *b)
+static int cmp_name_za(const void *a, const void *b)
 {
     const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
-    if ((x->type == ENTRY_UMD) != (y->type == ENTRY_UMD))
-        return x->type == ENTRY_UMD ? -1 : 1;
+    int d = cmp_disc(x, y);
+    if (d)
+        return d;
+    int c = strcasecmp(y->title, x->title);
+    return c ? c : *(const int *)a - *(const int *)b;
+}
+static int cmp_added_new(const void *a, const void *b)
+{
+    const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
+    int d = cmp_disc(x, y);
+    if (d)
+        return d;
     if (x->file_time != y->file_time)
         return x->file_time > y->file_time ? -1 : 1;
     return cmp_name(a, b);
 }
+static int cmp_added_old(const void *a, const void *b)
+{
+    const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
+    int d = cmp_disc(x, y);
+    if (d)
+        return d;
+    if (x->file_time != y->file_time)
+        return x->file_time < y->file_time ? -1 : 1;
+    return cmp_name(a, b);
+}
+static int cmp_size_big(const void *a, const void *b)
+{
+    const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
+    int d = cmp_disc(x, y);
+    if (d)
+        return d;
+    u64 sx = gamesize_of(x), sy = gamesize_of(y);
+    if (sx != sy)
+        return sx > sy ? -1 : 1;
+    return cmp_name(a, b);
+}
+static int cmp_size_small(const void *a, const void *b)
+{
+    const Entry *x = &s_sort_list->items[*(const int *)a], *y = &s_sort_list->items[*(const int *)b];
+    int d = cmp_disc(x, y);
+    if (d)
+        return d;
+    u64 sx = gamesize_of(x), sy = gamesize_of(y);
+    if (sx != sy)
+        return sx < sy ? -1 : 1;
+    return cmp_name(a, b);
+}
+static int (*const s_game_cmp[LIB_SORT_COUNT])(const void *, const void *) = {
+    cmp_name, cmp_name_za, cmp_added_new, cmp_added_old, cmp_size_big, cmp_size_small
+};
 
-/* the folders in the order of the Sort button: by name (the folders are numbered in the order of their names), or the one with the
- * newest game first */
+/* The folders in the order of the Sort button: by name (the folders are numbered in the order of their names; Z-A turns them round), by the newest or the
+ * oldest game in them, or by the size of their games together */
 static const FolderSet *s_sort_folders;
+static const u64 *s_folder_size; /* for every folder, the size of its games together (only for the size sorts) */
 static int cmp_folder_name(const void *a, const void *b)
 {
     return *(const int *)a - *(const int *)b;
 }
-static int cmp_folder_recent(const void *a, const void *b)
+static int cmp_folder_name_za(const void *a, const void *b)
+{
+    return *(const int *)b - *(const int *)a;
+}
+static int cmp_folder_added_new(const void *a, const void *b)
 {
     const Folder *x = &s_sort_folders->items[*(const int *)a], *y = &s_sort_folders->items[*(const int *)b];
     if (x->newest != y->newest)
         return x->newest > y->newest ? -1 : 1;
     return cmp_folder_name(a, b);
 }
+static int cmp_folder_added_old(const void *a, const void *b)
+{
+    const Folder *x = &s_sort_folders->items[*(const int *)a], *y = &s_sort_folders->items[*(const int *)b];
+    if (x->oldest != y->oldest)
+        return x->oldest < y->oldest ? -1 : 1;
+    return cmp_folder_name(a, b);
+}
+static int cmp_folder_size_big(const void *a, const void *b)
+{
+    u64 x = s_folder_size[*(const int *)a], y = s_folder_size[*(const int *)b];
+    if (x != y)
+        return x > y ? -1 : 1;
+    return cmp_folder_name(a, b);
+}
+static int cmp_folder_size_small(const void *a, const void *b)
+{
+    u64 x = s_folder_size[*(const int *)a], y = s_folder_size[*(const int *)b];
+    if (x != y)
+        return x < y ? -1 : 1;
+    return cmp_folder_name(a, b);
+}
+static int (*const s_folder_cmp[LIB_SORT_COUNT])(const void *, const void *) = {
+    cmp_folder_name, cmp_folder_name_za, cmp_folder_added_new, cmp_folder_added_old, cmp_folder_size_big, cmp_folder_size_small
+};
 
 /* What the Library shows, for the view button (lib_view) and the folder that is open (lib_open), in the order of the Sort button:
  *   open folder          its games and apps
@@ -177,14 +283,30 @@ static void rebuild_library(Ui *ui)
     const FolderSet *fs = &ui->folders;
     const EntryList *list = ui->list;
     int *t = v->idx ? malloc((list->count + 1) * sizeof(int)) : NULL;
-    int n = 0, open = ui->lib_open, view = ui->lib_view;
+    int n = 0, open = ui->lib_open, view = ui->lib_view, sort = ui->lib_sort;
+    u64 *fsize = NULL; /* the size sorts: the size of the games of every folder together */
     if (!t)
         return;
+    if (sort < 0 || sort >= LIB_SORT_COUNT)
+        sort = LIB_SORT_NAME_AZ;
+    if (sort == LIB_SORT_SIZE_BIG || sort == LIB_SORT_SIZE_SMALL) {
+        fsize = calloc(fs->count + 1, sizeof(u64));
+        if (!fsize) {
+            free(t);
+            return;
+        }
+        for (int i = 0; i < list->count; i++) {
+            int f = i < fs->of_count ? fs->of[i] : -1;
+            if (f >= 0 && f < fs->count)
+                fsize[f] += gamesize_of(&list->items[i]);
+        }
+    }
     if (open < 0 && (view == LIB_VIEW_FOLDERS || view == LIB_VIEW_BOTH)) {
         for (int f = 0; f < fs->count; f++)
             t[n++] = f;
         s_sort_folders = fs;
-        qsort(t, n, sizeof(int), ui->lib_sort ? cmp_folder_recent : cmp_folder_name);
+        s_folder_size = fsize;
+        qsort(t, n, sizeof(int), s_folder_cmp[sort]);
         for (int k = 0; k < n; k++)
             t[k] = LIB_FOLDER_ID(t[k]);
     }
@@ -197,7 +319,7 @@ static void rebuild_library(Ui *ui)
     }
     if (n - first > 1) {
         s_sort_list = list;
-        qsort(t + first, n - first, sizeof(int), ui->lib_sort ? cmp_recent : cmp_name);
+        qsort(t + first, n - first, sizeof(int), s_game_cmp[sort]);
     }
     if (first && n > first && list->items[t[first]].type == ENTRY_UMD) { /* the disc goes in front of the folders */
         int umd = t[first];
@@ -207,12 +329,13 @@ static void rebuild_library(Ui *ui)
     memcpy(v->idx, t, n * sizeof(int));
     v->count = n;
     free(t);
+    free(fsize);
 }
 
 static void build_views(Ui *ui)
 {
     for (int t = 0; t < TAB_COUNT; t++) {
-        ui->views[t].idx = malloc((ui->list->count + 1) * sizeof(int)); /* (Home has the Library card on top of the games) */
+        ui->views[t].idx = malloc((ui->list->count + 3) * sizeof(int)); /* (Home has the Library card on top of the games; Media has its three cards) */
         ui->views[t].count = 0;
     }
     folders_free(&ui->folders);
@@ -222,16 +345,22 @@ static void build_views(Ui *ui)
         if (ui->lib_open < 0)
             ui->lib_open_name[0] = 0;
     }
+    if (ui->views[TAB_MEDIA].idx) { /* Media: three cards, Music, Videos and Images */
+        ui->views[TAB_MEDIA].idx[0] = HOME_MEDIA_MUSIC;
+        ui->views[TAB_MEDIA].idx[1] = HOME_MEDIA_VIDEO;
+        ui->views[TAB_MEDIA].idx[2] = HOME_MEDIA_IMAGES;
+        ui->views[TAB_MEDIA].count = 3;
+    }
     LoaderView *homev = &ui->views[TAB_GAMES];
     if (homev->idx)
-        homev->count = home_build(ui->list, homev->idx, ui->list->count + 1); /* Home: the disc, the pinned cards, the ones opened last, the Library card */
+        homev->count = home_build(ui->list, homev->idx, ui->list->count + 1); /* Home: the disc, the games opened last and the kept ones, the Library card */
     rebuild_library(ui);
 }
 
 /* The Library's sort and view are kept in psp5.cfg: they are the same the next time */
 static void remember_library_choice(const Ui *ui)
 {
-    g_lib_sort = ui->lib_sort ? 1 : 0;
+    g_lib_sort = (unsigned char)ui->lib_sort;
     g_lib_view = (unsigned char)ui->lib_view;
     config_save(PSP5_DATA_DIR);
 }
@@ -259,7 +388,7 @@ static void library_reselect(Ui *ui, int chosen, int snap)
 /* The Sort popup of the Library: sort again but keep the same card selected */
 static void set_sort(Ui *ui, int sort)
 {
-    if (sort == ui->lib_sort)
+    if (sort == ui->lib_sort || sort < 0 || sort >= LIB_SORT_COUNT)
         return;
     int chosen = sel_card(ui);
     ui->lib_sort = sort;
@@ -320,11 +449,16 @@ static void set_tab(Ui *ui, int tab, SoundId sound)
         leave_folder(ui); /* the Library opens on its folders (or all its games) next time */
     ui->tab = tab;
     ui->tab_anim = 0;
+    /* opened from its card: its background is there already, so it does not come up out of the dark (the Media tab and the Music screen have the same one) */
+    ui->lib_calm = ((tab == TAB_LIBRARY && ui->bg_lib == 1) || ((tab == TAB_MEDIA || tab == TAB_MUSIC) && ui->bg_lib == 2)) && ui->bg_dip <= 0;
     sound_play(sound);
     ui->pos = ui->sel[tab] + 0.7f; /* raden glider in från höger */
     ui->still = 0;
     ui->label_for = -2;
-    ui->seek_dir = ui->seeking = 0; /* en hållen pil gäller bara i musikfliken */
+    if (tab == TAB_MUSIC)
+        musicui_open_kind(screen_mu(ui), ui->mscreen == 1 ? MK_VIDEO : ui->mscreen == 2 ? MK_IMAGES : MK_MUSIC); /* the folders are read when the screen opens */
+    if (tab != TAB_MUSIC || ui->mscreen != 0)
+        musicui_release_cover(&ui->mu);
     ui->lib_focus = 0;
     ui->btn_focus = 0;
     ui->top_focus = -1; /* a new tab starts on its own first thing */
@@ -332,10 +466,10 @@ static void set_tab(Ui *ui, int tab, SoundId sound)
         loader_set_view(view(ui));
 }
 
-/* L / R and ✕ on a tab of the top bar: Games and Music. Inside the Library there is nothing to switch to. */
+/* L / R and ✕ on a tab of the top bar: Games and Media. Inside the Library and Music there is nothing to switch to. */
 static void switch_tab(Ui *ui, int tab)
 {
-    if (ui->tab == TAB_LIBRARY || tab < TAB_GAMES || tab > TAB_MUSIC)
+    if (is_screen(ui->tab) || tab < TAB_GAMES || tab > TAB_MEDIA)
         return;
     set_tab(ui, tab, SND_MOVE);
 }
@@ -353,18 +487,19 @@ static void close_library(Ui *ui)
     set_tab(ui, TAB_GAMES, SND_BACK);
 }
 
-/* --- titel --- */
-
-static void utf8_pop(char *s)
+/* ✕ on the Music card of Media opens the Music screen, ○ closes it: Media again, on its card */
+static void open_music(Ui *ui, int which)
 {
-    int n = strlen(s);
-    while (n > 0) {
-        n--;
-        if (((u8)s[n] & 0xC0) != 0x80)
-            break;
-    }
-    s[n] = 0;
+    ui->mscreen = which; /* 0 = Music, 1 = Videos, 2 = Images: all three are the screen TAB_MUSIC, with a list of their own */
+    set_tab(ui, TAB_MUSIC, SND_SELECT);
 }
+
+static void close_music(Ui *ui)
+{
+    set_tab(ui, TAB_MEDIA, SND_BACK);
+}
+
+/* --- titel --- */
 
 static const char *type_name(u32 t);
 
@@ -381,23 +516,15 @@ static void fit_label(Ui *ui)
     float max_w = SCREEN_W - SMALL_X - MARGIN;
     ui->label_for = i;
     ui->label[0] = 0;
-    if (i < 0 && i != HOME_LIBRARY)
+    if (i < 0 && i != HOME_LIBRARY && !HOME_IS_MEDIA(i))
         return;
-    const char *title = i == HOME_LIBRARY ? L(S_TAB_LIBRARY) : ui->list->items[i].title;
+    const char *title = i == HOME_LIBRARY ? L(S_TAB_LIBRARY) : i == HOME_MEDIA_MUSIC ? L(S_TAB_MUSIC) : i == HOME_MEDIA_VIDEO ? L(S_TAB_VIDEOS) : i == HOME_MEDIA_IMAGES ? L(S_TAB_IMAGES) : ui->list->items[i].title;
     if (i >= 0)
         max_w -= tag_room(ui->list->items[i].type);
-    ui->label_size = 0.78f;
+    ui->label_size = TITLE_SIZE; /* as in the Library: a title that does not fit keeps its size and scrolls after a moment */
+    ui->label_room = max_w;
+    ui->label_t = 0;
     snprintf(ui->label, sizeof(ui->label), "%s", title);
-    while (ui->label_size > 0.62f && text_width(ui->label_size, 0, ui->label) > max_w)
-        ui->label_size -= 0.04f;
-    if (text_width(ui->label_size, 0, ui->label) > max_w) {
-        char buf[sizeof(ui->label)];
-        snprintf(buf, sizeof(buf), "%s", title);
-        do {
-            utf8_pop(buf);
-            snprintf(ui->label, sizeof(ui->label), "%s...", buf);
-        } while (buf[0] && text_width(ui->label_size, 0, ui->label) > max_w);
-    }
 }
 
 /* --- livscykel --- */
@@ -412,16 +539,22 @@ void ui_init(Ui *ui, const EntryList *list, int can_launch)
     ui->label_for = -2;
     ui->lib_label_for = -2;
     ui->pt_for = -2;
-    ui->cover_for = -2;
+    musicui_init(&ui->mu);
+    musicui_init(&ui->vu);
+    ui->vu.kind = MK_VIDEO;
+    musicui_init(&ui->iu);
+    ui->iu.kind = MK_IMAGES;
     ui->tab_anim = 1;
     ui->top_focus = -1;
     ui->card_ring = 1;
-    ui->lib_sort = g_lib_sort ? 1 : 0; /* the Library comes back as it was left (psp5.cfg) */
+    ui->lib_sort = g_lib_sort < LIB_SORT_COUNT ? g_lib_sort : LIB_SORT_NAME_AZ; /* the Library comes back as it was left (psp5.cfg) */
     ui->lib_view = g_lib_view < LIB_VIEW_COUNT ? g_lib_view : LIB_VIEW_ALL;
     ui->lib_open = -1;
     home_load(list);
+    gamesize_start(list); /* how big the games are (the Library's size sort, Console Storage), counted in the background */
     build_views(ui);
     ui->tab = TAB_GAMES; /* (it always has the Library card) */
+    ui->bg_lib = sel_card(ui) == HOME_LIBRARY; /* (nothing to play: the Library card is the first card, and starts on its background) */
     ui->pos = 1.5f; /* korten glider in vid start */
     loader_set_view(view(ui));
 }
@@ -429,7 +562,7 @@ void ui_init(Ui *ui, const EntryList *list, int can_launch)
 /* Spellistans index före → efter att posten `removed` (-1 = ingen) tagits bort och/eller en post lagts först. */
 static int remap_index(int i, int removed, int added_front)
 {
-    if (i == HOME_LIBRARY)
+    if (i == HOME_LIBRARY || HOME_IS_MEDIA(i))
         return i; /* not a game of the list: it stays what it is */
     if (i < 0 || i == removed)
         return -1;
@@ -502,11 +635,23 @@ void ui_relist_removed(Ui *ui, int index)
 {
     int tab = ui->tab, old = ui->sel[tab];
     relist(ui, index, 0, 1);
+    gamesize_start(ui->list); /* (the game that is gone must not be counted any more) */
     if (tab != TAB_MUSIC) {
         int n = ui->views[tab].count;
         ui->sel[tab] = old < n ? old : (n ? n - 1 : 0);
         ui->pos = ui->sel[tab] + 0.3f; /* nästa kort glider in på platsen */
     }
+}
+
+void ui_relist_gone(Ui *ui)
+{
+    relist(ui, -1, 0, 0);
+    for (int t = 0; t < TAB_COUNT; t++)
+        if (t != TAB_MUSIC)
+            ui->sel[t] = 0;
+    ui->bg_index = -1;
+    ui->pos = (ui->tab != TAB_MUSIC ? ui->sel[ui->tab] : 0) + 0.3f;
+    gamesize_start(ui->list); /* the sizes of what is left, counted again */
 }
 
 /* A deleted card leaves Home too - unless another copy of the game is left */
@@ -522,7 +667,7 @@ void ui_forget_entry(Ui *ui, const Entry *e)
         if (!strcmp(key, other))
             return;
     }
-    home_remove(e);
+    home_forget(e);
 }
 
 /* Home has changed (home.c): build the tabs again. The selection follows its card; when the card left the tab it
@@ -535,52 +680,24 @@ static void home_changed(Ui *ui)
         ui->pos = ui->sel[tab] + 0.3f;
 }
 
-/* Remove from Home / Add to Home / Pin to Home / Unpin from Home for the selected card */
+/* Keep in Home for the selected card: it is switched (the popup stays open, the switch in it turns over) */
 static void home_do(Ui *ui, int item)
 {
-    char text[96];
-    if (sel_card(ui) == HOME_LIBRARY) { /* the Library card: pinned or not, it is never removed */
-        if (item == MI_PIN)
-            home_pin_library();
-        else
-            home_unpin_library();
-        snprintf(text, sizeof(text), "%s", L(item == MI_PIN ? S_HOME_PINNED : S_HOME_UNPINNED));
-        home_changed(ui);
-        ui_toast(ui, text);
-        sound_play(SND_SELECT);
-        return;
-    }
+    (void)item;
     int index = ui_selected(ui);
     if (index < 0)
         return;
     const Entry *e = &ui->list->items[index];
-    int tab = ui->tab;
-    if (item == MI_ADD) {
-        home_add(e);
-        snprintf(text, sizeof(text), "%s", L(S_HOME_ADDED));
-    } else if (item == MI_REMOVE || item == MI_REMOVE_YES) {
-        home_remove(e);
-        snprintf(text, sizeof(text), "%s", L(S_HOME_REMOVED));
-    } else if (item == MI_PIN) {
-        if (!home_pin(e)) { /* HOME_PIN_MAX games are pinned: the place after them is for the card played last */
-            snprintf(text, sizeof(text), L(S_HOME_PIN_LIMIT), HOME_PIN_MAX);
-            ui_toast(ui, text);
-            sound_play(SND_ERROR);
-            return;
-        }
-        snprintf(text, sizeof(text), "%s", L(S_HOME_PINNED));
-    } else {
-        home_unpin(e);
-        snprintf(text, sizeof(text), "%s", L(S_HOME_UNPINNED));
+    int kept = (home_state(ui->list, index) & HOME_KEPT) != 0;
+    if (!home_keep(e, !kept)) { /* HOME_KEEP_MAX games are kept already */
+        char text[96];
+        snprintf(text, sizeof(text), L(S_HOME_KEEP_LIMIT), HOME_KEEP_MAX);
+        ui_toast(ui, text);
+        sound_play(SND_ERROR);
+        return;
     }
-    home_changed(ui);
-    if (tab == TAB_LIBRARY && (item == MI_ADD || item == MI_PIN)) { /* the Games tab opens on the card that was just put there */
-        const LoaderView *h = &ui->views[TAB_GAMES];
-        for (int p = 0; p < h->count; p++)
-            if (h->idx[p] == index)
-                ui->sel[TAB_GAMES] = p;
-    }
-    ui_toast(ui, text);
+    ui->menu_kept = !kept;
+    ui->menu_home_dirty = 1; /* Home is made again when the popup closes: the card stays where it is until then */
     sound_play(SND_SELECT);
 }
 
@@ -589,9 +706,31 @@ static int menu_dir_of(const UiInput *in)
     return ((in->held & PSP_CTRL_UP) || in->ly < 40) ? -1 : ((in->held & PSP_CTRL_DOWN) || in->ly > 215) ? 1 : 0;
 }
 
-/* START: Hantera sparad data, Radera (bara för det som får raderas), Information, Ta bort från Home / Lägg till på Home,
- * Fäst / Lossa. UMD-skivan får bara Hantera sparad data och Information (den ligger alltid först på Home). Sparad data
- * gäller alla spel, så den finns på varje kort. */
+/* a held ↑ / ↓ in a popup repeats: the first step at once, the next after POPUP_REPEAT_FIRST, then every POPUP_REPEAT seconds, as the lists do */
+#define POPUP_REPEAT_FIRST 0.32f
+#define POPUP_REPEAT       0.08f
+#define POPUP_REPEAT_HELD  1e9f /* (the direction was held when the popup opened) */
+static int menu_step(Ui *ui, const UiInput *in, float dt)
+{
+    int dir = menu_dir_of(in);
+    if (!dir) {
+        ui->menu_dir = 0;
+        return 0;
+    }
+    if (dir != ui->menu_dir) { /* a new press: it moves at once */
+        ui->menu_dir = dir;
+        ui->menu_timer = POPUP_REPEAT_FIRST;
+        return dir;
+    }
+    ui->menu_timer -= dt;
+    if (ui->menu_timer > 0)
+        return 0;
+    ui->menu_timer = POPUP_REPEAT;
+    return dir;
+}
+
+/* START: Delete (only what may be deleted), Information and Keep in Home. The UMD disc has only Information (it is always the first card on Home). The Library card
+ * has no popup: it is always on Home, at the end. */
 static void menu_build(Ui *ui, const UiInput *in)
 {
     int index = ui_selected(ui);
@@ -601,33 +740,32 @@ static void menu_build(Ui *ui, const UiInput *in)
     ui->menu_n = 0;
     ui->menu_sel = 0;
     ui->menu_stage = 0;
-    ui->menu_dir = menu_dir_of(in); /* en riktning som redan hålls flyttar inte markeringen */
-    if (sel_card(ui) == HOME_LIBRARY) { /* the Library card can only be pinned and unpinned: it is always on Home */
-        ui->menu_item[ui->menu_n++] = home_library_pinned() ? MI_UNPIN : MI_PIN;
+    ui->menu_home_dirty = 0;
+    ui->menu_dir = menu_dir_of(in);
+    ui->menu_timer = POPUP_REPEAT_HELD; /* (a direction that is held when it opens does not move, and does not repeat until it is let go) */
+    if (sel_card(ui) == HOME_LIBRARY || index < 0)
         return;
-    }
     const Entry *e = &ui->list->items[index];
-    ui->menu_item[ui->menu_n++] = MI_SAVES;
     if (e->type != ENTRY_UMD && gameops_target(e, path, sizeof(path), &is_dir))
         ui->menu_item[ui->menu_n++] = MI_DELETE;
     ui->menu_item[ui->menu_n++] = MI_INFO;
     if (e->type != ENTRY_UMD) {
-        int state = home_state(ui->list, index);
-        ui->menu_item[ui->menu_n++] = state & HOME_SHOWN ? MI_REMOVE : MI_ADD;
-        ui->menu_item[ui->menu_n++] = state & HOME_PINNED ? MI_UNPIN : MI_PIN;
+        ui->menu_item[ui->menu_n++] = MI_KEEP;
+        ui->menu_kept = (home_state(ui->list, index) & HOME_KEPT) != 0;
     }
 }
 
-/* The Sort button of the Library: the two ways to sort, the one in use chosen */
+/* The Sort button of the Library: the three ways to sort, the one in use chosen */
 static void menu_build_sort(Ui *ui, const UiInput *in)
 {
     ui->menu_kind = MENU_SORT;
-    ui->menu_n = 2;
-    ui->menu_item[0] = MI_SORT_NAME;
-    ui->menu_item[1] = MI_SORT_RECENT;
-    ui->menu_sel = ui->lib_sort ? 1 : 0;
+    ui->menu_n = LIB_SORT_COUNT;
+    for (int k = 0; k < LIB_SORT_COUNT; k++)
+        ui->menu_item[k] = (unsigned char)(MI_SORT_NAME_AZ + k);
+    ui->menu_sel = ui->lib_sort;
     ui->menu_stage = 0;
     ui->menu_dir = menu_dir_of(in);
+    ui->menu_timer = POPUP_REPEAT_HELD; /* (a direction that is held when it opens does not move, and does not repeat until it is let go) */
 }
 
 /* The view button of the Library: the four views, the one in use chosen */
@@ -640,21 +778,24 @@ static void menu_build_view(Ui *ui, const UiInput *in)
     ui->menu_sel = ui->lib_view;
     ui->menu_stage = 0;
     ui->menu_dir = menu_dir_of(in);
+    ui->menu_timer = POPUP_REPEAT_HELD; /* (a direction that is held when it opens does not move, and does not repeat until it is let go) */
 }
 
 /* Stänger menyn. Innehållet står kvar medan den tonas ut. */
-/* SELECT: the power popup, the same four choices in the same order as Settings > Power and USB */
+/* SELECT: the power popup, the same choices in the same order as on the other screens (power.c) */
 static void menu_build_power(Ui *ui, const UiInput *in)
 {
     ui->menu_kind = MENU_POWER;
-    ui->menu_n = 4;
-    ui->menu_item[0] = MI_SLEEP;
-    ui->menu_item[1] = MI_SHUTDOWN;
-    ui->menu_item[2] = MI_RESTART;
-    ui->menu_item[3] = MI_RECOVERY;
-    ui->menu_sel = 0;
+    ui->menu_n = POWER_CHOICES;
+    ui->menu_item[0] = MI_XMB;
+    ui->menu_item[1] = MI_SLEEP;
+    ui->menu_item[2] = MI_SHUTDOWN;
+    ui->menu_item[3] = MI_RESTART;
+    ui->menu_item[4] = MI_RECOVERY;
+    ui->menu_sel = POWER_OPEN_ON;
     ui->menu_stage = 0;
     ui->menu_dir = menu_dir_of(in);
+    ui->menu_timer = POPUP_REPEAT_HELD; /* (a direction that is held when it opens does not move, and does not repeat until it is let go) */
 }
 
 static void menu_close(Ui *ui)
@@ -662,6 +803,10 @@ static void menu_close(Ui *ui)
     ui->menu_open = 0;
     if (ui->menu_stage == 1)
         gameops_measure_stop();
+    if (ui->menu_home_dirty) {
+        ui->menu_home_dirty = 0;
+        home_changed(ui);
+    }
 }
 
 /* Radera → frågan: vad som tas bort och hur stort det är. Avbryt är förvalt, så inget raderas av misstag. */
@@ -680,7 +825,6 @@ static void menu_ask_delete(Ui *ui)
     ui->del_nlines = text_wrap(text, 0.5f, POPUP_ASK_W - 24, ui->del_lines, 4);
     ui->del_is_dir = is_dir;
     ui->del_measured = 0;
-    ui->ask_remove = 0;
     if (is_dir) { /* mappens storlek räknas i bakgrunden */
         snprintf(ui->del_size, sizeof(ui->del_size), "...");
         gameops_measure_start(path);
@@ -696,33 +840,23 @@ static void menu_ask_delete(Ui *ui)
     sound_play(SND_SELECT);
 }
 
-/* Remove from Home on a pinned card: the card is pinned and will be unpinned too. Cancel is chosen to begin with. */
-static void menu_ask_remove(Ui *ui)
-{
-    const Entry *e = &ui->list->items[ui_selected(ui)];
-    char shown[64], text[256];
-    text_ellipsis(shown, sizeof(shown), e->title, 0.5f, 120);
-    snprintf(text, sizeof(text), L(S_HOME_REMOVE_ASK), shown);
-    ui->del_nlines = text_wrap(text, 0.5f, POPUP_ASK_W - 24, ui->del_lines, 4);
-    ui->del_is_dir = 0;
-    ui->del_measured = 1;
-    ui->del_size[0] = 0;
-    ui->ask_remove = 1;
-    ui->menu_stage = 1;
-    ui->menu_n = 2;
-    ui->menu_item[0] = MI_REMOVE_YES;
-    ui->menu_item[1] = MI_CANCEL;
-    ui->menu_sel = 1;
-    sound_play(SND_SELECT);
-}
-
 void ui_free(Ui *ui)
 {
+    gamesize_stop();
     tex_free(ui->bg_old);
     tex_free(ui->bg_cur);
     ui->bg_old = ui->bg_cur = NULL;
-    tex_free(ui->cover);
-    ui->cover = NULL;
+    if (ui->iv)
+        imageview_close(ui->iv);
+    if (ui->vp)
+        videoplay_close(ui->vp);
+    videoplay_flush(); /* (a video that was left while it was opening is closed by a thread: it is done before a game starts or psp5 ends) */
+    sys_fast_flush(); /* (the clock is given back before a game starts or psp5 ends: the viewer's close left that to a thread) */
+    ui->iv = NULL;
+    ui->vp = NULL;
+    musicui_free(&ui->mu);
+    musicui_free(&ui->vu);
+    musicui_free(&ui->iu);
     for (int t = 0; t < TAB_COUNT; t++) {
         free(ui->views[t].idx);
         ui->views[t].idx = NULL;
@@ -773,9 +907,15 @@ static int step_input(Ui *ui, const UiInput *in, float dt, int vertical)
     return 0;
 }
 
+/* How much of the screen the pictures of the games cover (0 none, 1 all): one that is up covers it, one fading in or out covers it by its alpha */
+static float bg_cover(const Ui *ui)
+{
+    return ui->bg_cur ? (ui->bg_old ? 1.0f : ui->bg_fade) : (ui->bg_old ? 1.0f - ui->bg_fade : 0.0f);
+}
+
 static void update_background(Ui *ui, float dt)
 {
-    int sel = g_theme_art ? ui_selected(ui) : -1; /* bilderna avstängda: bara temats yta */
+    int sel = g_theme_art && ui->tab != TAB_LIBRARY ? ui_selected(ui) : -1; /* pictures off, or the Library (which has a background of its own): only the surface */
     int idx;
     Texture *tex;
     if (loader_take_bg(&idx, &tex)) {
@@ -798,6 +938,33 @@ static void update_background(Ui *ui, float dt)
         ui->bg_index = -1;
         ui->bg_fade = 0;
     }
+    /* What lies under the pictures: the Library's own background on the Library card of Games and in the Library (so that opening the Library changes
+     * nothing behind the cards, and closing it neither), the theme's surface everywhere else. Only one of the two pictures fits in video memory at a
+     * time, so they cannot be mixed. When a picture covers the screen the swap cannot be seen and is made at once (before the picture starts to fade
+     * out in this very update); else the screen dips to black for a moment while it is made.
+     * Leaving the Library card for a game: the Library's background stays under the cards until the game's picture is there, and the picture fades in over it
+     * (the picture is the game's own, else its icon blurred: art_load_bg). The theme's surface comes only for a game that has nothing to show - the loader answered
+     * with no picture - or when Show Game art is off, and then through the dip. */
+    int want = ui->tab == TAB_LIBRARY || (ui->tab == TAB_GAMES && sel_card(ui) == HOME_LIBRARY) ? 1 : 0; /* bg_lib: 1 = the Library's background, 2 = the Media tab's, 0 = the surface */
+    if (ui->tab == TAB_MEDIA || ui->tab == TAB_MUSIC)
+        want = 2; /* the Media tab and the Music screen have one background of their own (in every theme), never a picture of a game */
+    if (!want && ui->bg_lib && ui->tab == TAB_GAMES && sel >= 0 && ui->bg_index != sel) /* (the picture of this game has not been answered yet) */
+        want = ui->bg_lib;
+    if (ui->tab == TAB_LIBRARY || ui->tab == TAB_MEDIA || ui->tab == TAB_MUSIC) {
+        ui->bg_lib = want; /* (these draw their own, whatever lay under before) */
+        ui->bg_dip = 0;
+    } else if (want == ui->bg_lib) {
+        ui->bg_dip = clampf(ui->bg_dip - dt * BG_DIP, 0, 1);
+    } else if (bg_cover(ui) >= 1) {
+        ui->bg_lib = want;
+    } else if (ui->bg_cur) { /* the game's picture is fading in over the Library's background: the swap waits until it covers the screen, and is made then, unseen */
+        ui->bg_dip = clampf(ui->bg_dip - dt * BG_DIP, 0, 1);
+    } else {
+        ui->bg_dip = clampf(ui->bg_dip + dt * BG_DIP, 0, 1);
+        if (ui->bg_dip >= 1)
+            ui->bg_lib = want;
+    }
+
     ui->bg_fade = clampf(ui->bg_fade + dt * BG_FADE, 0, 1);
     if (ui->bg_fade >= 1 && ui->bg_old) {
         tex_free(ui->bg_old);
@@ -805,107 +972,45 @@ static void update_background(Ui *ui, float dt)
     }
 }
 
-/* Omslaget till låten som spelas: begärs när låten byts och tonas in när det är laddat */
-static void update_cover(Ui *ui, float dt)
+/* The Music screen (musicui.c): its input is whatever the top bar did not take (`in` is the neutral input while the top bar has the focus) */
+static void open_viewer(Ui *ui)
 {
-    int cur = music_current();
-    if (cur != ui->cover_for) {
-        tex_free(ui->cover);
-        ui->cover = NULL;
-        ui->cover_for = cur;
-        ui->cover_fade = 0;
-        if (cur >= 0)
-            loader_request_cover(cur);
+    const MusicEntry *files;
+    int count, index;
+    const char *dir = musicui_file(screen_mu(ui), &files, &count, &index);
+    if (index < 0 || index >= count)
+        return;
+    if (ui->mscreen == 2)
+        ui->iv = imageview_open(dir, files, count, index);
+    else if (ui->mscreen == 1)
+        ui->vp = videoplay_open(dir, files, count, index);
+    if (!ui->iv && !ui->vp) {
+        ui_toast(ui, L(ui->mscreen == 2 ? S_IMG_CANT : S_VID_CANT)); /* (no memory for it) */
+        sound_play(SND_ERROR);
     }
-    int idx;
-    Texture *tex;
-    if (loader_take_cover(&idx, &tex)) {
-        if (idx == ui->cover_for && !ui->cover)
-            ui->cover = tex;
-        else
-            tex_free(tex); /* låten hann bytas */
-    }
-    if (ui->cover)
-        ui->cover_fade = clampf(ui->cover_fade + dt * 4, 0, 1);
 }
 
-/* Musikfliken: ↑↓ väljer, ✕ spelar (eller pausar vald låt), □ paus, ← → föregående/nästa låt. ↑ from the first song (or
- * from an empty list) selects the top bar. `top` = the top bar has the focus: the buttons are not for the songs now. */
-static void update_music(Ui *ui, const UiInput *in, float dt, int top)
+static void update_music(Ui *ui, const UiInput *in, float dt)
 {
-    int n = music_count();
-    UiInput vert = *in; /* ← → ska inte upprepas när de hålls in */
-    vert.held &= ~(PSP_CTRL_LEFT | PSP_CTRL_RIGHT);
-    vert.lx = 128;
-    int move = top ? 0 : step_input(ui, &vert, dt, 1); /* (the top bar reads the repeat state itself) */
-    if (move == -2 && ui->repeat_held == 0 && (!n || ui->music_sel == 0)) { /* a new press, not a held button */
-        ui->top_focus = TAB_MUSIC;
+    int r = musicui_update(screen_mu(ui), in->pressed, in->held, in->lx, in->ly, dt);
+    if (ui->intro < 1)
+        return;
+    if (r == MUSICUI_OPEN)
+        open_viewer(ui);
+    else if (r == MUSICUI_CLOSE) {
+        close_music(ui);
+    } else if (r == MUSICUI_TOP) { /* ↑ from the first line: the top bar (the Music screen has only its name and the cog wheel there) */
+        ui->top_focus = TOP_COG;
         sound_play(SND_MOVE);
-        return;
     }
-    if (move && n) {
-        int next = clampf(ui->music_sel + move / 2, 0, n - 1);
-        if (next != ui->music_sel) {
-            ui->music_sel = next;
-            sound_play(SND_MOVE);
-        }
-    }
-    if (ui->intro < 1 || !n)
-        return;
-    int playing = music_current() >= 0 && music_state() != MUSIC_STOPPED;
-    /* ← →: kort tryck byter låt (när knappen släpps), håll för att spola – fortare ju längre */
-    int dir = (in->held & PSP_CTRL_RIGHT) ? 1 : (in->held & PSP_CTRL_LEFT) ? -1 : 0;
-    if (ui->seek_show > 0)
-        ui->seek_show -= dt;
-    if (dir && playing) {
-        if (dir != ui->seek_dir) {
-            ui->seek_dir = dir;
-            ui->seek_held = 0;
-            ui->seeking = 0;
-        }
-        ui->seek_held += dt;
-        float dur = music_duration();
-        if (!ui->seeking && ui->seek_held >= SEEK_HOLD && dur > 0) {
-            ui->seeking = 1;
-            ui->seek_pos = music_elapsed();
-        }
-        if (ui->seeking) {
-            float speed = ui->seek_held < 1.5f ? 8 : ui->seek_held < 3.0f ? 20 : 45; /* sekunder per sekund */
-            /* stannar en sekund före slutet: att släppa där ska inte byta låt */
-            ui->seek_pos = clampf(ui->seek_pos + dir * speed * dt, 0, dur > 1 ? dur - 1 : 0);
-        }
-    } else if (ui->seek_dir) { /* släppt */
-        if (ui->seeking && playing) {
-            music_seek(ui->seek_pos);
-            ui->seek_show = 0.5f; /* tills spelartråden har hoppat */
-        } else if (playing) {
-            if (ui->seek_dir > 0)
-                music_next();
-            else
-                music_prev();
-        }
-        ui->seek_dir = 0;
-        ui->seeking = 0;
-    }
-    if ((in->pressed & PSP_CTRL_SQUARE) && playing)
-        music_toggle_pause();
-    if (in->pressed & PSP_CTRL_CROSS) {
-        if (playing && ui->music_sel == music_current())
-            music_toggle_pause();
-        else
-            music_play(ui->music_sel);
-    }
-    if (ui->music_sel < ui->music_target)
-        ui->music_target = ui->music_sel;
-    if (ui->music_sel > ui->music_target + MROWS - 1)
-        ui->music_target = ui->music_sel - (MROWS - 1);
-    ui->music_scroll = approach(ui->music_scroll, ui->music_target, 14.0f, dt);
 }
 
 /* START, or ✕ on the Options button: the options popup of the selected card */
 static void open_card_menu(Ui *ui, const UiInput *in)
 {
     menu_build(ui, in);
+    if (ui->menu_n <= 0) /* the Library card has no options */
+        return;
     ui->menu_kind = MENU_CARD;
     ui->menu_open = 1;
     sound_play(SND_SELECT);
@@ -937,6 +1042,12 @@ static void activate_card(Ui *ui)
     int card = sel_card(ui);
     if (card == HOME_LIBRARY)
         open_library(ui);
+    else if (card == HOME_MEDIA_MUSIC)
+        open_music(ui, 0);
+    else if (card == HOME_MEDIA_VIDEO)
+        open_music(ui, 1);
+    else if (card == HOME_MEDIA_IMAGES)
+        open_music(ui, 2);
     else if (LIB_IS_FOLDER(card))
         open_folder(ui, LIB_FOLDER_NO(card));
     else
@@ -946,7 +1057,8 @@ static void activate_card(Ui *ui)
 /* the text of the Library's Sort button */
 static void sort_text(const Ui *ui, char *out, int size)
 {
-    snprintf(out, size, "%s: %s", L(S_SORT), L(ui->lib_sort ? S_SORT_RECENT : S_SORT_NAME));
+    static const StrId names[LIB_SORT_COUNT] = { S_SORT_NAME_AZ, S_SORT_NAME_ZA, S_SORT_ADDED_NEW, S_SORT_ADDED_OLD, S_SORT_SIZE_BIG, S_SORT_SIZE_SMALL };
+    snprintf(out, size, "%s: %s", L(S_SORT), L(names[ui->lib_sort >= 0 && ui->lib_sort < LIB_SORT_COUNT ? ui->lib_sort : 0]));
 }
 
 static const char *view_label(int view)
@@ -973,7 +1085,7 @@ static void lib_header(const Ui *ui, LibHeader *h)
 {
     char num[16];
     snprintf(num, sizeof(num), "%d", view(ui)->count);
-    float count_w = text_width(0.6f, 0, num);
+    float count_w = text_width(SORT_SIZE, 0, num); /* (the view text and its number are as large as the text of the Sort button) */
     sort_text(ui, h->sort, sizeof(h->sort));
     h->sort_w = text_width(SORT_SIZE, 0, h->sort);
     h->sort_r = SCREEN_W - MARGIN + SORT_PAD;
@@ -982,15 +1094,15 @@ static void lib_header(const Ui *ui, LibHeader *h)
     char name[FOLDER_NAME_MAX + 8];
     snprintf(name, sizeof(name), "%s:", open ? ui->lib_open_name : view_label(ui->lib_view)); /* "All: 15", "Racing: 3" */
     float pad = open ? 0 : SORT_PAD; /* (a folder's name has no frame) */
-    float gap = fmaxf(3.0f, ceilf(text_width(0.6f, 0, " "))); /* a space between the colon and the number (whole pixels) */
+    float gap = fmaxf(3.0f, ceilf(text_width(SORT_SIZE, 0, " "))); /* a space between the colon and the number (whole pixels) */
     float room = h->sort_l - 12 - MARGIN - 2 * pad; /* for the text of the view button, with a gap before the Sort button */
     float room_n = room - gap - count_w;            /* ... with the number of cards next to it */
     h->show_count = 1;
-    h->view_size = text_fit(0.66f, 0.45f, 0, room_n, name);
+    h->view_size = text_fit(SORT_SIZE, 0.45f, 0, room_n, name);
     if (text_width(h->view_size, 0, name) > room_n) { /* too long in this language even at the smallest size: the number goes first */
         h->show_count = 0;
         room_n = room;
-        h->view_size = text_fit(0.66f, 0.45f, 0, room_n, name);
+        h->view_size = text_fit(SORT_SIZE, 0.45f, 0, room_n, name);
     }
     if (room_n < 24)
         room_n = 24;
@@ -1052,7 +1164,7 @@ static int update_top_bar(Ui *ui, const UiInput *in, float dt)
         sound_play(move == 2 ? SND_MOVE : SND_BACK);
     } else if (move == -1 || move == 1) {
         int items[3], n = 0, at = 0; /* what can be selected: the tabs (not the word "Library"), then the cog wheel */
-        if (ui->tab != TAB_LIBRARY)
+        if (!is_screen(ui->tab))
             n = top_tabs(ui, items);
         items[n++] = TOP_COG;
         for (int k = 0; k < n; k++)
@@ -1080,13 +1192,39 @@ static int update_top_bar(Ui *ui, const UiInput *in, float dt)
     return UI_NONE;
 }
 
+/* The size sorts of the Library: the size of a game that lives in a folder is counted in the background (gamesize.c). When more sizes are known the Library is
+ * sorted again, the same card stays selected - not more than once a second, so a long count does not keep the cards moving. */
+static void sort_by_size_again(Ui *ui, float dt)
+{
+    ui->gs_wait -= dt;
+    if (ui->lib_sort != LIB_SORT_SIZE_BIG && ui->lib_sort != LIB_SORT_SIZE_SMALL) {
+        ui->gs_version = gamesize_version();
+        return;
+    }
+    if (ui->gs_version == gamesize_version() || ui->gs_wait > 0)
+        return;
+    ui->gs_version = gamesize_version();
+    ui->gs_wait = 1.0f;
+    int chosen = sel_card(ui);
+    float tab_anim = ui->tab_anim;
+    rebuild_library(ui);
+    library_reselect(ui, chosen, 0);
+    ui->tab_anim = tab_anim; /* (no slide: the cards only change places) */
+}
+
 int ui_update(Ui *ui, const UiInput *in, float dt)
 {
     ui->time += dt;
     ui->intro = clampf(ui->intro + dt * 2.2f, 0, 1);
     ui->tab_anim = clampf(ui->tab_anim + dt * 4.0f, 0, 1);
+    if (ui->tab_anim >= 1)
+        ui->lib_calm = 0; /* (a later change of the Library's cards, a new sort, comes up out of the dark as before) */
+    if (ui->tab == TAB_LIBRARY || ui->tab == TAB_MUSIC)
+        ui->dim_alpha = ui->tab == TAB_MUSIC ? DIM_ALPHA_MUSIC : DIM_ALPHA_LIBRARY;
+    ui->dim = clampf(ui->dim + (ui->tab == TAB_LIBRARY || ui->tab == TAB_MUSIC ? 1 : -1) * dt * DIM_SPEED, 0, 1); /* the background goes dark when a card is opened, and bright again when it is closed */
     if (ui->toast_time > 0)
         ui->toast_time -= dt;
+    sort_by_size_again(ui, dt);
 
     if (ui->launch >= 0) {
         ui->launch += dt / LAUNCH_LEN;
@@ -1100,14 +1238,13 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         u32 back = PSP_CTRL_CIRCLE | PSP_CTRL_START; /* (the options button that opened a popup closes it again) */
         if (ui->menu_kind == MENU_POWER)
             back |= PSP_CTRL_SELECT; /* the button that opened it closes it, like START on the options popup */
-        int dir = menu_dir_of(in);
-        if (dir && dir != ui->menu_dir) {
-            int next = (int)clampf(ui->menu_sel + dir, 0, ui->menu_n - 1);
+        int step = menu_step(ui, in, dt);
+        if (step) {
+            int next = (int)clampf(ui->menu_sel + step, 0, ui->menu_n - 1);
             if (next != ui->menu_sel)
                 sound_play(SND_MOVE);
             ui->menu_sel = next;
         }
-        ui->menu_dir = dir;
         if (ui->menu_stage == 1 && ui->del_is_dir && !ui->del_measured) {
             unsigned long long bytes;
             unsigned files;
@@ -1122,31 +1259,29 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
             int item = ui->menu_item[ui->menu_sel];
             if (item == MI_DELETE) {
                 menu_ask_delete(ui);
-            } else if (item == MI_REMOVE && (home_state(ui->list, ui_selected(ui)) & HOME_PINNED)) {
-                menu_ask_remove(ui); /* a pinned card is unpinned too: ask first */
+            } else if (item == MI_KEEP) {
+                home_do(ui, item); /* a switch: the popup stays open */
             } else {
                 menu_close(ui);
-                if (item >= MI_SLEEP && item <= MI_RECOVERY) { /* main.c does it, like the same four in Settings */
+                if (item >= MI_XMB && item <= MI_RECOVERY) { /* main.c does it, as on the other screens */
                     sound_play(SND_SELECT);
                     sound_wait(400); /* let the sound be heard before anything closes */
-                    return item == MI_SLEEP ? UI_SLEEP : item == MI_SHUTDOWN ? UI_SHUTDOWN : item == MI_RESTART ? UI_RESTART : UI_RECOVERY;
+                    return item == MI_XMB ? UI_XMB : item == MI_SLEEP ? UI_SLEEP : item == MI_SHUTDOWN ? UI_SHUTDOWN : item == MI_RESTART ? UI_RESTART : UI_RECOVERY;
                 }
-                if (item == MI_INFO || item == MI_SAVES) {
+                if (item == MI_INFO) {
                     sound_play(SND_SELECT);
-                    return item == MI_INFO ? UI_INFO : UI_SAVES;
+                    return UI_INFO;
                 }
                 if (item == MI_DELETE_YES) {
                     sound_play(SND_SELECT);
                     return UI_DELETE;
                 }
-                if (item == MI_SORT_NAME || item == MI_SORT_RECENT)
-                    set_sort(ui, item == MI_SORT_RECENT);
+                if (item >= MI_SORT_NAME_AZ && item <= MI_SORT_SIZE_SMALL)
+                    set_sort(ui, item - MI_SORT_NAME_AZ);
                 else if (item >= MI_VIEW_ALL && item <= MI_VIEW_BOTH)
                     set_view(ui, item - MI_VIEW_ALL);
                 else if (item == MI_CANCEL)
                     sound_play(SND_BACK);
-                else
-                    home_do(ui, item);
             }
         } else if (in->pressed & back) {
             menu_close(ui);
@@ -1158,6 +1293,23 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     if (!ui->menu_open && (in->pressed & PSP_CTRL_SELECT) && ui->intro >= 1) { /* on every tab, also with the top bar selected */
         open_power_menu(ui, in);
         in = &none;
+    }
+    if (ui->iv || ui->vp) { /* the image viewer or the video player has the whole screen and all the buttons, but for SELECT (the power popup, above) and while it is open (a video waits) */
+        if (ui->vp)
+            videoplay_hold(ui->vp, ui->menu_open);
+        if (ui->menu_open)
+            return UI_NONE;
+        int done = ui->iv ? imageview_update(ui->iv, in->pressed, in->held, in->lx, in->ly, dt) : videoplay_update(ui->vp, in->pressed, in->held, in->lx, in->ly, dt);
+        if (done) {
+            if (ui->iv)
+                imageview_close(ui->iv);
+            else
+                videoplay_close(ui->vp);
+            ui->iv = NULL;
+            ui->vp = NULL;
+            sound_play(SND_BACK);
+        }
+        return UI_NONE;
     }
     if (ui->tab == TAB_LIBRARY) {
         int avail = lib_buttons(ui);
@@ -1176,8 +1328,8 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     ui->view_frame = clampf(ui->view_frame + (ui->lib_focus == LIB_BTN_VIEW && ui->top_focus < 0 ? 8 : -8) * dt, 0, 1);
     int ring_on = ui->top_focus < 0 && !(ui->tab == TAB_LIBRARY && ui->lib_focus) && !ui->btn_focus; /* the card has the focus */
     ui->card_ring = clampf(ui->card_ring + (ring_on ? 8 : -8) * dt, 0, 1);
-    if (ui->tab != TAB_GAMES || view(ui)->count == 0)
-        ui->btn_focus = 0; /* the buttons belong to a card of the Games tab */
+    if ((ui->tab != TAB_GAMES && ui->tab != TAB_MEDIA) || view(ui)->count == 0)
+        ui->btn_focus = 0; /* the buttons belong to a card of the Games and Media tabs */
     for (int k = 0; k < 2; k++)
         ui->btn_anim[k] = clampf(ui->btn_anim[k] + (ui->btn_focus == k + 1 ? 8 : -8) * dt, 0, 1);
     if (in->pressed & PSP_CTRL_LTRIGGER)
@@ -1197,7 +1349,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     }
 
     if (ui->tab == TAB_MUSIC)
-        update_music(ui, in, dt, top);
+        update_music(ui, in, dt);
 
     int count = view(ui)->count;
     int *sel = &ui->sel[ui->tab];
@@ -1218,11 +1370,12 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         !(grid && LIB_IS_FOLDER(sel_card(ui)))) /* (a folder has no options) */
         open_card_menu(ui, in);
     UiInput sides = *in;
-    if (ui->tab == TAB_GAMES && fabsf((float)in->lx - 128) >= fabsf((float)in->ly - 128))
+    int row_tab = ui->tab == TAB_GAMES || ui->tab == TAB_MEDIA; /* a row of big cards with the buttons under the selected one */
+    if (row_tab && fabsf((float)in->lx - 128) >= fabsf((float)in->ly - 128))
         sides.ly = 128; /* the stick is pushed sideways: that is the cards, not the buttons below them */
-    int move = ui->tab == TAB_MUSIC || top ? 0 : step_input(ui, &sides, dt, grid || ui->tab == TAB_GAMES);
+    int move = ui->tab == TAB_MUSIC || top ? 0 : step_input(ui, &sides, dt, grid || row_tab);
     int fresh = ui->repeat_held == 0; /* a move that is a new press, not a held button repeating: only that enters the top bar */
-    if (ui->tab == TAB_GAMES && count) { /* ↓ to Start, ← → between Start and Options, ↑ or ○ back to the card, ↑ from the card to the top bar */
+    if (row_tab && count) { /* ↓ to Start, ← → between Start and Options, ↑ or ○ back to the card, ↑ from the card to the top bar */
         if (!on_btn) {
             if (move == 2) {
                 ui->btn_focus = 1;
@@ -1236,7 +1389,7 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
         } else if (move == -1 && on_btn == 2) {
             ui->btn_focus = 1;
             sound_play(SND_MOVE);
-        } else if (move == 1 && on_btn == 1) {
+        } else if (move == 1 && on_btn == 1 && sel_card(ui) >= 0) { /* (the Library and Music cards have no options: Open is the only button) */
             ui->btn_focus = 2;
             sound_play(SND_MOVE);
         } else if (in->pressed & back_btn) {
@@ -1325,28 +1478,64 @@ int ui_update(Ui *ui, const UiInput *in, float dt)
     ui->pos = approach(ui->pos, *sel, 13.0f, dt);
     if (fabsf(ui->pos - *sel) < 0.001f)
         ui->pos = *sel;
-    if (ui->tab != TAB_MUSIC)
+    if (ui->tab != TAB_MUSIC) {
+        loader_set_round(ui->tab != TAB_LIBRARY); /* the Library's cards are rectangles, the Games tab's are rounded: the pictures follow */
         loader_focus(*sel);
+    }
     if (music_needs_cjk())
-        font_ensure_cjk(); /* japanska/ryska låttitlar (laddas bara en gång) */
+        font_ensure_cjk_later(); /* japanska/ryska låttitlar (laddas bara en gång; i en tråd: typsnittet är stort) */
     update_background(ui, dt);
-    update_cover(ui, dt);
+    if (ui->tab == TAB_MUSIC && ui->mscreen == 0)
+        musicui_update_cover(&ui->mu, dt);
 
     if (ui->label_for != sel_card(ui)) {
         fit_label(ui);
         ui->label_anim = 0;
     }
     ui->label_anim = clampf(ui->label_anim + dt * 5.0f, 0, 1);
+    ui->label_t += dt; /* (the title scrolls when it does not fit) */
+    ui->lib_label_t += dt;
     return UI_NONE;
 }
 
 /* --- ritning --- */
 
+/* A card that is opened (the Library card, the Music card) darkens the whole background behind it, all the way from the top of the screen: the cards of Games and Media have the
+ * background at full brightness, the screen that opens from them has it dark (so that the lines of the background do not run across the names), and it goes dark and bright again
+ * in a quarter of a second. The top bar is drawn over it (the tabs, the clock, the battery and the cog wheel stay bright). */
+static void draw_dim(const Ui *ui)
+{
+    if (ui->dim > 0)
+        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(8, 8, 12, (int)(ui->dim_alpha * smooth(ui->dim))));
+}
+
 static void draw_background(Ui *ui)
 {
+    if (ui->tab == TAB_MEDIA || ui->tab == TAB_MUSIC) {
+        /* The Media tab and the Music screen have a background of their own, drawn in code from the Media picture in the colours of the theme (theme.c). It comes up out of
+         * the dark with the cards, unless the tab was opened from one that has it already (Media -> Music and back). */
+        theme_backdrop_media(theme_cur(), ui->time);
+        if (ui->tab_anim < 1 && !ui->lib_calm)
+            gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - smooth(ui->tab_anim)))));
+        return;
+    }
+    if (ui->tab == TAB_LIBRARY) {
+        /* The Library has a background of its own (a ribbon of light on black, drawn in code, in the colours of the theme): never a picture of a game, in every theme.
+         * It comes up out of the dark with the cards (tab_anim goes from 0.4 to 1 when the tab is opened). */
+        theme_backdrop_library(theme_cur(), ui->time);
+        if (ui->tab_anim < 1 && !ui->lib_calm) /* (not when it was opened from its card, which has this background already) */
+            gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * (1 - smooth(ui->tab_anim)))));
+        return;
+    }
     /* en bild som täcker hela skärmen (färdigtonad, eller den gamla helt under den nya) – då behövs ingen yta under */
-    if (!ui->bg_cur || (ui->bg_fade < 1 && !ui->bg_old))
-        theme_backdrop(theme_cur(), ui->time, 1); /* the theme's surface: shows when a game has no picture (or pictures are off) */
+    if (!ui->bg_cur || (ui->bg_fade < 1 && !ui->bg_old)) {
+        if (ui->bg_lib == 2)
+            theme_backdrop_media(theme_cur(), ui->time); /* (leaving Media: its background stays until the cards and the surface have changed places) */
+        else if (ui->bg_lib)
+            theme_backdrop_library(theme_cur(), ui->time); /* the Library card: the Library's own background, so that opening the Library changes nothing behind the cards */
+        else
+            theme_backdrop(theme_cur(), ui->time, 1); /* the theme's surface: shows when a game has no picture (or pictures are off) */
+    }
 
     const u32 tint = RGBA(205, 205, 210, 0);
     int fade = (int)(ui->bg_fade * 255);
@@ -1358,12 +1547,14 @@ static void draw_background(Ui *ui)
     /* A game's picture is darkened at the top (tabs, cards), on the left (text) and at the bottom (buttons) so they stay
      * readable on any picture. The theme's surface is not darkened: it looks the same as on the other screens. The
      * shades follow how much of the picture is shown, so a picture fading in or out takes them with it. */
-    float cover = ui->bg_cur ? (ui->bg_old ? 1.0f : ui->bg_fade) : (ui->bg_old ? 1.0f - ui->bg_fade : 0.0f);
+    float cover = bg_cover(ui);
     if (cover > 0) {
         gfx_gradient_v(0, 0, SCREEN_W, 120, RGBA(0, 0, 0, (int)(165 * cover)), RGBA(0, 0, 0, 0));
         gfx_gradient_h(0, 0, 300, SCREEN_H, RGBA(0, 0, 0, (int)(120 * cover)), RGBA(0, 0, 0, 0));
         gfx_gradient_v(0, 160, SCREEN_W, SCREEN_H - 160, RGBA(0, 0, 0, 0), RGBA(0, 0, 0, (int)(175 * cover)));
     }
+    if (ui->bg_dip > 0) /* the dip to black while the Library's background and the surface change places */
+        gfx_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (int)(255 * ui->bg_dip)));
 }
 
 /* The battery on whole pixels, as on the PS5: a terminal 2 x 4 on the LEFT, then a body 21 x 12 with a 1 px outline and 2 px between
@@ -1388,8 +1579,8 @@ static int battery_bars(int percent)
 static void draw_battery(float x, float y, int percent, int charging, float time, float a)
 {
     float body = x + BAT_TERM_W;
-    gfx_rect(x, y + 4, BAT_TERM_W, 4, with_alpha(LIGHT, 0.85f * a));
-    gfx_round_rect(body, y, BAT_BODY_W, BAT_H, 2.5f, with_alpha(LIGHT, 0.85f * a));
+    gfx_rect(x, y + 4, BAT_TERM_W, 4, with_alpha(LIGHT, a)); /* (the outline is opaque: as light as the clock and the tag) */
+    gfx_round_rect(body, y, BAT_BODY_W, BAT_H, 2.5f, with_alpha(LIGHT, a));
     gfx_round_rect(body + 1, y + 1, BAT_BODY_W - 2, BAT_H - 2, 1.5f, with_alpha(DARK, a));
     if (percent < 0)
         return;
@@ -1404,12 +1595,6 @@ static void draw_battery(float x, float y, int percent, int charging, float time
         gfx_rect(body + 3 + (BAT_BARS - 1 - i) * 4, y + 3, 3, 6, with_alpha(c, (i < lit ? 1.0f : 0.5f) * a));
 }
 
-static void format_time(char *out, int size, float sec)
-{
-    int t = sec > 0 ? (int)sec : 0;
-    snprintf(out, size, "%d:%02d", t / 60, t % 60);
-}
-
 #define TOP_MID     20.0f /* the middle of the clock row, where the wheel, the battery and the Wi-Fi sign are centred: the cog wheel's frame goes round it */
 #define TOP_FRAME_H 24.0f /* (a tab's frame is centred on its text) */
 #define TOP_GAP     12.0f /* between the things on the right: Wi-Fi sign, battery (with its number), clock, cog wheel; the tabs keep it from the first of them, too */
@@ -1419,6 +1604,9 @@ static void format_time(char *out, int size, float sec)
 #define BOLT_GAP     3.0f /* between the bolt and the battery, which belong together (the bolt is slanted: it looks further from the battery than this) */
 #define WIFI_R       7.0f /* the Wi-Fi sign is a square of 2 R = 14 px (a little higher than the battery: three soft arcs need that much room) */
 #define COG_R        7.0f /* the cog wheel is a square of 2 R, and its right edge is on the margin like the clock's used to be */
+#define COG_BTN_D   TOP_FRAME_H /* the white circle of the selected cog wheel: as high as the frame of the selected tab */
+
+static void button_bg(float x, float y, float w, float h, float t, float fade);
 
 static void draw_top_bar(Ui *ui)
 {
@@ -1426,14 +1614,11 @@ static void draw_top_bar(Ui *ui)
 
     /* klockan, batteriet och Wi-Fi ändras sakta – systemet frågas en gång i sekunden, inte varje bild */
     static float polled_at = -10;
-    static char clock_text[8];
+    static char clock_text[16]; /* "17:54", or "12:05 PM" with the 12-hour clock */
     static int sys_present, sys_charging, sys_level = -1, sys_wifi;
     if (fabsf(ui->time - polled_at) >= 1.0f) { /* även om tiden har nollställts */
         polled_at = ui->time;
-        ScePspDateTime now;
-        clock_text[0] = 0;
-        if (sceRtcGetCurrentClockLocalTime(&now) >= 0)
-            snprintf(clock_text, sizeof(clock_text), "%02d:%02d", now.hour, now.minute);
+        dt_clock_text(clock_text, sizeof(clock_text)); /* the PSP's clock as psp5 shows it (Settings -> System -> Date and Time) */
         int battery = scePowerIsBatteryExist();
         sys_present = battery ? 1 : 0;
         sys_charging = battery && scePowerIsBatteryCharging() > 0;
@@ -1477,13 +1662,11 @@ static void draw_top_bar(Ui *ui)
         bar_left = wx;
     }
 
-    /* the cog wheel is a button too: selected (↑ from the first thing of a tab) it gets the frame of a chosen entry, like Sort */
-    if (cog * a > 0.01f) {
-        float fy, fh;
-        popup_frame_around(TOP_MID, TOP_FRAME_H, &fy, &fh);
-        popup_choice(gx - 15, fy, 30, fh, cog * a);
-    }
-    gfx_gear(gx, TOP_MID, COG_R, with_alpha(LIGHT, (0.9f + 0.1f * cog) * a), RGBA(14, 14, 18, (int)(255 * a)));
+    /* the cog wheel is a button too: selected (↑ from the first thing of a tab) it is a white circle, as high as the frame of a tab, with a dark wheel in
+     * it, like Start and Options under a card */
+    if (cog * a > 0.01f)
+        button_bg(gx - COG_BTN_D / 2, TOP_MID - COG_BTN_D / 2, COG_BTN_D, COG_BTN_D, cog, a);
+    gfx_gear(gx, TOP_MID, COG_R, with_alpha(mix_color(LIGHT, DARK, cog), a), RGBA(14, 14, 18, (int)(255 * a)));
 
     /* flikarna krymper om de inte får plats (t.ex. långa ryska ord) – mäts bara om när något ändras */
     static float size = 0.8f, gap = 20, sized_room = -1;
@@ -1491,56 +1674,34 @@ static void draw_top_bar(Ui *ui)
     static const char *sized_lang;
     float room = bar_left - TOP_GAP - MARGIN; /* the last tab's frame (9 px wider than its text) ends 3 px before the first thing on the right */
     int tabs[2], nt = top_tabs(ui, tabs); /* Games and Music, or only Library inside the Library */
-    if (room != sized_room || ui->tab != sized_tab || L(TAB_NAMES[0]) != sized_lang) {
+    if (room != sized_room || ui->tab + 8 * ui->mscreen != sized_tab || L(TAB_NAMES[0]) != sized_lang) {
         size = 0.8f;
         gap = 20;
         for (;;) {
             float w = 0;
             for (int k = 0; k < nt; k++)
-                w += text_width(size, tabs[k] == ui->tab, L(TAB_NAMES[tabs[k]])) + gap;
+                w += text_width(size, tabs[k] == ui->tab, L(tab_name(ui, tabs[k]))) + gap;
             if (w - gap <= room || size <= 0.56f)
                 break;
             size -= 0.04f;
             gap = 14;
         }
         sized_room = room;
-        sized_tab = ui->tab;
+        sized_tab = ui->tab + 8 * ui->mscreen;
         sized_lang = L(TAB_NAMES[0]);
     }
     float x = MARGIN;
     for (int k = 0; k < nt; k++) {
         int t = tabs[k], active = t == ui->tab;
-        float tw = text_width(size, active, L(TAB_NAMES[t])), pick = smooth(ui->top_anim[t]);
+        float tw = text_width(size, active, L(tab_name(ui, t))), pick = smooth(ui->top_anim[t]);
         if (pick * a > 0.01f) { /* selected with ↑ (not the same as the open tab, which is the bold one) */
             float fy, fh; /* centred on the text, which shrinks in long languages */
             popup_frame_around(popup_label_mid(25, size), TOP_FRAME_H, &fy, &fh);
             popup_choice(x - 9, fy, tw + 18, fh, pick * a);
         }
         text_draw(x, 25, size, active, with_alpha(active ? TEXT_MAIN : mix_color(RGBA(255, 255, 255, 120), TEXT_MAIN, pick), a),
-                  ALIGN_LEFT, L(TAB_NAMES[t]));
+                  ALIGN_LEFT, L(tab_name(ui, t)));
         x += tw + gap;
-    }
-
-    /* musik som spelas syns som en liten not med titeln i de andra flikarna */
-    int cur = music_current();
-    if (ui->tab != TAB_MUSIC && cur >= 0 && music_state() != MUSIC_STOPPED) {
-        float right = bar_left - 40, left = x + 4;
-        if (right - left > 40) {
-            static char line[100];
-            static int line_for = -2, line_gen = -1;
-            static float line_w;
-            const Track *tr = music_track(cur);
-            if (tr && (line_for != cur || line_gen != music_generation() || line_w != right - left)) {
-                text_ellipsis(line, sizeof(line), tr->title, 0.5f, right - left - 16);
-                line_for = cur;
-                line_gen = music_generation();
-                line_w = right - left;
-            }
-            float pulse = music_state() == MUSIC_PLAYING ? 0.75f + 0.25f * sinf(ui->time * 3) : 0.5f;
-            float tw = text_width(0.5f, 0, line);
-            gfx_note(right - tw - 8, 21, 10, with_alpha(LIGHT, pulse * a));
-            text_draw(right, 24.5f, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_RIGHT, line);
-        }
     }
 }
 
@@ -1564,12 +1725,22 @@ static void card_geometry(float d, float *x, float *w, float *h, float *y)
 /* grid: a card of the library grid, whose selection ring is a little thinner than the big card's in the row. `focus` (0..1) is how
  * selected the card is (brightness, shadow); `ring` (0..1) is how visible its ring is: the selected card keeps its size and
  * brightness when the focus is somewhere else (the top bar, Start, Sort), only the ring goes. */
+/* the plain card behind a picture (the card's colour): rounded, or a rectangle when r is 0 */
+static void card_plate(float x, float y, float w, float h, float r, u32 color)
+{
+    if (r > 0)
+        gfx_round_rect(x, y, w, h, r, color);
+    else
+        gfx_rect(x, y, w, h, color);
+}
+
 static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h, float focus, float ring, float alpha, int grid)
 {
     int library = list_index == HOME_LIBRARY; /* the Library card has no icon to load: a card in the theme's colour with its picture */
     int folder = LIB_IS_FOLDER(list_index);   /* ... and so has a folder of the Library: the same colour, a folder with its first letter */
-    IconSlot *slot = library || folder ? NULL : loader_icon(list_index);
-    float r = w / 12.0f; /* corner radius: 1/12 of the width at every size, which is what art.c cuts the pictures to */
+    int media = HOME_IS_MEDIA(list_index); /* ... and the cards of Media: the same colour, the note of the Music icon, the film frame of Videos, the picture frame of Images */
+    IconSlot *slot = library || folder || media ? NULL : loader_icon(list_index);
+    float r = grid ? 0 : w / 12.0f; /* corner radius: 1/12 of the width at every size, which is what art.c cuts the pictures to; the Library's cards are rectangles (r 0) */
     /* the card's pixels: a pixel is part of it when its middle is (the picture, the ring and the corners all use this box) */
     int l = (int)ceilf(x - 0.5f), t = (int)ceilf(y - 0.5f);
     int rt = (int)ceilf(x + w - 0.5f), b = (int)ceilf(y + h - 0.5f);
@@ -1583,18 +1754,28 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
     }
     if (shown < 1) {
         /* platshållare: mörkt kort med initial, andas svagt medan den laddas */
-        int loading = !library && !folder && (!slot || slot->state == SLOT_EMPTY || slot->state == SLOT_LOADING);
+        int loading = !library && !folder && !media && (!slot || slot->state == SLOT_EMPTY || slot->state == SLOT_LOADING);
         float breath = loading ? 0.5f + 0.5f * sinf(ui->time * 4.0f + list_index) : 0;
         float pa = alpha * (1 - shown);
-        u32 cc = theme_cur()->card; /* temats färg, andas medan bilden laddas */
+        u32 cc = LOOK_CARD; /* the card's own colour (look.h), breathes while the picture loads */
         if (library) { /* the same colour as a game without a picture; the picture is one image on the card's whole pixels */
             int tint = (int)lerpf(200, 255, focus); /* as dim as a picture is when it is not selected */
-            gfx_round_rect(l, t, rt - l, b - t, r, RGBA(cc & 0xFF, (cc >> 8) & 0xFF, (cc >> 16) & 0xFF, (int)(255 * pa)));
+            card_plate(l, t, rt - l, b - t, r, RGBA(cc & 0xFF, (cc >> 8) & 0xFF, (cc >> 16) & 0xFF, (int)(255 * pa)));
             gfx_library_icon(l, t, rt - l, b - t, RGBA(tint, tint, tint, (int)(255 * pa)));
+        } else if (media) { /* the Music card: the note of the reference on the card's colour */
+            int tint = (int)lerpf(200, 255, focus);
+            card_plate(grid ? l : x, grid ? t : y, grid ? rt - l : w, grid ? b - t : h, r, RGBA(cc & 0xFF, (cc >> 8) & 0xFF, (cc >> 16) & 0xFF, (int)(255 * pa)));
+            u32 tc = RGBA(tint, tint, tint, (int)(255 * pa));
+            if (list_index == HOME_MEDIA_VIDEO)
+                gfx_video_icon(l, t, rt - l, b - t, tc);
+            else if (list_index == HOME_MEDIA_IMAGES)
+                gfx_images_icon(l, t, rt - l, b - t, tc);
+            else
+                gfx_music_icon(l, t, rt - l, b - t, tc);
         } else if (folder) { /* a folder drawn by the launcher, the capital letter of the folder's name cut out of its body */
             int tint = (int)lerpf(200, 255, focus);
             u32 cc_a = RGBA(cc & 0xFF, (cc >> 8) & 0xFF, (cc >> 16) & 0xFF, (int)(255 * pa));
-            gfx_round_rect(l, t, rt - l, b - t, r, cc_a);
+            card_plate(l, t, rt - l, b - t, r, cc_a);
             FolderPic pic;
             gfx_folder_icon(l, t, rt - l, b - t, RGBA(tint, tint, tint, (int)(255 * pa)), &pic);
             int n = LIB_FOLDER_NO(list_index);
@@ -1606,8 +1787,8 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
                 text_draw(lx, ly, ls, 0, cc_a, ALIGN_CENTER, initial);
             }
         } else {
-            gfx_round_rect(x, y, w, h, r, RGBA((cc & 0xFF) + (int)(10 * breath), ((cc >> 8) & 0xFF) + (int)(10 * breath),
-                                               ((cc >> 16) & 0xFF) + (int)(12 * breath), (int)(235 * pa)));
+            card_plate(grid ? l : x, grid ? t : y, grid ? rt - l : w, grid ? b - t : h, r, RGBA((cc & 0xFF) + (int)(10 * breath), ((cc >> 8) & 0xFF) + (int)(10 * breath),
+                                                                                                  ((cc >> 16) & 0xFF) + (int)(12 * breath), (int)(235 * pa)));
             const char *t = ui->list->items[list_index].title;
             char initial[2] = { (t[0] >= 'a' && t[0] <= 'z') ? t[0] - 32 : t[0], 0 };
             if ((u8)initial[0] < 0x80 && initial[0])
@@ -1624,8 +1805,12 @@ static void draw_card(Ui *ui, int list_index, float x, float y, float w, float h
      * (1 px utanför, resten innanför) och har samma
      * hörnmitt som kortet, så bilden fyller ramen helt – ingen springa – och bildens kant och avskurna hörn
      * göms under ramen. Kanterna läggs på samma hela pixlar som kortet själv hamnar på. */
-    if (ring > 0.01f)
-        gfx_edge_ring(l - 1, t - 1, rt - l + 2, b - t + 2, r + 1, grid, RGBA(240, 240, 244, (int)(235 * ring * alpha)));
+    if (ring > 0.01f) {
+        if (grid) /* a rectangle: a straight frame, 2 px thick, one pixel outside the card and one inside it */
+            gfx_frame(l - 1, t - 1, rt - l + 2, b - t + 2, 2, RGBA(240, 240, 244, (int)(235 * ring * alpha)));
+        else
+            gfx_edge_ring(l - 1, t - 1, rt - l + 2, b - t + 2, r + 1, grid, RGBA(240, 240, 244, (int)(235 * ring * alpha)));
+    }
 }
 
 static void draw_row(Ui *ui)
@@ -1693,7 +1878,7 @@ static void button_bg(float x, float y, float w, float h, float t, float fade)
 #define PILL_PAD 12.0f
 #define CLOCK_D  12.0f /* the clock face: 12 px, so that it sits in the middle of the 26 px pill */
 #define CLOCK_GAP 6.0f
-#define PILL_SIZE 0.66f /* the text, as large as the text of Start */
+#define PILL_SIZE TITLE_SIZE /* the text, as large as the text of Start */
 
 /* the time played of the game `i` of the list as text; "" = nothing to show. The seconds are looked up once for the game that is selected
  * (the file is searched for it), the text is made every time so that it follows the language (Settings can change it while this is open). */
@@ -1734,36 +1919,38 @@ static void draw_details(Ui *ui)
 {
     int i = sel_card(ui);
     float fade = ui->intro * smooth(ui->tab_anim) * (ui->launch < 0 ? 1 : 1 - smooth(ui->launch * 2));
-    if ((i < 0 && i != HOME_LIBRARY) || fade <= 0)
+    if ((i < 0 && i != HOME_LIBRARY && !HOME_IS_MEDIA(i)) || fade <= 0)
         return;
 
     /* titeln bredvid kortet glider in när markeringen byts, med typetiketten (PSP, APP …) framför som på PS5 (the Library card has none) */
     float la = smooth(ui->label_anim);
     float tx = SMALL_X + (1 - la) * 8;
     const char *type = i >= 0 ? type_name(ui->list->items[i].type) : "";
-    if (type[0]) {
+    if (type[0]) { /* the tag and the title are as large as in the Library (the same sizes, the tag 15 high) */
         float bw = ceilf(text_width(0.5f, 1, type)) + 12; /* (whole pixels) */
-        float ty = floorf(LABEL_Y - 7.5f - ui->label_size * 6.8f + 0.5f); /* tagg och versaler har samma mitt, som i Biblioteket */
-        gfx_round_rect(tx, ty, bw, 15, 3, with_alpha(LIGHT, 0.92f * la * fade));
-        text_draw(tx + bw / 2, ty + 11, 0.5f, 1, with_alpha(DARK, la * fade), ALIGN_CENTER, type);
+        float ty = floorf(LABEL_Y - 12.5f + 0.5f); /* tagg och versaler har samma mitt, som i Biblioteket */
+        gfx_round_rect(tx, ty, bw, 15, 3, with_alpha(LIGHT, la * fade)); /* (opaque, like the face of the clock of the time played) */
+        text_draw(tx + bw / 2, ty + 11.5f, 0.5f, 1, with_alpha(DARK, la * fade), ALIGN_CENTER, type);
         tx += bw + 8;
     }
-    text_draw(tx, LABEL_Y, ui->label_size, 0, with_alpha(TEXT_MAIN, la * fade), ALIGN_LEFT, ui->label);
+    text_draw_marquee(tx, LABEL_Y, ui->label_size, 0, with_alpha(TEXT_MAIN, la * fade), ui->label_room, ui->label, ui->label_t);
 
     /* Start and Options under the card, on the bottom row. Both have a dark background; the one
      * that is selected (↓ from the card) turns white with dark text. Options is a circle as high as Start, with three dots. */
-    const char *go = L(i >= 0 ? S_LAUNCH : S_F_OPEN); /* the Library card is opened, not started */
+    const char *go = L(i >= 0 ? S_LAUNCH : S_F_OPEN); /* the Library and Music cards are opened, not started */
     float bx = MARGIN, bh = 26, by = BOTTOM_Y - bh / 2;
-    float w = ceilf(text_width(0.66f, 0, go)) + 32;
+    float w = ceilf(text_width(TITLE_SIZE, 0, go)) + 32;
     float t0 = smooth(ui->btn_anim[0]), t1 = smooth(ui->btn_anim[1]);
     button_bg(bx, by, w, bh, t0, fade);
-    text_draw(bx + w / 2, by + 17.5f, 0.66f, 0, with_alpha(mix_color(TEXT_MAIN, DARK, t0), fade), ALIGN_CENTER, go);
+    text_draw(bx + w / 2, by + 17.5f, TITLE_SIZE, 0, with_alpha(mix_color(TEXT_MAIN, DARK, t0), fade), ALIGN_CENTER, go);
 
-    float mx = bx + w + 10;
-    button_bg(mx, by, bh, bh, t1, fade);
-    u32 dots = with_alpha(mix_color(TEXT_MAIN, DARK, t1), fade);
-    for (int k = -1; k <= 1; k++)
-        gfx_circle(mx + bh / 2 + k * 6, by + bh / 2, 2, dots);
+    if (i >= 0) { /* (the Library and Music cards have no options: no button for them) */
+        float mx = bx + w + 10;
+        button_bg(mx, by, bh, bh, t1, fade);
+        u32 dots = with_alpha(mix_color(TEXT_MAIN, DARK, t1), fade);
+        for (int k = -1; k <= 1; k++)
+            gfx_circle(mx + bh / 2 + k * 6, by + bh / 2, 2, dots);
+    }
 
     draw_play_pill(play_text(ui, i), SCREEN_W - MARGIN, fade * la); /* the time played, on the right of the same row */
 }
@@ -1778,25 +1965,20 @@ static void draw_details(Ui *ui)
 static const char *menu_label(int item)
 {
     switch (item) {
-    case MI_SAVES:        return L(S_SAVES);
     case MI_INFO:         return L(S_INFO);
-    case MI_REMOVE:
-    case MI_REMOVE_YES:   return L(S_HOME_REMOVE);
-    case MI_ADD:          return L(S_HOME_ADD);
-    case MI_PIN:          return L(S_HOME_PIN);
-    case MI_UNPIN:        return L(S_HOME_UNPIN);
-    case MI_SORT_NAME:    return L(S_SORT_NAME);
-    case MI_SORT_RECENT:  return L(S_SORT_RECENT);
+    case MI_KEEP:         return L(S_HOME_KEEP);
+    case MI_SORT_NAME_AZ:    return L(S_SORT_NAME_AZ);
+    case MI_SORT_NAME_ZA:    return L(S_SORT_NAME_ZA);
+    case MI_SORT_ADDED_NEW:  return L(S_SORT_ADDED_NEW);
+    case MI_SORT_ADDED_OLD:  return L(S_SORT_ADDED_OLD);
+    case MI_SORT_SIZE_BIG:   return L(S_SORT_SIZE_BIG);
+    case MI_SORT_SIZE_SMALL: return L(S_SORT_SIZE_SMALL);
     case MI_VIEW_ALL:
     case MI_VIEW_FOLDERS:
     case MI_VIEW_LOOSE:
     case MI_VIEW_BOTH:    return view_label(item - MI_VIEW_ALL);
     case MI_CANCEL:       return L(S_F_CANCEL);
-    case MI_SLEEP:        return L(S_SLEEP);
-    case MI_SHUTDOWN:     return L(S_SHUTDOWN);
-    case MI_RESTART:      return L(S_RESTART);
-    case MI_RECOVERY:     return L(S_RECOVERY);
-    }
+    } /* (the names of the power popup are in power.c: power_popup_draw() draws it) */
     return L(S_F_DELETE); /* MI_DELETE, MI_DELETE_YES */
 }
 
@@ -1813,15 +1995,19 @@ static void draw_menu(Ui *ui)
             labels[k] = menu_label(ui->menu_item[k]);
             colors[k] = ui->menu_item[k] == MI_DELETE_YES ? POPUP_DANGER : POPUP_TEXT;
         }
-        popup_ask(ui->del_lines, ui->del_nlines, lang_needs_cjk() ? 15.0f : 13.0f, ui->ask_remove ? NULL : ui->del_size,
+        popup_ask(ui->del_lines, ui->del_nlines, lang_needs_cjk() ? 15.0f : 13.0f, ui->del_size,
                   labels, colors, ui->menu_n, ui->menu_sel, smooth(ui->ask_anim));
+        return;
+    }
+    if (ui->menu_kind == MENU_POWER) { /* the same popup as on the other screens (power.c) */
+        power_popup_draw(ui->menu_sel, a);
         return;
     }
     float w = 200, h = MENU_EDGE + ui->menu_n * MENU_ITEM_H + MENU_EDGE;
     float x, y;
-    if (ui->menu_kind == MENU_VIEW) { /* wide enough for the longest of the four views */
+    if (ui->menu_kind == MENU_VIEW || ui->menu_kind == MENU_SORT) { /* wide enough for the longest choice (the sort also has room for its check mark) */
         for (int k = 0; k < ui->menu_n; k++)
-            w = fmaxf(w, ceilf(text_width(0.62f, 0, menu_label(ui->menu_item[k]))) + 32);
+            w = fmaxf(w, ceilf(text_width(0.62f, 0, menu_label(ui->menu_item[k]))) + 32 + (ui->menu_kind == MENU_SORT ? 26 : 0));
         w = fminf(w, SCREEN_W - 2 * (MARGIN - 9)); /* (the widest it can be: the screen less 15 px each side) */
     }
     if (ui->menu_kind == MENU_SORT) { /* under the Sort button, whose right edge it shares */
@@ -1830,9 +2016,6 @@ static void draw_menu(Ui *ui)
     } else if (ui->menu_kind == MENU_VIEW) { /* under the view button, whose left edge it shares */
         x = MARGIN - 9 - (1 - a) * 10;
         y = 66;
-    } else if (ui->menu_kind == MENU_POWER) { /* in the middle of the screen, rising into place like the questions */
-        x = (SCREEN_W - w) / 2;
-        y = (SCREEN_H - h) / 2 + (1 - a) * 10;
     } else { /* till höger om det valda kortet */
         x = MARGIN + BIG_W + 8 - (1 - a) * 10;
         y = ROW_Y;
@@ -1848,7 +2031,20 @@ static void draw_menu(Ui *ui)
         } else {
             col = with_alpha(col, 0.8f);
         }
-        text_draw(x + 16, ry + 18, text_fit(0.62f, 0.45f, 0, w - 32, label), 0, with_alpha(col, a), ALIGN_LEFT, label);
+        float room = w - 32;
+        if (item == MI_KEEP) { /* a switch, as in Settings: 26 x 14, the knob 10 across */
+            float tx = x + w - 16 - 26, ty = ry + 7;
+            look_switch(tx, ty, ui->menu_kept, a);
+            room -= 34;
+        } else if (ui->menu_kind == MENU_SORT && k == ui->lib_sort) { /* a check mark for the way the Library is sorted now */
+            float cx = x + w - 16 - 6, cy = ry + MENU_ITEM_H / 2;
+            float xy[6] = { cx - 5, cy, cx - 1.5f, cy + 3.5f, cx + 5, cy - 4 };
+            u32 cc = with_alpha(LIGHT, a);
+            u32 col3[3] = { cc, cc, cc };
+            gfx_stroke(xy, col3, 3, 1.8f);
+            room -= 22;
+        }
+        text_draw(x + 16, ry + 18, text_fit(0.62f, 0.45f, 0, room, label), 0, with_alpha(col, a), ALIGN_LEFT, label);
     }
 }
 
@@ -1879,7 +2075,7 @@ static void draw_library(Ui *ui)
     char num[16];
     snprintf(num, sizeof(num), "%d", v->count);
     if (hd.show_count)
-        text_draw(hd.count_x, head_y, 0.6f, 0, with_alpha(TEXT_DIM, ui_a), ALIGN_LEFT, num); /* (on the baseline of the text before it, not of the Sort button: the label is larger and sits lower) */
+        text_draw(hd.count_x, head_y, SORT_SIZE, 0, with_alpha(TEXT_MAIN, ui_a), ALIGN_LEFT, num);
 
     /* the Sort button: selected with ↑ from a card under it, it gets the frame of a chosen entry; ✕ opens the popup. Its frame
      * is gone for as long as the top bar has the focus (sort_frame), so moving along the top bar never brings it back. */
@@ -1889,7 +2085,7 @@ static void draw_library(Ui *ui)
         popup_frame_around(sort_mid, 22, &fy, &fh);
         popup_choice(hd.sort_l, fy, hd.sort_r - hd.sort_l, fh, sort_shown * ui_a);
     }
-    text_draw(SCREEN_W - MARGIN, 53, SORT_SIZE, 0, with_alpha(sort_shown > 0.5f ? TEXT_MAIN : TEXT_DIM, ui_a), ALIGN_RIGHT, hd.sort);
+    text_draw(SCREEN_W - MARGIN, 53, SORT_SIZE, 0, with_alpha(TEXT_MAIN, ui_a), ALIGN_RIGHT, hd.sort); /* (white, like the view text at the left) */
 
     if (!v->count) { /* the view has nothing in it (no folders, or nothing outside them): the button above changes the view */
         text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, ui_a), ALIGN_LEFT, L(ui->lib_view == LIB_VIEW_FOLDERS ? S_LIB_NO_IN : S_LIB_NO_OUT));
@@ -1898,7 +2094,7 @@ static void draw_library(Ui *ui)
 
     /* korten – klipps under rubriken */
     int sel = ui->sel[TAB_LIBRARY];
-    float focus_anim = smooth(ui->label_anim), card_focus = focus_anim; /* (the selected card stays large when the focus is elsewhere) */
+    float focus_anim = smooth(ui->label_anim);
     int first_row = (int)floorf(ui->grid_scroll) - 1, last_row = (int)ceilf(ui->grid_scroll) + GRID_ROWS + 1;
     gfx_clip(0, GRID_Y - 8, SCREEN_W, GRID_BOTTOM - (GRID_Y - 8));
     float sx = 0, sy = 0, sw = 0, shh = 0;
@@ -1919,7 +2115,7 @@ static void draw_library(Ui *ui)
         draw_card(ui, v->idx[p], x, y, CELL_W, CELL_H, 0, 0, a * (1 - launch) * fade, 1);
     }
     if (sw > 0) {
-        float w = sw + SELECT_GROW_W * card_focus, h = shh + SELECT_GROW_H * card_focus; /* (6 x 4 px more at rest: the edges stay on whole pixels) */
+        float w = sw, h = shh; /* the selected card is not bigger than the others: it has the white frame */
         float cx = sx + sw / 2, cy = sy + shh / 2;
         if (launch > 0) { /* startanimation: kortet växer mot mitten */
             gfx_clip_reset();
@@ -1948,45 +2144,20 @@ static void draw_library(Ui *ui)
     }
     if (type) {
         float bw = ceilf(text_width(0.5f, 1, type)) + 12;
-        gfx_round_rect(MARGIN, BOTTOM_Y - 8, bw, 15, 3, with_alpha(LIGHT, 0.92f * ui_a));
+        gfx_round_rect(MARGIN, BOTTOM_Y - 8, bw, 15, 3, with_alpha(LIGHT, ui_a));
         text_draw(MARGIN + bw / 2, BOTTOM_Y + 3.5f, 0.5f, 1, with_alpha(DARK, ui_a), ALIGN_CENTER, type);
         float tx = MARGIN + bw + 8;
         const char *played = play_text(ui, i); /* the pill with the time played is on the right of the row: the title stops before it */
         float max_w = SCREEN_W - MARGIN - tx - (played[0] ? play_pill_width(played) + 12 : 0);
         if (ui->lib_label_for != card || ui->lib_label_room != max_w) {
-            text_ellipsis(ui->lib_label, sizeof(ui->lib_label), title, 0.66f, max_w);
+            snprintf(ui->lib_label, sizeof(ui->lib_label), "%s", title); /* (a title that is too long scrolls: nothing is shortened) */
+            if (ui->lib_label_for != card)
+                ui->lib_label_t = 0;
             ui->lib_label_for = card;
             ui->lib_label_room = max_w;
         }
         draw_play_pill(played, SCREEN_W - MARGIN, ui_a * focus_anim);
-        text_draw(tx + (1 - focus_anim) * 6, BOTTOM_Y + 4.5f, 0.66f, 0, with_alpha(TEXT_MAIN, ui_a * focus_anim),
-                  ALIGN_LEFT, ui->lib_label);
-    }
-}
-
-/* Musikfliken: låtlista till vänster, "spelas nu" med förlopp till höger */
-typedef struct { int idx; char title[100]; char sub[72]; } RowCache;
-
-static void draw_play_glyph(float cx, float cy, float r, int paused, u32 color)
-{
-    if (paused) {
-        /* two bars of exactly the same whole-pixel width, whatever r and the position are */
-        float bw = fmaxf(1, floorf(r * 0.38f + 0.5f)), bh = floorf(r * 1.2f + 0.5f);
-        float gap = fmaxf(1, floorf(r * 0.34f + 0.5f)), top = floorf(cy - bh / 2 + 0.5f);
-        float left = floorf(cx - (bw * 2 + gap) / 2 + 0.5f);
-        gfx_rect(left, top, bw, bh, color);
-        gfx_rect(left + bw + gap, top, bw, bh, color);
-    } else {
-        gfx_triangle(cx - r * 0.42f, cy - r * 0.62f, r * 1.1f, r * 1.24f, 1, color);
-    }
-}
-
-/* Spolning: två trianglar åt hållet man spolar (▶▶ eller ◀◀) */
-static void draw_seek_glyph(float cx, float cy, float r, int dir, u32 color)
-{
-    for (int k = 0; k < 2; k++) {
-        float tip = cx + dir * (k ? r : 0), back = tip - dir * r;
-        gfx_triangle(fminf(back, tip), cy - r * 0.7f, r, r * 1.4f, dir, color);
+        text_draw_marquee(tx + (1 - focus_anim) * 6, BOTTOM_Y + 4.5f, TITLE_SIZE, 0, with_alpha(TEXT_MAIN, ui_a * focus_anim), max_w, ui->lib_label, ui->lib_label_t);
     }
 }
 
@@ -2005,118 +2176,7 @@ static void draw_music(Ui *ui)
 {
     float a = ui->intro * smooth(ui->tab_anim);
     float slide = (1 - smooth(ui->tab_anim)) * 10;
-    int n = music_count(), cur = music_current(), state = music_state();
-    /* (bakgrunden mörkas av draw_dim, före topplisten) */
-
-    /* --- spelas nu --- */
-    float px = PANEL_X, pw = SCREEN_W - MARGIN - PANEL_X, py = MLIST_Y + slide, ph = MROWS * MROW_H - 2;
-    gfx_round_rect(px, py, pw, ph, 10, RGBA(255, 255, 255, (int)(16 * a)));
-    text_draw(px + 12, py + 17, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, L(S_NOW_PLAYING));
-    const Track *t = cur >= 0 ? music_track(cur) : NULL;
-    /* omslaget, eller en ruta med färgton från låtens nummer och en egenritad not */
-    float as = 64, ax = px + (pw - as) / 2, ay = py + 28;
-    unsigned h = (cur >= 0 ? cur : 7) * 2654435761u;
-    int r0 = 60 + (h >> 8) % 120, g0 = 60 + (h >> 16) % 110, b0 = 90 + (h >> 24) % 140;
-    gfx_glow(ax, ay + 3, as, as, 8, RGBA(0, 0, 0, (int)(120 * a)));
-    gfx_round_rect(ax, ay, as, as, 8, RGBA(r0, g0, b0, (int)((t ? 255 : 90) * a)));
-    gfx_gradient_v(ax + 4, ay + as * 0.5f, as - 8, as * 0.5f - 4, RGBA(0, 0, 0, 0), RGBA(0, 0, 0, (int)(60 * a)));
-    gfx_note(ax + as / 2, ay + as / 2, 30, RGBA(255, 255, 255, (int)((t ? 230 : 120) * a)));
-    if (ui->cover && ui->cover_for == cur && cur >= 0) {
-        float ca = smooth(ui->cover_fade);
-        gfx_tex(ui->cover, ax, ay, as, as, RGBA(255, 255, 255, (int)(255 * a * ca)));
-    }
-
-    static char ptitle[100], partist[72];
-    static int pfor = -2, pgen = -1;
-    static const char *plang;
-    if (pfor != cur || pgen != music_generation() || plang != L(S_UNKNOWN_ARTIST)) {
-        pgen = music_generation();
-        plang = L(S_UNKNOWN_ARTIST);
-        text_ellipsis(ptitle, sizeof(ptitle), t ? t->title : L(S_NOTHING_PLAYING), 0.6f, pw - 20);
-        text_ellipsis(partist, sizeof(partist), t ? (t->artist[0] ? t->artist : L(S_UNKNOWN_ARTIST)) : "", 0.5f, pw - 20);
-        pfor = cur;
-    }
-    text_draw(px + pw / 2, ay + as + 20, 0.6f, 0, with_alpha(TEXT_MAIN, a), ALIGN_CENTER, ptitle);
-    text_draw(px + pw / 2, ay + as + 35, 0.5f, 0, with_alpha(TEXT_DIM, a), ALIGN_CENTER, partist);
-    if (t) {
-        int seek = ui->seeking || ui->seek_show > 0;
-        float el = seek ? ui->seek_pos : music_elapsed(), du = music_duration();
-        float bw = pw - 28, bxx = px + 14, by = py + ph - 30;
-        gfx_round_rect(bxx, by, bw, 3, 1.5f, RGBA(255, 255, 255, (int)(50 * a)));
-        if (du > 0)
-            gfx_round_rect(bxx, by, fmaxf(3, bw * clampf(el / du, 0, 1)), 3, 1.5f, with_alpha(theme_cur()->accent, a));
-        if (du > 0 && ui->seeking) /* spolning: en knopp på målet */
-            gfx_circle(bxx + bw * clampf(el / du, 0, 1), by + 1.5f, 4.5f, with_alpha(LIGHT, a));
-        char e[12], d[12];
-        format_time(e, sizeof(e), el);
-        format_time(d, sizeof(d), du);
-        text_draw(bxx, by + 15, 0.45f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, e);
-        if (du > 0)
-            text_draw(bxx + bw, by + 15, 0.45f, 0, with_alpha(TEXT_DIM, a), ALIGN_RIGHT, d);
-        gfx_circle(px + pw / 2, by + 11, 8, with_alpha(LIGHT, 0.95f * a));
-        if (ui->seeking)
-            draw_seek_glyph(px + pw / 2, by + 11, 5.5f, ui->seek_dir, with_alpha(DARK, a));
-        else
-            draw_play_glyph(px + pw / 2, by + 11, 6, state == MUSIC_PLAYING, with_alpha(DARK, a));
-    }
-
-    if (!n && music_scanning()) {
-        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_LOADING_MUSIC));
-        for (int i = 0; i < 3; i++) { /* tre punkter som pulserar i tur och ordning */
-            float p = 0.5f + 0.5f * sinf(ui->time * 6.0f - i * 0.9f);
-            gfx_circle(MARGIN + 4 + i * 12, 140, 2 + p, COLOR_ALPHA(theme_cur()->accent, (int)((90 + 165 * p) * a)));
-        }
-        return;
-    }
-    if (!n) {
-        text_draw(MARGIN, 120, 0.9f, 0, with_alpha(TEXT_MAIN, a), ALIGN_LEFT, L(S_NO_MUSIC));
-        text_draw(MARGIN, 142, 0.62f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, on_root(L(S_HINT_MUSIC)));
-        return;
-    }
-
-    /* --- låtlistan --- */
-    static RowCache cache[MROWS + 3];
-    static int cache_gen = -1;
-    static const char *cache_lang;
-    if (cache_gen != music_generation() || cache_lang != L(S_UNKNOWN_ARTIST)) { /* ny lista eller nytt språk */
-        for (int i = 0; i < MROWS + 3; i++)
-            cache[i].idx = -1;
-        cache_gen = music_generation();
-        cache_lang = L(S_UNKNOWN_ARTIST);
-    }
-    float lw = PANEL_X - 14 - MARGIN;
-    gfx_clip(0, MLIST_Y - 2, PANEL_X - 6, MROWS * MROW_H + 2);
-    int first = (int)floorf(ui->music_scroll), last = first + MROWS;
-    for (int i = first; i <= last && i < n; i++) {
-        if (i < 0)
-            continue;
-        float y = MLIST_Y + (i - ui->music_scroll) * MROW_H + slide;
-        RowCache *c = &cache[i % (MROWS + 3)];
-        const Track *tr = music_track(i);
-        if (!tr)
-            continue;
-        if (c->idx != i) {
-            text_ellipsis(c->title, sizeof(c->title), tr->title, 0.6f, lw - 30);
-            text_ellipsis(c->sub, sizeof(c->sub), tr->artist[0] ? tr->artist : L(S_UNKNOWN_ARTIST), 0.46f, lw - 30);
-            c->idx = i;
-        }
-        int selected = i == ui->music_sel;
-        if (selected)
-            gfx_round_rect(MARGIN - 6, y, lw + 12, MROW_H - 2, 7, with_alpha(LIGHT, 0.93f * a));
-        u32 main = selected ? with_alpha(DARK, a) : with_alpha(TEXT_MAIN, a);
-        u32 dim = selected ? RGBA(70, 72, 80, (int)(255 * a)) : with_alpha(TEXT_DIM, a);
-        if (i == cur && state != MUSIC_STOPPED) {
-            /* små staplar som rör sig medan låten spelas */
-            for (int k = 0; k < 3; k++) {
-                float hgt = state == MUSIC_PLAYING ? 3 + 7 * (0.5f + 0.5f * sinf(ui->time * (7 + k * 2.3f) + k)) : 3;
-                hgt = floorf(hgt + 0.5f);
-                gfx_rect(MARGIN + 2 + k * 4, y + 18 - hgt, 2, hgt, main);
-            }
-        }
-        text_draw(MARGIN + 20, y + 11.5f, 0.6f, 0, main, ALIGN_LEFT, c->title);
-        text_draw(MARGIN + 20, y + 22, 0.46f, 0, dim, ALIGN_LEFT, c->sub);
-    }
-    gfx_clip_reset();
+    musicui_draw(screen_mu(ui), a, slide);
 }
 
 static void draw_toast(Ui *ui)
@@ -2136,18 +2196,36 @@ static void draw_empty(Ui *ui)
     text_draw(MARGIN, 160, 0.62f, 0, with_alpha(TEXT_DIM, a), ALIGN_LEFT, on_root(L(S_HINT_APPS)));
 }
 
-/* The Library and Music have the Games background (the selected game's picture, or the theme's surface) under a darkening,
- * the same in both. It lies over the background but under the top bar, so that the tabs, the clock, the battery and the cog
- * wheel are drawn bright in front of it. */
-#define DIM_COLOR RGBA(8, 8, 12, 150)
-static void draw_dim(Ui *ui)
+int ui_video_open(const Ui *ui)
 {
-    if (ui->tab == TAB_MUSIC || (ui->tab == TAB_LIBRARY && ui->list->count)) /* (an empty Library is shown as an empty tab) */
-        gfx_rect(0, 0, SCREEN_W, SCREEN_H, DIM_COLOR);
+    return ui->vp != NULL;
+}
+
+void ui_sleep(Ui *ui, int asleep)
+{
+    if (ui->vp)
+        videoplay_sleep(ui->vp, asleep);
+}
+
+void ui_woke(Ui *ui)
+{
+    if (ui->vp)
+        videoplay_woke(ui->vp);
 }
 
 void ui_draw(Ui *ui)
 {
+    if (ui->iv || ui->vp) { /* a picture or a video: nothing else on the screen but the volume bar and the sound button's popup */
+        gfx_begin(RGBA(0, 0, 0, 255));
+        if (ui->iv)
+            imageview_draw(ui->iv);
+        else
+            videoplay_draw(ui->vp);
+        draw_menu(ui); /* (the power popup, SELECT) */
+        osd_draw();
+        gfx_end();
+        return;
+    }
     gfx_begin(CLEAR_COLOR);
     draw_background(ui);
     draw_dim(ui);
@@ -2159,14 +2237,13 @@ void ui_draw(Ui *ui)
     } else if (view(ui)->count) {
         draw_row(ui);
         draw_details(ui);
-        if (!ui->list->count)
+        if (ui->tab == TAB_GAMES && !ui->list->count)
             draw_empty(ui); /* first start with nothing to play: only the Library card is there, the hint says where games go */
     } else {
         draw_empty(ui);
     }
     draw_toast(ui); /* under the popup: a toast from the last action must not cover the choices or the question */
-    if (ui->tab == TAB_GAMES || ui->tab == TAB_LIBRARY)
-        draw_menu(ui);
+    draw_menu(ui); /* on every screen: the options popups of Games and the Library, and the power popup (SELECT) of all of them */
     gameops_draw(); /* förloppet när ett spel raderas (annars ingenting) */
     osd_draw();
 
@@ -2188,7 +2265,7 @@ void ui_draw_scanning(int done, const char *name, float time)
     /* tre punkter som pulserar i tur och ordning */
     for (int i = 0; i < 3; i++) {
         float p = 0.5f + 0.5f * sinf(time * 6.0f - i * 0.9f);
-        gfx_circle(MARGIN + 4 + i * 12, 140, 2 + p, COLOR_ALPHA(theme_cur()->accent, (int)(90 + 165 * p)));
+        gfx_circle(MARGIN + 4 + i * 12, 140, 2 + p, COLOR_ALPHA(TEXT_MAIN, (int)(90 + 165 * p)));
     }
     char line[96];
     snprintf(line, sizeof(line), "%d  ·  %.60s", done, name);
