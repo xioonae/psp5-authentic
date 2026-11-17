@@ -48,6 +48,8 @@ static int s_model = -1; /* kuKernelGetModel(), -1 = okänd */
 static int s_has_ark;
 static int s_is_launcher;
 static int s_usb_on;
+static u32 s_cable_since;   /* µs on the system clock when the cable was first seen without the computer connecting, 0 = not now */
+static int s_usb_retried;   /* USB was switched off and on once because the computer did not connect */
 static char s_ark_dir[ARK_PATH_SIZE];
 static int s_ms_is_ef; /* ARK låter ms0: peka på PSP Go:s internminne */
 
@@ -585,6 +587,9 @@ void sys_recovery(void)
     }
 }
 
+/* Started like arkMenu does it, and, inspired by what the original psp5 (Mille Weber, github.com/08Weber/psp5) learned in its versions 2.1.1 and 2.1.2 (a PSP Go that did not show up on the computer while the XMB's own USB connection did): what the system
+ * still has in its caches is put on the storage first, an activation that is still on is switched off first, and a cable that is seen for 5 s without the computer connecting makes USB switch off and on
+ * once (sys_usb_state). Nothing is written to the card here or in sys_usb_state: while the computer has the card a write from the PSP can ruin the FAT. */
 int sys_usb_start(void)
 {
     static const char *mods[] = {
@@ -594,6 +599,8 @@ int sys_usb_start(void)
     static int loaded;
     if (s_usb_on || !s_has_ark)
         return s_usb_on;
+    s_cable_since = 0;
+    s_usb_retried = 0;
     if (!loaded) {
         for (unsigned i = 0; i < sizeof(mods) / sizeof(mods[0]); i++) {
             SceUID mid = kuKernelLoadModule(mods[i], 0, NULL);
@@ -602,6 +609,13 @@ int sys_usb_start(void)
         }
         loaded = 1;
     }
+    /* what the system keeps in its caches goes on the storage before the computer takes it over */
+    if (!s_ms_is_ef)
+        sceIoSync("ms0:", 0);
+    if (s_model == 4)
+        sceIoSync("ef0:", 0);
+    if (sceUsbGetState() & PSP_USB_ACTIVATED) /* an earlier USB Mode, or something else, has it on: start again from the beginning */
+        sceUsbDeactivate(0x1c8);
     sceUsbStart(PSP_USBBUS_DRIVERNAME, 0, 0);
     sceUsbStart(PSP_USBSTOR_DRIVERNAME, 0, 0);
     sceUsbStart(USBSTOR_EF_DRIVERNAME, 0, 0);
@@ -626,5 +640,20 @@ int sys_usb_state(void)
 {
     if (!s_usb_on)
         return 0;
-    return (sceUsbGetState() & PSP_USB_CONNECTION_ESTABLISHED) ? 2 : 1;
+    int st = sceUsbGetState();
+    /* The cable is seen but the computer never connects: switch off and on once, which is the same as connecting in the XMB and coming back (that made USB work on a PSP Go) */
+    if ((st & PSP_USB_CABLE_CONNECTED) && !(st & PSP_USB_CONNECTION_ESTABLISHED)) {
+        u32 now = sceKernelGetSystemTimeLow(); /* µs; it wraps after 71 minutes, the difference is right all the same */
+        if (!s_cable_since)
+            s_cable_since = now ? now : 1;
+        else if (!s_usb_retried && now - s_cable_since > 5000000u) {
+            s_usb_retried = 1;
+            sceUsbDeactivate(0x1c8);
+            sceKernelDelayThread(50000);
+            sceUsbActivate(0x1c8);
+        }
+    } else {
+        s_cable_since = 0;
+    }
+    return (st & PSP_USB_CONNECTION_ESTABLISHED) ? 2 : 1;
 }
