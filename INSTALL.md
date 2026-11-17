@@ -2,17 +2,17 @@
 
 *psp5 authentic 1.3.0 – a fork of psp5 (v1.5.3), originally made by Mille Weber ([08Weber/psp5](https://github.com/08Weber/psp5)), forked by Xioonae*
 
-**You need:** a PSP with **ARK-4 or ARK-5** (PSP-1000, 2000, 3000 or PSP Go), or a **PS Vita** (1000 or 2000) with **ARK-5**, and a **USB cable**
+**You need:** a PSP with **ARK-4 or ARK-5** (PSP-1000, 2000, 3000, E-1000 or PSP Go), or a **PS Vita** (1000 or 2000) with **ARK-5**, and a **USB cable**
 (on a Vita, whatever you already use to copy files to it with VitaShell).
 
 psp5 authentic is made with Claude, an AI assistant. If something doesn't work on your device, please
-[open an issue](../../issues) and tell us what you saw, which device you have (PSP-1000, 2000, 3000, PSP Go or PS Vita) and which ARK version.
+[open an issue](../../issues) and tell us what you saw, which device you have (PSP-1000, 2000, 3000, E-1000, PSP Go or PS Vita) and which ARK version.
 
 ## 1. Pick your zip
 
 Not sure which ARK you have? In the XMB, press **SELECT**. ARK's menu shows *ARK 4.x* or *ARK 5.x*.
 
-There are two zips, one for each ARK version. Each one is for every device: it is the same program on a PSP-1000, 2000, 3000, a PSP Go and a PS Vita,
+There are two zips, one for each ARK version. Each one is for every device: it is the same program on a PSP-1000, 2000, 3000, E-1000, a PSP Go and a PS Vita,
 and it finds the PSP Go's internal storage by itself.
 
 | Your ARK | Download this |
@@ -25,12 +25,9 @@ You'll find them under [Releases](../../releases). Unzip the one you downloaded.
 The **PS Vita** needs the standalone install of ARK-5 ([FasterARK](https://github.com/PSP-Arkfive/FasterARK), the file `FasterARK_psvita.vpk`) first.
 ARK-4 on the Vita should work the same way, but nobody has confirmed it yet: if you try it, please open an issue and tell us how it went.
 
-psp5 authentic uses the same folders as psp5 (`PSP/GAME/PSP5` for the program and its sounds, and `PSP5` for its settings, which it makes by itself), so it
-replaces an installed psp5 and keeps its settings and covers (the image cache is rebuilt once).
-
 ## 2. Copy it to your device
 
-**PSP-1000, 2000, 3000 and PSP Go**
+**PSP-1000, 2000, 3000, E-1000 and PSP Go**
 
 1. On the PSP, open *Settings → USB Connection* and plug in the cable. The PSP shows up as a drive on your
    computer (for example `E:`). On a PSP Go it is the internal storage.
@@ -44,12 +41,9 @@ replaces an installed psp5 and keeps its settings and covers (the image cache is
    `ux0:pspemu/PSP/GAME/PSP5/EBOOT.PBP`.
 2. Do the *Optional* part below with the folder `ux0:pspemu/PSP/SAVEDATA/ARK_01234`: on the Vita, psp5 authentic starts as ARK's launcher.
 
-**Updating from an older version:** do the same. The new files replace the old ones and your settings and covers stay. Older versions kept the sounds in
-`PSP5/sounds`; they are next to `EBOOT.PBP` now. You can delete the old `PSP5/sounds` folder, but keep the `PSP5` folder itself (it holds your settings).
-
 ## 3. Start psp5 authentic
 
-- **PSP-1000, 2000 or 3000:** *Game → Memory Stick → psp5 authentic*
+- **PSP-1000, 2000, 3000 or E-1000:** *Game → Memory Stick → psp5 authentic*
 - **PSP Go:** *Game → System Storage → psp5 authentic*
 - **PS Vita:** start ARK; psp5 authentic opens as its launcher (see the next part).
 
@@ -65,6 +59,21 @@ Then *Custom Launcher* in the XMB opens psp5 authentic, and your PSP can start s
 4. In psp5 authentic, open the settings (↑ to the top bar, → to the cog wheel, then Confirm) → *psp5 authentic* → turn on *Boot into psp5 authentic*, then restart the PSP.
 
 To get to the XMB from there: press SELECT (the power menu, on every screen) and choose *Exit to XMB*.
+
+## Updating
+
+**A new version of psp5 authentic:** do steps 1 and 2 again with the new zip. The new files replace the old ones, and your settings and covers stay.
+If you made psp5 authentic ARK's launcher (the *Optional* part above), copy `VBOOT.PBP` from the new zip's `ARK_LAUNCHER` folder into `ARK_01234` again too,
+so that the launcher is the new version as well.
+Older versions kept the sounds in `PSP5/sounds`; they are next to `EBOOT.PBP` now. You can delete the old `PSP5/sounds` folder, but keep the `PSP5` folder itself (it holds your settings).
+
+**Coming from psp5 (the original):** psp5 authentic uses the same folders (`PSP/GAME/PSP5` for the program and its sounds, and `PSP5` for its settings, which it makes by itself),
+so installing it replaces an installed psp5 and keeps its settings and covers (the image cache is rebuilt once).
+
+**When you update ARK:** the update of ARK **overwrites the ARK launcher**, so psp5 authentic is not ARK's launcher any more afterwards (*Custom Launcher*
+opens ARK's own menu again, and on a PS Vita ARK opens its own menu instead of psp5 authentic). **Install psp5 authentic as ARK's launcher again**: do the
+*Optional* part above once more. (Say yes if your computer asks to replace the old `VBOOT_ARKMENU.PBP`: ARK's new menu is the one to keep as the backup.)
+If the update takes you from ARK-4 to ARK-5, or the other way, take the zip for the ARK you have now.
 
 ## Time played
 
@@ -169,6 +178,7 @@ When you paste somewhere a file or a folder of that name is already, the File Ma
 ## FTP Server
 
 *Settings → Network → FTP Server* copies files to and from the PSP over Wi-Fi, for example your games to the `ISO` folder.
+The **PSP E-1000 has no Wi-Fi**, so it can't use the FTP Server: copy files with *Settings → Storage → USB Mode* instead.
 
 1. Turn on the Wi-Fi switch of the PSP, and make sure it has a saved Wi-Fi connection (in the XMB: *Settings → Network Settings → Infrastructure Mode*).
 2. Open *FTP Server*. The PSP's own Wi-Fi window opens (the same as in *Settings → Network → Wi-Fi connection*): choose your connection there. Then wait for the address, for example `192.168.1.23`. If you close the window without choosing, the screen says that the FTP server is not running: press ✕ to open the window again.
@@ -212,11 +222,6 @@ Good to know:
 - For games where you gave no picture, the tool makes covers from the game's own icon and background, so every game gets a file. That is the same
   picture psp5 authentic would have used.
 - To go back to a game's own picture, delete its `.ico` (card) and `.bg` (background) files in `PSP5/covers`.
-
-## Updating
-
-Do steps 1 and 2 again with the new zip. Your settings and covers stay.
-If you replaced ARK's Custom Launcher with psp5 authentic (see above), copy `ARK_LAUNCHER/VBOOT.PBP` again too.
 
 ## Help!
 

@@ -3,6 +3,13 @@
 All notable changes of **psp5 authentic**, a fork of [psp5](https://github.com/08Weber/psp5), originally made by Mille Weber (08Weber) and forked by Xioonae.
 Newest first. Changes that are not in a release yet are under *Unreleased*.
 
+## Unreleased
+
+- **The PSP E-1000 is on the list of devices** (README, INSTALL.md and the `READ ME.txt` of the zips). It is a PSP-3000 without Wi-Fi, so the same zips are for it, and the program already knew its model (*Console Information* names it).
+  It has no Wi-Fi, so the docs say to copy files with *USB Mode* instead of the FTP Server. Nobody has reported on an E-1000 yet: if something doesn't work there, please open an issue.
+- **INSTALL.md is in a better order:** installing comes first (the zip, copying it, starting it, and the optional launcher), and *Updating* is a part of its own right after it, instead of being half-mentioned among the install steps and again at the very end.
+  It also says now that **updating ARK overwrites the ARK launcher**, so psp5 authentic has to be installed as ARK's launcher again afterwards. The `READ ME.txt` of the zips says the same.
+
 ## 1.3.0 – Media tab with music, videos and pictures, FTP Server and a File Manager that opens files
 
 ### Media: Music, Videos and Images

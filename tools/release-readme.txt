@@ -24,7 +24,7 @@ This zip is for devices that run @ARK@.
     PSP that has no custom firmware.
 
 Works on:
-  * PSP-1000, PSP-2000 and PSP-3000 (ARK-4 or ARK-5)
+  * PSP-1000, PSP-2000, PSP-3000 and PSP E-1000 (ARK-4 or ARK-5)
   * PSP Go (ARK-4 or ARK-5)
   * PS Vita 1000 and 2000 (ARK-5, the standalone install)
 
@@ -55,7 +55,7 @@ and this file. Keep it open on your computer. You need it in a moment.
  3. COPY IT TO YOUR DEVICE   (read only the part for YOUR device)
 ---------------------------------------------------------------------
 
--- PSP-1000, PSP-2000, PSP-3000 -------------------------------------
+-- PSP-1000, PSP-2000, PSP-3000, PSP E-1000 -------------------------
 
  1. On the PSP, open the XMB. Go to Settings, then "USB Connection"
     and press the X button.
@@ -163,15 +163,26 @@ of the storage. It makes this folder itself. Leave it there.
 
 
 ---------------------------------------------------------------------
- 6. UPDATING FROM AN OLDER VERSION
+ 6. UPDATING
 ---------------------------------------------------------------------
 
-Do step 3 again. The new files replace the old ones, and your
-settings and covers stay.
+A NEW VERSION OF psp5 authentic: do step 3 again. The new files
+replace the old ones, and your settings and covers stay. If you did
+step 4, copy VBOOT.PBP from this zip's folder ARK_LAUNCHER into
+ARK_01234 again too, so the launcher is the new version as well.
 
 Older versions kept their sounds in PSP5/sounds. The sounds now lie
 next to EBOOT.PBP instead. You can delete the old folder PSP5/sounds
 if you like. Do not delete the PSP5 folder itself.
+
+WHEN YOU UPDATE ARK: the update of ARK overwrites the ARK launcher.
+Afterwards psp5 authentic is not ARK's launcher any more ("Custom
+Launcher" opens ARK's own menu, and on the Vita ARK opens its own
+menu instead of psp5 authentic). Do step 4 again to install psp5
+authentic as ARK's launcher. (If the computer asks to replace the old
+VBOOT_ARKMENU.PBP, say yes: ARK's new menu is the one to keep as the
+backup.) If the update takes you from ARK-4 to ARK-5, or the other
+way, use the zip for the ARK you have now.
 
 
 ---------------------------------------------------------------------
@@ -192,7 +203,8 @@ if you like. Do not delete the PSP5 folder itself.
 Still not working? Please open an issue in the project's repository
 and tell us:
   1. what you saw,
-  2. which device you have (PSP-1000, 2000, 3000, PSP Go or PS Vita),
+  2. which device you have (PSP-1000, 2000, 3000, E-1000, PSP Go or
+     PS Vita),
   3. which ARK version you use (4 or 5).
 
 Full guide: INSTALL.md in the project's repository.

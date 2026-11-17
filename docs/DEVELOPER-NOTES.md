@@ -20,6 +20,15 @@ into psp5 instead of the XMB.
 - **Back to arkMenu:** copy `ARK_01234/VBOOT_ARKMENU.PBP` to `VBOOT.PBP` (a copy is also in `backup/`).
 - An ARK update can overwrite `VBOOT.PBP` – then copy `dist/PSP/GAME/PSP5/EBOOT.PBP` in as `VBOOT.PBP` again.
 
+## Unreleased (changes after 1.3.0)
+
+- **The PSP E-1000 is named in the docs; no code changed** (`README.md` *Supported devices*, `INSTALL.md`, `tools/release-readme.txt`, the docstring of `tools/make_release.py`; the user's list is under *Unreleased* in `CHANGELOG.md`). `settings.c` `model_name()` already maps
+  `kuKernelGetModel()` 10 to `"PSP E1000"` (2, 3, 5, 6, 7 and 8 are `"PSP-3000"`), so *Console Information* names it; the docs write *E-1000*. The E-1000 has no WLAN: the FTP screen and the Network page ask `netlink_switch_on()` (`sceWlanGetSwitchState() > 0`),
+  and what that returns on an E-1000 is **not known** (nothing was tried on one), so the FTP screen may say that the Wi-Fi switch is off. A hint for that model ("this PSP has no Wi-Fi") would be a code change (a text in 11 languages and tests); it is not done, the docs say to use *USB Mode*.
+- **`INSTALL.md` and the `READ ME.txt` of the zips: installing and updating are apart** (`INSTALL.md`, `tools/release-readme.txt`). The updating text that sat inside the install steps (step 1 and step 2) and the short *Updating* part at the very end are one *Updating* part now, right after
+  the optional launcher part: a new psp5 authentic version, coming from the original psp5, and **updating ARK** (it overwrites the ARK launcher, `ARK_01234/VBOOT.PBP`, so the optional part is done again; a change between ARK-4 and ARK-5 needs the other zip). The READ ME part is called *Updating* and says the same.
+  The private group `release` reads these files (the READ ME: the PSP part has `PSP-1000, PSP-2000, PSP-3000`, at most 72 characters a line, ASCII, no "tested").
+
 ## Version 1.3.0 (changes after 1.2.0)
 
 The changes after 1.2.0 are noted here; the list for users is under *1.3.0* in `CHANGELOG.md`. Changes after 1.3.0 go in a new section above this one (*Unreleased*, which becomes *Version x.y.z* when it is released).

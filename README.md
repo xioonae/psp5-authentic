@@ -226,7 +226,7 @@ confirm, back, options and the power menu to other buttons. The details of each 
 
 Download the zip for your ARK version from the [Releases](../../releases) page and follow **[INSTALL.md](INSTALL.md)**. It works as a
 normal app, or as ARK's own launcher so your PSP boots straight into it. There are two downloads, one for ARK-4 and one for
-ARK-5. Each is for every device (PSP-1000, 2000, 3000, PSP Go and PS Vita), and has a `READ ME.txt` with the steps for each of them.
+ARK-5. Each is for every device (PSP-1000, 2000, 3000, E-1000, PSP Go and PS Vita), and has a `READ ME.txt` with the steps for each of them.
 
 If something goes wrong, hold **SELECT** while the PSP starts: ARK skips its settings and you land in the normal XMB. If a
 start doesn't finish (the PSP froze, for example), the next one is a *safe start* without the startup screen, music and UMD.
@@ -234,13 +234,16 @@ If that fails too, psp5 authentic sends the PSP to the XMB. More help is in [INS
 
 ## Supported devices
 
-Works on the **PSP-1000, 2000, 3000 and PSP Go** with **ARK-4 or ARK-5**, and on the **PS Vita** (1000 and 2000) with **ARK-5**
+Works on the **PSP-1000, 2000, 3000, E-1000 and PSP Go** with **ARK-4 or ARK-5**, and on the **PS Vita** (1000 and 2000) with **ARK-5**
 (the standalone install, [FasterARK](https://github.com/PSP-Arkfive/FasterARK)). ARK-4 on the Vita should work too, but nobody has
 confirmed it yet. It is the same program on all of them: it adapts its settings to your model and ARK version (the PSP-1000 has
 no extra memory or USB charging, ARK-4 has fewer CPU speeds), and it shows the PSP Go's internal storage whenever the device has one.
 
+The **PSP E-1000** is a PSP-3000 without Wi-Fi, so everything that needs Wi-Fi (the *FTP Server*, *Wi-Fi connection*) has nothing to connect with
+on it. Copy your files with *Settings → Storage → USB Mode* instead.
+
 If something doesn't work on your device, please [open an issue](../../issues) and tell us what you saw, which device you have
-(PSP-1000, 2000, 3000, PSP Go or PS Vita) and which ARK version.
+(PSP-1000, 2000, 3000, E-1000, PSP Go or PS Vita) and which ARK version.
 
 ## About this fork
 

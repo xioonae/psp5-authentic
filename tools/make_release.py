@@ -8,7 +8,7 @@ Makes release/psp5-authentic-v<version>-ARK5.zip and -ARK4.zip, each with
     PSP/GAME/PSP5/*.wav         - recorded interface sounds from res/sounds, next to EBOOT.PBP (if they are missing psp5 authentic plays its built-in ones)
     ARK_LAUNCHER/VBOOT.PBP      - the same file, to replace ARK's launcher (see INSTALL.md)
     READ ME.txt                 - the install guide for every device (tools/release-readme.txt with the version and the ARK filled in)
-There is one zip per ARK version for every device: the EBOOT is the same on a PSP-1000/2000/3000, a PSP Go and a PS Vita - psp5 authentic finds the
+There is one zip per ARK version for every device: the EBOOT is the same on a PSP-1000/2000/3000, an E-1000, a PSP Go and a PS Vita - psp5 authentic finds the
 internal storage (ef0:) by itself. Build first with tools/build.sh (ARK-5) and tools/build.sh ark4 (ARK-4).
 """
 import os
