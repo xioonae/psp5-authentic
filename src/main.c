@@ -481,6 +481,11 @@ static int usb_mode(void)
             gfx_button(x + bw / 2, y, 6.5f, btn, LOOK_HINT_PLATE, LOOK_HINT_MARK);
             text_draw(x + bw + 5, y + 4.5f, 0.56f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, L(S_USB_EXIT));
         }
+        { /* when the computer has not connected for a while: the numbers of the USB (nothing is written), to be read off and told in an issue */
+            char info[64];
+            if (sys_usb_info(info, sizeof(info)))
+                text_draw(22, 256, 0.5f, 0, RGBA(120, 122, 132, 255), ALIGN_LEFT, info);
+        }
         power_draw();
         osd_draw();
         gfx_end();

@@ -229,7 +229,8 @@ It needs Python 3 with two packages: `py -m pip install --user pillow lz4` (on W
    in `PSP/GAME` it is the **name of its folder**. The card shows the middle of your picture, cut to about 16:9 (the card is 144 × 80),
    and the background is 320 × 182, so pictures of that shape fit best.
 2. **Connect the PSP** (*Settings → Storage → USB Mode*, or the Memory Stick in your computer). It shows up as a drive, for example `E:`.
-   If the computer does not see the PSP in USB Mode, wait a few seconds: when the cable is plugged in and the computer has not answered after 5 seconds, psp5 authentic switches USB off and on once by itself (the same as connecting in the XMB and coming back). If it still does not show up, leave USB Mode with ○ and [open an issue](../../issues) (say which PSP, which ARK and which computer).
+   If the computer does not see the PSP in USB Mode, wait a few seconds: when the cable is plugged in and the computer has not answered after 5 seconds, psp5 authentic switches USB off and on once by itself (the same as connecting in the XMB and coming back).
+   If the computer has not connected after 10 seconds, a small line of numbers shows at the bottom left of the USB screen (for example `USB 020  m3F  0 0 0 0  r1`): it is what the PSP says about its USB, and nothing is written to the card. If it still does not show up, leave USB Mode with ○ and [open an issue](../../issues) with those numbers (and which PSP, which ARK and which computer).
 3. **Run the tool** with that drive: `py tools\covers.py E:\` (on Linux or macOS: `python3 tools/covers.py /path/to/the/stick`). It lists every game with its ID
    and what it wrote, and puts the finished pictures in `PSP5/covers` on the Memory Stick.
 4. **Start psp5 authentic again.** A cover in `PSP5/covers` always wins over the game's own picture and over the image cache, and *Clear image cache* never removes it.

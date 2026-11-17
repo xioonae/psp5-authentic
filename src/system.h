@@ -89,5 +89,7 @@ int sys_usb_start(void);
 void sys_usb_stop(void);
 /* 0 = av, 1 = aktiv men ingen kabel, 2 = ansluten till dator */
 int sys_usb_state(void);
+/* numbers for the USB screen when the computer has not connected for 10 s (see system.c): 1 = text written to `out`, 0 = nothing to show */
+int sys_usb_info(char *out, int size);
 
 #endif
