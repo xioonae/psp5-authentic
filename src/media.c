@@ -40,27 +40,53 @@ int media_supported(int kind, const char *name)
     return kind == MK_VIDEO ? media_is_video(name) : kind == MK_IMAGES ? media_is_image(name) : music_supported(name);
 }
 
+static int has_dir(const char *path)
+{
+    SceUID d = sceIoDopen(path);
+    if (d < 0)
+        return 0;
+    sceIoDclose(d);
+    return 1;
+}
+
 int media_roots(int kind, char roots[4][16])
 {
+    char base[4][16]; /* the folders of this kind: MUSIC or VIDEO (and, for the pictures, PICTURE and PSP/PHOTO) */
+    int nb = 0;
     if (kind == MK_MUSIC) {
         char two[2][16];
-        int n = music_roots(two);
-        for (int i = 0; i < n; i++)
-            snprintf(roots[i], 16, "%s", two[i]);
-        return n;
+        nb = music_roots(two);
+        for (int i = 0; i < nb; i++)
+            snprintf(base[i], 16, "%s", two[i]);
+    } else {
+        static const char *const VIDEO[] = { "ms0:/VIDEO", "ef0:/VIDEO" };
+        static const char *const IMAGES[] = { "ms0:/PICTURE", "ms0:/PSP/PHOTO", "ef0:/PICTURE", "ef0:/PSP/PHOTO" };
+        const char *const *list = kind == MK_VIDEO ? VIDEO : IMAGES;
+        int count = kind == MK_VIDEO ? 2 : 4;
+        for (int i = 0; i < count; i++) {
+            if (!strncmp(list[i], "ef0:", 4) && sys_ms_is_ef())
+                continue; /* ARK has put the internal storage at ms0: it is the same folder */
+            if (has_dir(list[i]))
+                snprintf(base[nb++], 16, "%s", list[i]);
+        }
     }
-    static const char *const VIDEO[] = { "ms0:/VIDEO", "ef0:/VIDEO" };
-    static const char *const IMAGES[] = { "ms0:/PICTURE", "ms0:/PSP/PHOTO", "ef0:/PICTURE", "ef0:/PSP/PHOTO" };
-    const char *const *list = kind == MK_VIDEO ? VIDEO : IMAGES;
-    int count = kind == MK_VIDEO ? 2 : 4, n = 0;
-    for (int i = 0; i < count; i++) {
-        if (!strncmp(list[i], "ef0:", 4) && sys_ms_is_ef())
-            continue; /* ARK has put the internal storage at ms0: it is the same folder */
-        SceUID d = sceIoDopen(list[i]);
-        if (d < 0)
-            continue;
-        sceIoDclose(d);
-        snprintf(roots[n++], 16, "%s", list[i]);
+    if (kind == MK_IMAGES) {
+        for (int i = 0; i < nb; i++)
+            snprintf(roots[i], 16, "%s", base[i]);
+        return nb;
+    }
+    /* Music and Videos: the PLAYLIST folder of a storage, if it has one (the PSP's own place for playlists), comes after the folders of that storage, so that the choice is
+     * "Memory Stick: MUSIC or PLAYLIST", then "System Storage: ...". Without such a folder nothing changes. */
+    static const char *const STORAGE[2] = { "ms0:", "ef0:" }, *const PLAYLIST[2] = { "ms0:/PLAYLIST", "ef0:/PLAYLIST" };
+    int n = 0;
+    for (int s = 0; s < 2; s++) {
+        for (int i = 0; i < nb; i++)
+            if (!strncmp(base[i], STORAGE[s], 4))
+                snprintf(roots[n++], 16, "%s", base[i]);
+        if (s == 1 && sys_ms_is_ef())
+            continue; /* (the same folder as the one of ms0:) */
+        if (has_dir(PLAYLIST[s]))
+            snprintf(roots[n++], 16, "%s", PLAYLIST[s]);
     }
     return n;
 }

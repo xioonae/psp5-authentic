@@ -17,10 +17,10 @@ int media_is_song(const char *name);
 int media_supported(int kind, const char *name);
 
 /* The folders of a kind that can be opened, in the order they are shown (at most 4):
- *   MK_MUSIC   ms0:/MUSIC, ef0:/MUSIC
- *   MK_VIDEO   ms0:/VIDEO, ef0:/VIDEO
+ *   MK_MUSIC   ms0:/MUSIC, ms0:/PLAYLIST, ef0:/MUSIC, ef0:/PLAYLIST
+ *   MK_VIDEO   ms0:/VIDEO, ms0:/PLAYLIST, ef0:/VIDEO, ef0:/PLAYLIST
  *   MK_IMAGES  ms0:/PICTURE, ms0:/PSP/PHOTO, ef0:/PICTURE, ef0:/PSP/PHOTO
- * (ef0: is left out when ARK has put the internal storage at ms0:, as for music). Returns how many. */
+ * (ef0: is left out when ARK has put the internal storage at ms0:, as for music; PLAYLIST, the PSP's own place for playlists, only where the folder exists, after the folders of its storage). Returns how many. */
 int media_roots(int kind, char roots[4][16]);
 
 /* lists a folder of that kind: the folders first, then (Music and Videos only) the playlists, then the files of the kind, by name (music_list_dir_filter) */

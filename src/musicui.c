@@ -50,6 +50,7 @@ void musicui_init(MusicUi *m)
 {
     memset(m, 0, sizeof(*m));
     m->cover_gen = -1;
+    m->pick = -1;
 }
 
 static void free_list(MusicUi *m)
@@ -149,6 +150,69 @@ static int answers_with_another_folder(const MusicUi *m, const MusicEntry *e, in
     return same;
 }
 
+/* The choice at the top (level 0) is made in two steps, and a step with one answer is left out: first the storage ("Memory Stick", "System Storage": only when the folders are on both), then the folder
+ * of that storage (MUSIC and PLAYLIST, VIDEO and PLAYLIST, PICTURE and PSP/PHOTO: only when it has more than one). The roots are in the order of their storage (media_roots). */
+static int storage_of(const MusicUi *m, int r) /* the number of the storage that root r is on: 0 for the first storage that has a folder, 1 for the second */
+{
+    int k = 0;
+    for (int i = 1; i <= r; i++)
+        if (strncmp(m->roots[i], m->roots[i - 1], 4))
+            k++;
+    return k;
+}
+
+static int storages(const MusicUi *m)
+{
+    return m->nroots ? storage_of(m, m->nroots - 1) + 1 : 0;
+}
+
+static int folder_first(const MusicUi *m, int k) /* the first root of storage k, -1 when there is none */
+{
+    for (int i = 0; i < m->nroots; i++)
+        if (storage_of(m, i) == k)
+            return i;
+    return -1;
+}
+
+static int folders_on(const MusicUi *m, int k)
+{
+    int n = 0;
+    for (int i = 0; i < m->nroots; i++)
+        n += storage_of(m, i) == k;
+    return n;
+}
+
+/* the lines that the choice has now: the storages, or the folders of the storage that was chosen */
+static int choice_lines(const MusicUi *m)
+{
+    return m->pick < 0 ? storages(m) : folders_on(m, m->pick);
+}
+
+void musicui_choice_name(const MusicUi *m, int i, char *out, int size)
+{
+    if (m->pick < 0) { /* a storage */
+        int r = folder_first(m, i);
+        snprintf(out, (size_t)size, "%s", r < 0 ? "" : L(!strncmp(m->roots[r], "ef0", 3) ? S_F_INTERNAL : S_F_MS));
+    } else { /* a folder of the storage: its path below the storage ("MUSIC", "PSP/PHOTO") */
+        int r = folder_first(m, m->pick);
+        snprintf(out, (size_t)size, "%s", r < 0 || r + i >= m->nroots ? "" : m->roots[r + i] + 5);
+    }
+}
+
+/* the choice is shown: pick = -1 the storages, else the folders of that storage; the line `sel` is chosen */
+static void show_choice(MusicUi *m, int pick, int sel)
+{
+    free_list(m);
+    m->level = 0;
+    m->pick = pick;
+    m->dir[0] = 0;
+    m->depth = 0;
+    m->n = choice_lines(m);
+    m->ok = 1;
+    m->sel = sel < m->n ? sel : 0;
+    m->scroll = m->sel > ROWS - 1 ? (float)(m->sel - (ROWS - 1)) : 0;
+}
+
 static int dir_is_under_a_root(const MusicUi *m, const char *dir)
 {
     for (int i = 0; i < m->nroots; i++)
@@ -183,14 +247,13 @@ void musicui_open(MusicUi *m)
     m->depth = 0;
     m->sel = 0;
     m->scroll = 0;
-    if (m->nroots == 1) { /* the one MUSIC folder there is: straight into it */
+    if (m->nroots == 1) { /* the one folder there is: straight into it */
         load_dir(m, m->roots[0]);
         m->level = 1;
-    } else {
-        m->level = 0;
-        m->dir[0] = 0;
-        m->n = m->nroots;
-        m->ok = 1;
+    } else if (storages(m) == 1) { /* one storage with several folders: its folders (no choice of storage) */
+        show_choice(m, 0, 0);
+    } else { /* both storages (or no folder at all): the storages */
+        show_choice(m, -1, 0);
     }
 }
 
@@ -200,6 +263,7 @@ void musicui_open_kind(MusicUi *m, int kind)
         free_list(m);
         m->kind = kind;
         m->level = 0;
+        m->pick = -1;
         m->dir[0] = 0;
         m->depth = 0;
     }
@@ -225,14 +289,19 @@ const char *musicui_file(const MusicUi *m, const MusicEntry **files, int *count,
 /* the number of lines that the list has now */
 static int lines(const MusicUi *m)
 {
-    return m->level == 0 ? m->nroots : m->n;
+    return m->level == 0 ? choice_lines(m) : m->n;
 }
 
 /* ○: up one folder; false when there is no folder above (the screen is to be closed) */
 static int go_up(MusicUi *m)
 {
-    if (m->level == 0)
+    if (m->level == 0) { /* the folders of a storage: back to the storages, if the folders are on both */
+        if (m->pick >= 0 && storages(m) >= 2) {
+            show_choice(m, -1, m->pick);
+            return 1;
+        }
         return 0;
+    }
     if (m->depth > 0) {
         char *slash = strrchr(m->dir, '/');
         int sel = m->sel_stack[m->depth - 1];
@@ -246,18 +315,20 @@ static int go_up(MusicUi *m)
         m->scroll = m->sel > ROWS - 1 ? (float)(m->sel - (ROWS - 1)) : 0;
         return 1;
     }
-    if (m->nroots >= 2) { /* back to the storages, on the one that was open */
+    { /* back to the choice, on the folder that was open: its folders if the storage has several, else the storages if there are two */
         int which = 0;
         for (int i = 0; i < m->nroots; i++)
             if (!strncmp(m->dir, m->roots[i], strlen(m->roots[i])))
                 which = i;
-        free_list(m);
-        m->level = 0;
-        m->dir[0] = 0;
-        m->n = m->nroots;
-        m->sel = which;
-        m->scroll = which > ROWS - 1 ? (float)(which - (ROWS - 1)) : 0;
-        return 1;
+        int k = storage_of(m, which);
+        if (folders_on(m, k) > 1) {
+            show_choice(m, k, which - folder_first(m, k));
+            return 1;
+        }
+        if (storages(m) >= 2) {
+            show_choice(m, -1, k);
+            return 1;
+        }
     }
     return 0;
 }
@@ -266,11 +337,24 @@ static int go_up(MusicUi *m)
 static int activate(MusicUi *m)
 {
     if (m->level == 0) {
-        if (m->sel < 0 || m->sel >= m->nroots)
+        int r = -1;
+        if (m->sel < 0 || m->sel >= choice_lines(m))
+            return 0;
+        if (m->pick < 0) { /* a storage: its folders when it has several, else its one folder */
+            if (folders_on(m, m->sel) > 1) {
+                show_choice(m, m->sel, 0);
+                sound_play(SND_SELECT);
+                return 0;
+            }
+            r = folder_first(m, m->sel);
+        } else {
+            r = folder_first(m, m->pick) + m->sel;
+        }
+        if (r < 0 || r >= m->nroots)
             return 0;
         char root[16];
-        snprintf(root, sizeof(root), "%s", m->roots[m->sel]);
-        m->sel_stack[0] = m->sel; /* (not needed to go back: ○ finds the storage by its name) */
+        snprintf(root, sizeof(root), "%s", m->roots[r]);
+        m->sel_stack[0] = m->sel; /* (not needed to go back: ○ finds the folder by its name) */
         load_dir(m, root);
         m->level = 1;
         m->depth = 0;
@@ -771,10 +855,15 @@ static void draw_list(MusicUi *m, float a, float slide)
 {
     int n = lines(m);
     float lw = list_w(m);
-    /* the line above the list: the folder that is open (the storages: nothing) */
-    if (m->level == 1) {
+    /* the line above the list: the folder that is open, or the storage whose folders are listed (the storages: nothing) */
+    if (m->level == 1 || m->pick >= 0) {
         static char head[160];
-        snprintf(head, sizeof(head), "%s", m->dir);
+        if (m->level == 1) {
+            snprintf(head, sizeof(head), "%s", m->dir);
+        } else {
+            int r = folder_first(m, m->pick);
+            snprintf(head, sizeof(head), "%.4s/", r < 0 ? "" : m->roots[r]);
+        }
         float w = text_width(0.5f, 0, head);
         const char *s = head;
         while (w > lw && *s) { /* a long path loses its beginning */
@@ -822,19 +911,12 @@ static void draw_list(MusicUi *m, float a, float slide)
         }
         float x = LIST_X + 8;
         MusicEntry as_entry;
-        const char *name;
         char shown[132];
         if (m->level == 0) { /* a storage: the folder picture and the name of the storage */
             memset(&as_entry, 0, sizeof(as_entry));
             as_entry.dir = 1;
             draw_row_icon(x, y + 2, &as_entry, a, m->kind);
-            name = L(!strncmp(m->roots[i], "ef0", 3) ? S_F_INTERNAL : S_F_MS);
-            if (m->kind == MK_IMAGES && m->nroots > 1) { /* several folders of pictures: the storage and the folder ("Memory Stick · PICTURE") */
-                const char *slash = strrchr(m->roots[i], '/');
-                snprintf(shown, sizeof(shown), "%s · %s", name, slash ? slash + 1 : m->roots[i]);
-            } else {
-                snprintf(shown, sizeof(shown), "%s", name);
-            }
+            musicui_choice_name(m, i, shown, sizeof(shown));
         } else {
             draw_row_icon(x, y + 2, &m->e[i], a, m->kind);
             shown_name(&m->e[i], shown, sizeof(shown));

@@ -102,7 +102,7 @@ Each one opens a list over the whole width of the screen; folders show as folder
 
 #### Music
 
-- **Where:** only the `MUSIC` folder of the Memory Stick and of the internal storage.
+- **Where:** the `MUSIC` folder of the Memory Stick and of the internal storage, and the `PLAYLIST` folder (`ms0:/PLAYLIST`, `ef0:/PLAYLIST`, where the PSP keeps its playlists) **if there is one**. If both storages have a folder you first choose the storage (*Memory Stick*, *System Storage*); if the storage you chose has more than one (`MUSIC` and `PLAYLIST`) you then choose the folder. A step that has only one answer is left out, so without a `PLAYLIST` folder nothing is different.
 - **Plays:** MP3, WAV (PCM), **AAC** (`.m4a`, `.m4b` and raw `.aac`) and ATRAC3 / ATRAC3plus (`.at3`, `.oma`, `.aa3`).
   AAC is AAC-LC, made by the same software decoder as the sound of the videos; a sound with more than two channels (5.1, 7.1) is mixed down to stereo. Not HE-AAC or Apple Lossless.
 - **Shows:** title, artist and album art (from the file, or a `cover.jpg` / `folder.jpg` in the folder).
@@ -113,7 +113,7 @@ Each one opens a list over the whole width of the screen; folders show as folder
 
 #### Videos
 
-- **Where:** the `VIDEO` folder.
+- **Where:** the `VIDEO` folder, and the `PLAYLIST` folder if there is one (the same two steps as in Music: the storage if both have folders, then `VIDEO` or `PLAYLIST` if the storage has both).
 - **Plays:** **MP4** (H.264 video with AAC sound, up to 512 x 512) and **PMF / PSMF** (with sound), on the whole screen.
 - **Buttons:** ✕ pauses, ← → jump 10 seconds, L / R play the video before or after, ○ leaves. The bar, the numbers and L / R show when you press a button and go away after a moment.
 - **Resume:** a video that was left in the middle asks whether to *Continue* from there or start *from the beginning*. If the PSP goes to sleep while a video is open, the player leaves when the PSP wakes (the place is remembered, so the question comes next time).
@@ -136,7 +136,7 @@ If a video does not play, or the PSP stops while one plays, `PSP5/logs/Video.log
 
 #### Images
 
-- **Where:** the `PICTURE` folder and `PSP/PHOTO`.
+- **Where:** the `PICTURE` folder and `PSP/PHOTO` (the storage first if both have pictures, then the folder if the storage has both).
 - **Shows:** **JPEG** (turned the way the camera says), **PNG** and **BMP**, on the whole screen, with L / R for the picture before and after.
 - **While a picture is read** a small wheel turns. The little bar with L, the number and R shows when you press a button and goes away after a moment.
 
