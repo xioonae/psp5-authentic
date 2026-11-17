@@ -19,5 +19,7 @@ int osd_note_pressed(void);
 void osd_set_overlay(void (*draw)(void));
 /* Shows the volume bar now and keeps it for a moment (the player's volume button: ← → then change the volume, and the bar shows what it is). */
 void osd_show_volume(void);
+/* The player's volume button is over: the bar goes now (it fades out at once) instead of staying for its time. */
+void osd_hide_volume(void);
 
 #endif

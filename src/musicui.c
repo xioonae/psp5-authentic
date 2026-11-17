@@ -378,6 +378,12 @@ static const char *row_text(int row, int v)
     return L(row == ROW_SHUFFLE ? on_off[v & 1] : row == ROW_REPEAT ? rep[v % 3] : eq[v % 5]);
 }
 
+/* Is a panel of the player's popups on screen (or on its way)? The volume has none: it is the launcher's own volume bar, so the fade of the panels must not rise for it, or the "..." rows would be seen fading out when it ends */
+static int panel_up(const MusicUi *m)
+{
+    return m->popup && m->popup != MU_POPUP_VOLUME;
+}
+
 static void popup_open(MusicUi *m, int which)
 {
     m->popup = which;
@@ -443,6 +449,7 @@ static void update_popup(MusicUi *m, u32 pressed, int mv)
         osd_show_volume(); /* (the bar stays while the volume is being changed) */
         if (pressed & (PSP_CTRL_CROSS | PSP_CTRL_CIRCLE | PSP_CTRL_START)) {
             m->popup = 0;
+            osd_hide_volume(); /* the bar goes at once, not after its time */
             sound_play(SND_BACK);
             return;
         }
@@ -531,7 +538,7 @@ int musicui_update(MusicUi *m, u32 pressed, u32 held, int lx, int ly, float dt)
         m->warn_t -= dt;
     if (m->seek_show > 0)
         m->seek_show -= dt;
-    m->popup_anim = clampf(m->popup_anim + (m->popup ? 7 : -7) * dt, 0, 1);
+    m->popup_anim = clampf(m->popup_anim + (panel_up(m) ? 7 : -7) * dt, 0, 1);
     int mv = step(m, held, lx, ly, dt);
     if (m->popup) {
         update_popup(m, pressed, mv);
@@ -937,7 +944,7 @@ static int mini_update(MusicUi *m, u32 pressed, u32 held, int lx, int ly, float 
     if (m->seek_show > 0)
         m->seek_show -= dt;
     m->mini_anim = clampf(m->mini_anim + (m->mini ? 8 : -8) * dt, 0, 1);
-    m->popup_anim = clampf(m->popup_anim + (m->popup ? 7 : -7) * dt, 0, 1);
+    m->popup_anim = clampf(m->popup_anim + (panel_up(m) ? 7 : -7) * dt, 0, 1);
     if (!m->mini)
         return 0;
     musicui_update_cover(m, dt);

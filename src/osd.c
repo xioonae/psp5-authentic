@@ -83,6 +83,11 @@ void osd_show_volume(void)
     s_shown = SHOW_TIME;
 }
 
+void osd_hide_volume(void)
+{
+    s_shown = 0; /* (s_anim then goes down by itself, as it does when the time is up) */
+}
+
 void osd_update(float dt)
 {
     int vol = get_param(PSP_IMPOSE_MAIN_VOLUME), mute = get_param(PSP_IMPOSE_MUTE);

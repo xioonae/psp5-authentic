@@ -5,6 +5,8 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ## Unreleased
 
+- **The volume button of the music player no longer shows the "..." popup when it ends.** In the player (the Music screen and the popup of the PSP's sound button), ✕ on the speaker shows the launcher's volume bar and ← → change the volume. Ending it with ○ (or ✕ or START) faintly showed the "..." popup (Shuffle, Repeat, Equalizer) fading away,
+  and the volume bar then stayed for another second and a half before it slowly went. Now nothing of the "..." popup is seen, and the volume bar starts to fade out at once.
 - **USB Mode that did not connect on a PSP Go (issue #3).** On a PSP Go with ARK-4 the computer (a Mac) did not see the PSP in USB Mode while the XMB's own USB connection worked. The original psp5 by Mille Weber (08Weber) had the same trouble ([issue 20](https://github.com/08Weber/psp5/issues/20), [issue 29](https://github.com/08Weber/psp5/issues/29) and, for a read-only card on Linux, [issue 40](https://github.com/08Weber/psp5/issues/40)) and fixed it in its versions 2.1.1 and 2.1.2. We were inspired by those changes and did the same here:
   **a cable that is plugged in for 5 seconds without the computer connecting makes USB switch off and on once by itself** (the same as connecting in the XMB and coming back), **USB that is still switched on from before is switched off first**, and **what the system still holds in its cache is written to the storage before the computer takes it over**.
   *Not tried on a PSP Go or with a computer, only on the PC against stand-ins (PPSSPP has no USB): please say in the issue whether it works.*
