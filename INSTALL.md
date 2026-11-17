@@ -103,6 +103,7 @@ The plugin keeps the seconds of each game in `PSP5/played`, and psp5 authentic a
 | PSP games (`.iso`, `.cso`, `.zso`, `.dax`, `.jso`) | `ISO` |
 | Homebrew, PSN and PS1 games | `PSP/GAME` |
 | Music (`.mp3`, `.wav`, `.at3`, `.oma`, `.aa3`) | `MUSIC` on the Memory Stick or on the internal storage (sub-folders are fine: they are shown as folders) |
+| Playlists (`.m3u`, `.m3u8`) | `MUSIC`, in the same places as the music (see *Playlists*) |
 
 A game is shown with the title that is in it. If it has none, you see the name of its folder (or of its `.iso` / `.cso` file), so you can name the folder what you want the game to be called.
 A folder with a `PBOOT.PBP` beside its `EBOOT.PBP` (TempGBA's single-game folders) shows the title and the pictures of the `PBOOT.PBP`.
@@ -141,12 +142,26 @@ Where to go from there:
 - **A video** (MP4 with H.264 video and AAC sound, up to 512 x 512: **Baseline / CAVLC** files without B-frames such as **HandBrake's PSP preset**, and **Main profile with CABAC and up to three reference frames** (B-frames included), are decoded by the PSP's own decoder at full speed, the sound always by psp5 (AAC-LC, more than two channels are mixed down to two); **not played: Main profile with four or more reference frames (x264's default settings make that, because of the B-pyramid: use HandBrake's PSP preset, or x264 `profile=main`, `b-pyramid=none` and `ref=3` or less), B-frames in CAVLC, High profile with the 8x8 transform, HE-AAC**; PMF / PSMF, with sound) plays on the whole screen: ✕ pauses and plays, ← → jump 10 seconds (hold to go on), **L / R** play the video before or after in the folder, ○ leaves. The overlay (L, the number of the video, R, the time, the bar and the length) shows when you press a button and goes away after about 3 seconds. A video that was left in the middle is remembered by its file name and length: next time psp5 asks *Continue from 12:34* or *From the beginning* (that choice forgets the old place); seeing it to the end, or leaving it in the first 5 or the last 10 seconds, forgets it. The music is stopped when a video starts, and the ♪ popup is not offered over a video.
 - **A picture** (JPEG, PNG or BMP; a camera's EXIF turn is followed) fills the screen as far as its shape lets it: **L / R** (or ← →) show the picture before or after in the folder, ○ leaves. The overlay (L, the number, R) shows when a picture is opened or a button is pressed and goes away after about 3 seconds. The music keeps playing while you look at pictures.
 - **Music** reads only the `MUSIC` folder (`ms0:/MUSIC`, and `ef0:/MUSIC` on a PSP with internal storage). With both, you first choose *Memory Stick* or *System Storage*; with one, you are in it at once. In the list ✕ opens a folder or plays a song (the songs of that
-  folder play one after the other), ○ goes up a folder (and out of Music from the top), △ moves to the player and back (the △ hint at the top right of the player is black on white while you are in it). In the player ← → choose a button (volume, previous, play / pause, next, **⋯**; the
+  folder play one after the other; a playlist opens like a folder, see *Playlists*), ○ goes up a folder (and out of Music from the top), △ moves to the player and back (the △ hint at the top right of the player is black on white while you are in it). In the player ← → choose a button (volume, previous, play / pause, next, **⋯**; the
   one you are on turns white) and ✕ presses it; ↑ chooses the progress bar, then ← → (or the stick) jump 10 seconds; **⋯** opens *Shuffle*, *Repeat* and *Equalizer*, and ✕ on one opens a popup with its values (Shuffle Off / On, Repeat Off / Current Song / All = the whole folder,
   Equalizer the PSP's own); the speaker chooses the volume: ← → change the PSP's volume (the launcher's volume bar shows it), ✕ or ○ ends.
 - **The music goes on** when you leave Music or the Media tab, and in the File Manager and the FTP server (USB Mode and starting a game stop it). The PSP's **♪** button shows the player alone in the middle of the screen, over all of these; ♪ or ○ closes it.
-- **What plays**: MP3, WAV (PCM, 8 to 32 bits, mono, stereo or up to eight channels mixed down to stereo), AAC (`.m4a`, `.m4b`, `.aac`: AAC-LC, also with 5.1 or 7.1, mixed down to stereo; not HE-AAC or Apple Lossless) and ATRAC3 / ATRAC3plus (`.at3`, `.oma`, `.aa3`). WMA, Ogg and FLAC are not played; a file that can't be played is skipped.
+- **What plays**: MP3, WAV (PCM, 8 to 32 bits, mono, stereo or up to eight channels mixed down to stereo), AAC (`.m4a`, `.m4b`, `.aac`: AAC-LC, also with 5.1 or 7.1, mixed down to stereo; not HE-AAC or Apple Lossless) and ATRAC3 / ATRAC3plus (`.at3`, `.oma`, `.aa3`), and playlists (`.m3u`, `.m3u8`) of them. WMA, Ogg and FLAC are not played; a file that can't be played is skipped.
 - **A name that is too long** scrolls after a moment: the name next to the big card, the selected card in the Library, and the highlighted row in the File Manager, *Manage Saved Data* and *Games and Apps*.
+
+## Playlists
+
+A playlist is a text file (`.m3u` or `.m3u8`) with one song on each line: the programs on your computer (foobar2000, VLC, MusicBee ...) can save one. Copy it to the `MUSIC` folder with the songs (it can also lie in a sub-folder).
+
+- **In the Music screen** a playlist is listed after the folders, with an *M3U* badge, and **opens like a folder**: its songs are the list, ✕ on one plays it and the playlist goes on from there (shuffle and repeat work: *repeat all* goes round the playlist), ○ goes back to the folder.
+  The songs can lie in any folder, and on either storage.
+- **In the File Manager** ✕ on a playlist asks **Open** or **Edit**. *Open* shows its songs like a folder (✕ plays one, ○ goes back; nothing can be copied, moved or deleted in there). *Edit* opens the file in the text editor, to change a line or add a song by hand.
+  A song started there plays to its end and the music stops, as for a song of a folder, unless you open the player with the PSP's ♪ button.
+- **Where the songs are:** a path is read relative to the folder of the playlist (`Rock/a.mp3`, `../a.mp3`, `./a.mp3`) or whole (`ms0:/MUSIC/Rock/a.mp3`, `ef0:/MUSIC/a.mp3`). A path that begins with `/` (`/MUSIC/a.mp3`) is taken from the top of the storage the playlist is on.
+  A path made on a computer (`C:\Music\a.mp3`, `/home/me/a.mp3`) cannot be followed on the PSP: psp5 authentic looks for the **file name next to the playlist** instead. So the easiest playlist is one that lies in the same folder as its songs, or one saved with *relative paths* (a setting of most programs).
+- **Good to know:** a line that begins with `#` (`#EXTM3U`, `#EXTINF`), an empty line, a web address and a file that is not a song the player plays are left out. A song that is gone, or that the player can't play, is skipped when its turn comes (it is still in the list).
+  At most 1000 songs, and the first 256 KB of the file. The file should be UTF-8 (`.m3u8`): an old `.m3u` in the Windows code page works as long as the names have no accents. A file in UTF-16 has no songs.
+- If a playlist doesn't play as you expect, open it with *Edit* and look at the paths, or [open an issue](../../issues) and attach `PSP5/logs/Music.log`.
 
 ## Date and time
 
@@ -163,7 +178,8 @@ It changes only what psp5 authentic shows. The PSP's own clock and settings stay
 
 *Settings → Storage → File Manager* lets you manage files right on the PSP. Confirm opens a folder, □ marks (the highlight stays on the row)
 files, Options (START) shows what you can do (copy, move, paste, rename, delete, new folder) and Back goes back (the first Back
-clears the marks, and at the top it cancels a waiting copy or move before it leaves).
+clears the marks, and at the top it cancels a waiting copy or move before it leaves). Confirm on a file opens it: a song plays, a picture or a video opens in its viewer,
+a playlist asks whether to *Open* it (like a folder, to play a song of it) or *Edit* it (as text; see *Playlists*), and a text file opens in the text editor.
 
 When you paste somewhere a file or a folder of that name is already, the File Manager asks what to do:
 

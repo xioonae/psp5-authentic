@@ -757,6 +757,7 @@ static const char *const T[S_COUNT][NL] = {
                                      "Solo lectura: no es texto UTF-8 o hay una línea demasiado larga", "Solo visualizzazione: non è testo UTF-8 o una riga è troppo lunga", "Alleen te bekijken: geen UTF-8-tekst of een regel is te lang", "Só para ver: não é texto UTF-8 ou há uma linha demasiado longa", "Только просмотр: не текст UTF-8 или слишком длинная строка", "表示のみ：UTF-8テキストではないか、行が長すぎます", "Pouze prohlížení: není text UTF-8 nebo je řádek příliš dlouhý" },
     [S_F_PLAYING] = { "Playing: %s", "Spelar: %s", "Wiedergabe: %s", "Lecture : %s",
                                   "Reproduciendo: %s", "In riproduzione: %s", "Afspelen: %s", "A reproduzir: %s", "Воспроизведение: %s", "再生中: %s", "Přehrává se: %s" },
+    [S_F_EDIT] = { "Edit", "Redigera", "Bearbeiten", "Modifier", "Editar", "Modifica", "Bewerken", "Editar", "Изменить", "編集", "Upravit" },
 };
 
 static const char *const NAMES[LANG_COUNT] = { "", "English", "Svenska", "Deutsch", "Français", "Español",

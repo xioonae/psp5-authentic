@@ -5,6 +5,12 @@ Newest first. Changes that are not in a release yet are under *Unreleased*.
 
 ## Unreleased
 
+- **Playlists (`.m3u` and `.m3u8`).** A playlist in the `MUSIC` folder is listed in the Music screen (after the folders, with an *M3U* badge) and **opens like a folder**: its songs are the list, ✕ on one plays it and the playlist goes on from there (shuffle, repeat and previous / next work as for a folder; the songs can lie in any folder and on either storage).
+  In the **File Manager** ✕ on a playlist asks **Open** (the songs like a folder: ✕ plays one, ○ goes back, nothing can be copied or deleted in there) or **Edit** (the text editor). Paths are read relative to the playlist, whole (`ms0:/MUSIC/a.mp3`), or from the top of the storage (`/MUSIC/a.mp3`);
+  a path from a computer (`C:\Music\a.mp3`) is looked for by its file name next to the playlist. Comments, `#EXTINF` lines, web addresses and names that are no song are left out; up to 1000 songs; a song that is gone is skipped. Details are in INSTALL.md (*Playlists*).
+  *Tried in the PPSSPP emulator and on the PC only, not on a PSP: if a playlist doesn't behave, please open an issue and attach `PSP5/logs/Music.log`.* A new text (*Edit*, in 11 languages).
+- **The pictures of the README are taken again** (29 of the 30; `media.png` was the same): with the program as it is now (Console Information says 1.3.0, Information writes the dates the way the Date and Time setting does, the File Manager lists the new folders, the text editor's options show *Paste line*) and with the **default settings** (no battery percentage, the Library's Folders picture reached with the view button),
+  and the storage pictures (Console Storage, Games and Apps, Manage Saved Data, File Manager, Information) show a card that is partly full, with the same free space everywhere. They are emulator pictures with invented demo data.
 - **The PSP E-1000 is on the list of devices** (README, INSTALL.md and the `READ ME.txt` of the zips). It is a PSP-3000 without Wi-Fi, so the same zips are for it, and the program already knew its model (*Console Information* names it).
   It has no Wi-Fi, so the docs say to copy files with *USB Mode* instead of the FTP Server. Nobody has reported on an E-1000 yet: if something doesn't work there, please open an issue.
 - **INSTALL.md is in a better order:** installing comes first (the zip, copying it, starting it, and the optional launcher), and *Updating* is a part of its own right after it, instead of being half-mentioned among the install steps and again at the very end.

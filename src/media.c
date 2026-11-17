@@ -29,6 +29,11 @@ int media_is_image(const char *name)
     return has_ext(name, E);
 }
 
+int media_is_song(const char *name)
+{
+    return music_supported(name) && !media_is_video(name);
+}
+
 int media_supported(int kind, const char *name)
 {
     return kind == MK_VIDEO ? media_is_video(name) : kind == MK_IMAGES ? media_is_image(name) : music_supported(name);

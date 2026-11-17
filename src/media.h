@@ -11,6 +11,8 @@ enum { MK_MUSIC, MK_VIDEO, MK_IMAGES };
 int media_is_video(const char *name);
 /* An image psp5 shows: JPEG, PNG and BMP */
 int media_is_image(const char *name);
+/* A song the player can play: a kind of sound file it has a decoder for, and not a video (an MP4 can be both by its ending: the Videos screen has it) */
+int media_is_song(const char *name);
 /* The same by kind (MK_VIDEO / MK_IMAGES; MK_MUSIC is music_supported) */
 int media_supported(int kind, const char *name);
 

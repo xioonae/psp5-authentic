@@ -14,6 +14,7 @@
 #include <string.h>
 #include <strings.h>
 #include "music.h"
+#include "playlist.h"
 #include "logs.h"
 #include "system.h"
 #include "aac.h"
@@ -402,18 +403,29 @@ static int cmp_text(const char *a, const char *b)
     }
 }
 
+/* the folders first, then the playlists, then the songs */
+static int entry_rank(const MusicEntry *e)
+{
+    return e->dir == 1 ? 0 : e->dir == 2 ? 1 : 2;
+}
+
 static int cmp_entries(const void *a, const void *b)
 {
     const MusicEntry *x = a, *y = b;
-    if (x->dir != y->dir)
-        return y->dir - x->dir; /* the folders first */
+    if (entry_rank(x) != entry_rank(y))
+        return entry_rank(x) - entry_rank(y);
     int c = cmp_text(x->name, y->name);
     return c ? c : strcmp(x->name, y->name);
 }
 
+static int song_or_playlist(const char *name)
+{
+    return music_supported(name) || playlist_is_name(name);
+}
+
 int music_list_dir(const char *dir, MusicEntry **out)
 {
-    return music_list_dir_filter(dir, music_supported, out);
+    return music_list_dir_filter(dir, song_or_playlist, out);
 }
 
 int music_list_dir_filter(const char *dir, int (*ok)(const char *name), MusicEntry **out)
@@ -437,7 +449,7 @@ int music_list_dir_filter(const char *dir, int (*ok)(const char *name), MusicEnt
                 cap *= 2;
             }
             snprintf(e[n].name, sizeof(e[n].name), "%s", ent.d_name);
-            e[n].dir = isdir;
+            e[n].dir = isdir ? 1 : playlist_is_name(ent.d_name) ? 2 : 0;
             n++;
         }
         memset(&ent, 0, sizeof(ent));
@@ -1347,9 +1359,10 @@ static int play_frame(void)
 /* the queue: the songs of the folder, in order or shuffled */
 
 typedef struct {
-    char dir[256];
+    char dir[256];       /* the folder the names are in; for a playlist the playlist file (what music_folder() tells) */
     int n;
-    char (*name)[QNAME];
+    char (*name)[QNAME]; /* a folder: the names of the songs in `dir` */
+    char **path;         /* a playlist: the whole path of each song (then `name` is NULL) */
 } Queue;
 
 static Queue s_queue;                    /* the songs that play (the player thread's) */
@@ -1383,6 +1396,10 @@ static void queue_free(Queue *q)
 {
     free(q->name);
     q->name = NULL;
+    for (int i = 0; q->path && i < q->n; i++)
+        free(q->path[i]);
+    free(q->path);
+    q->path = NULL;
     q->n = 0;
 }
 
@@ -1415,7 +1432,10 @@ static void build_order(int first)
 
 static void song_path(int queue_index, char *out, int size)
 {
-    snprintf(out, size, "%s/%s", s_queue.dir, s_queue.name[queue_index]);
+    if (s_queue.path) /* a playlist: the songs are whole paths */
+        snprintf(out, size, "%s", s_queue.path[queue_index]);
+    else
+        snprintf(out, size, "%s/%s", s_queue.dir, s_queue.name[queue_index]);
 }
 
 /* the place after `pos` going `step` (1 or -1), -1 = there is none: at the end of the folder it goes round when it repeats all (a shuffled folder is shuffled again for the next round) */
@@ -1504,6 +1524,7 @@ static void handle_command(int cmd, int arg)
             queue_free(&s_queue);
             s_queue = s_stage;
             s_stage.name = NULL;
+            s_stage.path = NULL;
             s_stage.n = 0;
             s_stage_ready = 0;
         }
@@ -1731,6 +1752,45 @@ void music_release_once(void)
     s_once = 0;
 }
 
+/* A playlist: its songs are whole paths, the queue is made like the folder's (the screen makes it ready, the thread takes it). `file` is the playlist file: it stands where the folder
+ * stands (music_folder()). */
+static void play_list(const char *file, char **paths, int n, int index, int once)
+{
+    if (s_thread < 0 || !file || !paths || n <= 0 || n > MAX_ENTRIES || index < 0 || index >= n)
+        return;
+    char **copy = calloc((size_t)n, sizeof(*copy));
+    if (!copy)
+        return;
+    for (int i = 0; i < n; i++) {
+        copy[i] = paths[i] ? strdup(paths[i]) : NULL;
+        if (!copy[i]) {
+            for (int k = 0; k < i; k++)
+                free(copy[k]);
+            free(copy);
+            return;
+        }
+    }
+    lock();
+    queue_free(&s_stage); /* one that the thread has not taken yet is replaced */
+    snprintf(s_stage.dir, sizeof(s_stage.dir), "%s", file);
+    s_stage.path = copy;
+    s_stage.n = n;
+    s_stage_ready = 1;
+    s_once = once;
+    unlock();
+    push(CMD_LOAD, index);
+}
+
+void music_play_list(const char *file, char **paths, int n, int index)
+{
+    play_list(file, paths, n, index, 0);
+}
+
+void music_play_list_once(const char *file, char **paths, int n, int index)
+{
+    play_list(file, paths, n, index, 1);
+}
+
 void music_toggle_pause(void) { push(CMD_PAUSE, 0); }
 void music_stop(void)         { push(CMD_STOP, 0); }
 void music_next(void)         { push(CMD_NEXT, 0); }
@@ -1774,14 +1834,19 @@ int music_track(Track *out)
     return 0;
 }
 
-int music_is_playing_file(const char *dir, const char *name)
+int music_is_playing_path(const char *path)
 {
-    if (s_state == MUSIC_STOPPED || !s_now_valid)
+    if (s_state == MUSIC_STOPPED || !s_now_valid || !path)
         return 0;
     Track t;
     if (!music_track(&t))
         return 0;
+    return !strcmp(path, t.path);
+}
+
+int music_is_playing_file(const char *dir, const char *name)
+{
     char path[256];
     snprintf(path, sizeof(path), "%s/%s", dir, name);
-    return !strcmp(path, t.path);
+    return music_is_playing_path(path);
 }

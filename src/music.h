@@ -17,10 +17,10 @@ typedef struct {
     char album[64];
 } Track;
 
-/* One line of a folder in the Music screen: the name of a folder or of a song file */
+/* One line of a folder in the Music screen: the name of a folder, of a playlist file or of a song file */
 typedef struct {
     char name[128];
-    int dir;
+    int dir;       /* 0 = a song, 1 = a folder, 2 = a playlist file (.m3u or .m3u8: it opens like a folder, see playlist.h) */
 } MusicEntry;
 
 enum { MUSIC_STOPPED, MUSIC_PLAYING, MUSIC_PAUSED };
@@ -37,7 +37,7 @@ int music_supported(const char *name);
 /* The MUSIC folders that there are: "ms0:/MUSIC" and/or "ef0:/MUSIC" (not ef0 twice when ARK has put the internal storage at ms0:). Returns how many (0 to 2). */
 int music_roots(char roots[2][16]);
 
-/* The folder `dir`: the folders first, then the songs that can be played, each group by name (capitals and small letters alike). At most 1000 lines.
+/* The folder `dir`: the folders first, then the playlists, then the songs that can be played, each group by name (capitals and small letters alike). At most 1000 lines.
  * *out is a new array (free() it), the result is its length, or -1 when the folder cannot be read. */
 int music_list_dir(const char *dir, MusicEntry **out);
 /* the same for any kind of file: `ok` says whether a (non-folder) name is listed (the Videos and Images screens, media.c) */
@@ -53,6 +53,12 @@ void music_play_folder(const char *dir, const MusicEntry *entries, int n, int in
  * it again, as the player was set.) The folder goes on, as after music_play_folder, from the moment music_release_once() is called: the player popup of the sound button is opened while it plays. */
 void music_play_folder_once(const char *dir, const MusicEntry *entries, int n, int index);
 void music_release_once(void);
+
+/* A playlist (playlist.h): the songs are whole paths, `paths[index]` plays first and the others follow in the queue (in order or shuffled, with the same repeat modes as a folder). The
+ * playlist file `file` stands where the folder stands (music_folder() says it while the playlist plays). At most 1000 songs (n <= 1000); the paths are copied. The second one is for a
+ * song started from the File Manager (see music_play_folder_once). */
+void music_play_list(const char *file, char **paths, int n, int index);
+void music_play_list_once(const char *file, char **paths, int n, int index);
 
 void music_toggle_pause(void);
 void music_stop(void);
@@ -79,5 +85,7 @@ int music_needs_cjk(void);
 /* The folder whose songs are playing ("" when none was started) and the place of the song in it: 1 = the one that is playing is this file of that folder */
 const char *music_folder(void);
 int music_is_playing_file(const char *dir, const char *name);
+/* the same for a whole path (the songs of a playlist) */
+int music_is_playing_path(const char *path);
 
 #endif

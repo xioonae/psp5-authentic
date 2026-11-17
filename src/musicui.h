@@ -31,8 +31,10 @@ typedef struct MusicUi {
     char roots[4][16];         /* the folders of this kind that there are */
     int nroots;
     char dir[256];             /* the folder that is open (level 1) */
-    MusicEntry *e;             /* its lines (the folders first), n of them */
+    MusicEntry *e;             /* its lines (the folders first, then the playlists), n of them */
     int n;
+    int pl;                    /* 1 = what is open is a playlist (it opens like a folder): dir is the playlist file, the lines are its songs, pl_path their whole paths (n of them) */
+    char **pl_path;
     int ok;                    /* the folder could be read */
     float warn_t;              /* seconds left of the message that a folder was not entered (instead of the path) */
     int sel;                   /* the chosen line */

@@ -8,6 +8,7 @@
 #include <string.h>
 #include "musicui.h"
 #include "media.h"
+#include "playlist.h"
 #include "lang.h"
 #include "loader.h"
 #include "look.h"
@@ -55,6 +56,9 @@ static void free_list(MusicUi *m)
 {
     free(m->e);
     m->e = NULL;
+    playlist_free(m->pl_path, m->pl ? m->n : 0);
+    m->pl_path = NULL;
+    m->pl = 0;
     m->n = 0;
 }
 
@@ -86,6 +90,35 @@ static void load_dir(MusicUi *m, const char *dir)
     MusicEntry *e = NULL;
     int n = media_list_dir(m->kind, dir, &e);
     adopt_dir(m, dir, e, n);
+}
+
+static int file_there(const char *path)
+{
+    SceIoStat st;
+    return sceIoGetstat(path, &st) >= 0;
+}
+
+/* The playlist file `file` is opened like a folder: its songs are the lines of the list (their names, as a folder's lines are), and their whole paths are kept for the player. 0 when the file
+ * cannot be read (nothing changes then). */
+static int open_playlist(MusicUi *m, const char *file)
+{
+    char **paths = NULL;
+    int n = playlist_load(file, media_is_song, file_there, &paths);
+    if (n < 0)
+        return 0;
+    MusicEntry *e = n > 0 ? calloc((size_t)n, sizeof(*e)) : NULL;
+    if (n > 0 && !e) {
+        playlist_free(paths, n);
+        return 0;
+    }
+    for (int i = 0; i < n; i++) {
+        const char *slash = strrchr(paths[i], '/');
+        snprintf(e[i].name, sizeof(e[i].name), "%s", slash ? slash + 1 : paths[i]);
+    }
+    adopt_dir(m, file, e, n);
+    m->pl = 1;
+    m->pl_path = paths;
+    return 1;
 }
 
 static int same_lines(const MusicEntry *a, int na, const MusicEntry *b, int nb)
@@ -128,6 +161,7 @@ void musicui_open(MusicUi *m)
 {
     char keep[256];
     int had = m->level == 1 && m->dir[0];
+    int was_pl = m->pl;
     snprintf(keep, sizeof(keep), "%s", m->dir);
     int keep_sel = m->sel;
     m->nroots = media_roots(m->kind, m->roots);
@@ -137,9 +171,9 @@ void musicui_open(MusicUi *m)
     m->popup_anim = 0;
     m->pbtn = MU_PLAY;
     free_list(m);
-    if (had && dir_is_under_a_root(m, keep)) { /* where the screen was left */
-        load_dir(m, keep);
-        if (m->ok) {
+    if (had && dir_is_under_a_root(m, keep)) { /* where the screen was left (a playlist that was open is open again) */
+        int again = was_pl ? open_playlist(m, keep) : (load_dir(m, keep), m->ok);
+        if (again && m->ok) {
             m->level = 1;
             m->sel = keep_sel < m->n ? keep_sel : 0;
             m->scroll = m->sel > ROWS - 1 ? (float)(m->sel - (ROWS - 1)) : 0;
@@ -241,7 +275,19 @@ static int activate(MusicUi *m)
     if (m->sel < 0 || m->sel >= m->n)
         return 0;
     const MusicEntry *e = &m->e[m->sel];
-    if (e->dir) {
+    if (e->dir == 2) { /* a playlist opens like a folder: its songs are the lines, ✕ on one plays it and the playlist goes on from there */
+        char file[256];
+        int keep = m->sel;
+        if (m->depth >= 15)
+            return 0;
+        if (snprintf(file, sizeof(file), "%s/%s", m->dir, e->name) >= (int)sizeof(file) || !open_playlist(m, file)) {
+            m->warn_t = 4;
+            sound_play(SND_ERROR);
+            return 0;
+        }
+        m->sel_stack[m->depth++] = keep;
+        sound_play(SND_SELECT);
+    } else if (e->dir) {
         if (m->depth >= 15)
             return 0;
         char sub[256];
@@ -261,6 +307,9 @@ static int activate(MusicUi *m)
     } else if (m->kind != MK_MUSIC) { /* a video or an image: the screen around this one opens its player or viewer (musicui_file) */
         sound_play(SND_SELECT);
         return 1;
+    } else if (m->pl) {
+        music_play_list(m->dir, m->pl_path, m->n, m->sel);
+        sound_play(SND_SELECT);
     } else {
         music_play_folder(m->dir, m->e, m->n, m->sel);
         sound_play(SND_SELECT);
@@ -678,14 +727,14 @@ static void draw_player(MusicUi *m, float px, float py, float a, int focus, int 
 
 static void draw_row_icon(float x, float y, const MusicEntry *e, float a, int kind)
 {
-    if (e->dir) { /* the folder of the Library's folder cards, 14 px high, as in the file manager */
+    if (e->dir == 1) { /* the folder of the Library's folder cards, 14 px high, as in the file manager */
         gfx_folder_picture((int)ceilf(x - 0.5f), (int)ceilf(y + 2.5f), 14, fade(RGBA(222, 222, 228, 255), a));
         return;
     }
     const char *dot = strrchr(e->name, '.');
     const char *ext = dot && dot != e->name && strlen(dot + 1) <= 4 ? dot + 1 : NULL;
     /* the colour of the badge: the green of the sound files of the file manager, the orange of its pictures, and a rose for the videos */
-    u32 badge = kind == MK_VIDEO ? RGBA(190, 84, 108, 255) : kind == MK_IMAGES ? RGBA(206, 128, 62, 255) : RGBA(52, 156, 110, 255);
+    u32 badge = e->dir == 2 ? RGBA(76, 150, 176, 255) : kind == MK_VIDEO ? RGBA(190, 84, 108, 255) : kind == MK_IMAGES ? RGBA(206, 128, 62, 255) : RGBA(52, 156, 110, 255); /* (a playlist: a blue-green badge, "M3U") */
     gfx_round_rect(x + 1, y + 1, 16, 18, 2.5f, fade(badge, a));
     if (ext) {
         char up[5];
@@ -702,7 +751,7 @@ static void shown_name(const MusicEntry *e, char *out, int size)
 {
     snprintf(out, size, "%s", e->name);
     char *dot = strrchr(out, '.');
-    if (!e->dir && dot && dot != out)
+    if (e->dir != 1 && dot && dot != out)
         *dot = 0;
 }
 
@@ -786,7 +835,7 @@ static void draw_list(MusicUi *m, float a, float slide)
             text_ellipsis(cut, sizeof(cut), shown, 0.58f, room);
             text_draw(x + 26, y + 16.5f, 0.58f, 0, fade(TEXT_MAIN, a), ALIGN_LEFT, cut);
         }
-        if (m->kind == MK_MUSIC && m->level == 1 && !m->e[i].dir && music_is_playing_file(m->dir, m->e[i].name)) {
+        if (m->kind == MK_MUSIC && m->level == 1 && !m->e[i].dir && (m->pl ? music_is_playing_path(m->pl_path[i]) : music_is_playing_file(m->dir, m->e[i].name))) {
             playing_row = i;
             float bx = LIST_X + lw - 22;
             int paused = music_state() == MUSIC_PAUSED;

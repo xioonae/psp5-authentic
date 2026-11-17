@@ -15,6 +15,7 @@
 #include "kbd.h"
 #include "media.h"
 #include "music.h"
+#include "playlist.h"
 #include "imageview.h"
 #include "videoplay.h"
 #include "logs.h"
@@ -69,6 +70,8 @@ typedef struct {
 static char s_path[MAX_PATH]; /* "" = enhetslistan, annars t.ex. "ms0:/PSP/GAME" */
 static FileEntry *s_items;
 static int s_count, s_sel, s_top;
+static int s_pl;              /* 1 = a playlist is open like a folder: s_path is the playlist file, the lines are its songs, s_pl_path their whole paths (s_count of them): only ✕ (play) and ○ (back) work */
+static char **s_pl_path;
 static float s_scroll, s_time, s_open;
 static int s_repeat_dir;
 static float s_repeat_timer;
@@ -94,8 +97,8 @@ static char *s_clip[MAX_CLIP];
 static int s_clip_n, s_clip_move;
 
 /* --- meny --- */
-enum { M_NONE, M_OPTIONS, M_DELETE };
-enum { A_PASTE, A_COPY, A_MOVE, A_RENAME, A_DELETE, A_NEWDIR, A_DELETE_YES, A_CANCEL };
+enum { M_NONE, M_OPTIONS, M_DELETE, M_PLAYLIST };
+enum { A_PASTE, A_COPY, A_MOVE, A_RENAME, A_DELETE, A_NEWDIR, A_DELETE_YES, A_CANCEL, A_PL_OPEN, A_PL_EDIT };
 static int s_menu, s_menu_sel, s_menu_n, s_menu_act[8];
 static float s_menu_anim;
 static int s_menu_ask;       /* the open (or fading) popup is the delete question */
@@ -1002,8 +1005,17 @@ static void load(const char *select, int fallback)
     s_scroll = s_top;
 }
 
+/* the open playlist (if any) is let go; call it before s_count changes */
+static void pl_forget(void)
+{
+    playlist_free(s_pl_path, s_pl ? s_count : 0);
+    s_pl_path = NULL;
+    s_pl = 0;
+}
+
 static void enter(const char *path, const char *select)
 {
+    pl_forget();
     snprintf(s_path, sizeof(s_path), "%s", path);
     load(select, 0);
 }
@@ -1092,6 +1104,9 @@ static void open_menu(int kind)
             add_act(A_DELETE);
         }
         add_act(A_NEWDIR);
+    } else if (kind == M_PLAYLIST) { /* ✕ on a playlist: open it like a folder, or edit it as text */
+        add_act(A_PL_OPEN);
+        add_act(A_PL_EDIT);
     } else {
         add_act(A_DELETE_YES);
         add_act(A_CANCEL);
@@ -1111,6 +1126,8 @@ static const char *act_label(int act, char *buf, int size)
     case A_DELETE:
     case A_DELETE_YES: return L(S_F_DELETE);
     case A_NEWDIR:     return L(S_F_NEWDIR);
+    case A_PL_OPEN:    return L(S_F_OPEN);
+    case A_PL_EDIT:    return L(S_F_EDIT);
     }
     return L(S_F_CANCEL);
 }
@@ -1294,6 +1311,49 @@ static void play_song(const FileEntry *e)
     sound_play(SND_SELECT);
 }
 
+/* The playlist `file` is opened like a folder: its songs are the lines (their names), and their whole paths are kept for the player. 0 when the file cannot be read (nothing changes then). */
+static int enter_playlist(const char *file)
+{
+    char **paths = NULL;
+    int n = playlist_load(file, media_is_song, path_exists, &paths);
+    if (n < 0)
+        return 0;
+    FileEntry *items = n > 0 ? calloc((size_t)n, sizeof(*items)) : NULL;
+    if (n > 0 && !items) {
+        playlist_free(paths, n);
+        return 0;
+    }
+    for (int i = 0; i < n; i++) {
+        FileEntry *e = &items[i];
+        snprintf(e->name, sizeof(e->name), "%s", base_name(paths[i]));
+        text_ellipsis(e->shown, sizeof(e->shown), e->name, 0.58f, LIST_W - 130);
+        e->kind = KIND_FILE;
+    }
+    pl_forget();
+    free(s_items);
+    s_items = items;
+    s_count = n;
+    s_pl = 1;
+    s_pl_path = paths;
+    snprintf(s_path, sizeof(s_path), "%s", file);
+    s_sel = s_top = 0;
+    s_scroll = 0;
+    return 1;
+}
+
+/* ✕ on a song of the open playlist: it plays and the player has the controls, as for a song of a folder (it plays to its end and the music stops, unless the player popup of the sound button is opened) */
+static void play_list_item(void)
+{
+    if (!s_pl || !s_pl_path || s_sel < 0 || s_sel >= s_count)
+        return;
+    music_play_list_once(s_path, s_pl_path, s_count, s_sel);
+    char msg[160], shown[96];
+    text_ellipsis(shown, sizeof(shown), s_items[s_sel].shown, 0.5f, 220);
+    snprintf(msg, sizeof(msg), L(S_F_PLAYING), shown);
+    toast(msg);
+    sound_play(SND_SELECT);
+}
+
 static void start_text(const char *path)
 {
     StrId why = S_TE_CANT;
@@ -1334,6 +1394,8 @@ static void open_file(const FileEntry *e)
         open_viewer(e, 1);
     else if (media_is_image(e->name))
         open_viewer(e, 0);
+    else if (playlist_is_name(e->name))
+        open_menu(M_PLAYLIST); /* Open (like a folder) or Edit (as text) */
     else if (music_supported(e->name))
         play_song(e);
     else
@@ -1359,6 +1421,22 @@ static void run_act(int act)
     int n;
     s_menu = M_NONE;
     switch (act) {
+    case A_PL_OPEN:
+        if (s_count && playlist_is_name(s_items[s_sel].name)) {
+            char file[MAX_PATH];
+            join(file, sizeof(file), s_path, s_items[s_sel].name);
+            if (enter_playlist(file)) {
+                sound_play(SND_SELECT);
+            } else {
+                toast(L(S_TE_CANT));
+                sound_play(SND_ERROR);
+            }
+        }
+        break;
+    case A_PL_EDIT:
+        if (s_count && playlist_is_name(s_items[s_sel].name))
+            open_text(&s_items[s_sel]);
+        break;
     case A_COPY:
     case A_MOVE:
         clear_clip();
@@ -1639,14 +1717,17 @@ int files_update(const UiInput *in, float dt)
                 return 1;
             }
         } else if (s_path[0] && e) {
-            open_file(e); /* ✕ on a file: it is opened (a video, a picture, a song, a text file); the options are on START */
-        } else if (s_path[0]) {
-            open_menu(M_OPTIONS); /* (an empty folder: a new folder, paste) */
+            if (s_pl)
+                play_list_item(); /* a song of the open playlist */
+            else
+                open_file(e); /* ✕ on a file: it is opened (a video, a picture, a song, a playlist, a text file); the options are on START */
+        } else if (s_path[0] && !s_pl) {
+            open_menu(M_OPTIONS); /* (an empty folder: a new folder, paste; an empty playlist has nothing) */
         }
-    } else if ((in->pressed & PSP_CTRL_SQUARE) && e && e->kind != KIND_DEVICE && !s_pick) {
+    } else if ((in->pressed & PSP_CTRL_SQUARE) && e && e->kind != KIND_DEVICE && !s_pick && !s_pl) {
         e->marked ^= 1; /* (the highlight stays on the row) */
         sound_play(SND_SELECT);
-    } else if ((in->pressed & PSP_CTRL_START) && s_path[0] && !s_pick) { /* the options button, as everywhere */
+    } else if ((in->pressed & PSP_CTRL_START) && s_path[0] && !s_pick && !s_pl) { /* the options button, as everywhere (an open playlist has none: its songs are not in this folder) */
         open_menu(M_OPTIONS);
     } else if (in->pressed & PSP_CTRL_CIRCLE) {
         /* ○ cancels before it leaves: the marks first, then (when this is the last step out of the screen) what was copied or cut and is
@@ -1678,6 +1759,7 @@ static u32 type_color(const char *ext)
         { "mp3", RGBA(52, 156, 110, 255) }, { "at3", RGBA(52, 156, 110, 255) }, { "wav", RGBA(52, 156, 110, 255) }, { "oma", RGBA(52, 156, 110, 255) }, { "aa3", RGBA(52, 156, 110, 255) },
         { "png", RGBA(206, 128, 62, 255) }, { "jpg", RGBA(206, 128, 62, 255) }, { "bmp", RGBA(206, 128, 62, 255) },
         { "txt", RGBA(96, 126, 150, 255) }, { "ini", RGBA(96, 126, 150, 255) }, { "cfg", RGBA(96, 126, 150, 255) },
+        { "m3u", RGBA(76, 150, 176, 255) }, { "m3u8", RGBA(76, 150, 176, 255) }, /* playlists: the same blue-green as in the Music screen */
     };
     for (unsigned i = 0; ext && i < sizeof(T) / sizeof(T[0]); i++)
         if (!strcasecmp(ext, T[i].ext))
@@ -1715,7 +1797,7 @@ static void draw_hints(float a)
     struct { int btn; StrId text; } h[4];
     int n = 0;
     h[n++] = (typeof(h[0])){ controls_glyph(PSP_CTRL_CROSS), s_pick && s_count && s_items[s_sel].kind == KIND_FILE ? S_PM_SELECT : S_F_OPEN };
-    if (s_path[0] && !s_pick) {
+    if (s_path[0] && !s_pick && !s_pl) {
         h[n++] = (typeof(h[0])){ controls_glyph(PSP_CTRL_SQUARE), S_F_MARK };
         h[n++] = (typeof(h[0])){ controls_glyph(PSP_CTRL_START), S_OPTIONS };
     }
@@ -1969,6 +2051,7 @@ void files_close(void)
     s_cf = 0;
     s_cf_anim = 0;
     clear_clip();
+    pl_forget();
     free(s_items);
     s_items = NULL;
     s_count = 0;
