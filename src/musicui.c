@@ -151,7 +151,7 @@ static int answers_with_another_folder(const MusicUi *m, const MusicEntry *e, in
 }
 
 /* The choice at the top (level 0) is made in two steps, and a step with one answer is left out: first the storage ("Memory Stick", "System Storage": only when the folders are on both), then the folder
- * of that storage (MUSIC and PLAYLIST, VIDEO and PLAYLIST, PICTURE and PSP/PHOTO: only when it has more than one). The roots are in the order of their storage (media_roots). */
+ * of that storage (MUSIC and PSP/PLAYLIST, VIDEO and PSP/PLAYLIST, PICTURE and PSP/PHOTO: only when it has more than one). The roots are in the order of their storage (media_roots). */
 static int storage_of(const MusicUi *m, int r) /* the number of the storage that root r is on: 0 for the first storage that has a folder, 1 for the second */
 {
     int k = 0;
@@ -352,7 +352,7 @@ static int activate(MusicUi *m)
         }
         if (r < 0 || r >= m->nroots)
             return 0;
-        char root[16];
+        char root[MEDIA_ROOT_LEN];
         snprintf(root, sizeof(root), "%s", m->roots[r]);
         m->sel_stack[0] = m->sel; /* (not needed to go back: ○ finds the folder by its name) */
         load_dir(m, root);

@@ -4,6 +4,9 @@
 
 #include "music.h"
 
+/* the room for the path of one folder of the choice ("ms0:/PSP/PLAYLIST" is the longest, 17 characters) */
+#define MEDIA_ROOT_LEN 24
+
 /* what a list screen is for (MusicUi.kind) */
 enum { MK_MUSIC, MK_VIDEO, MK_IMAGES };
 
@@ -17,11 +20,11 @@ int media_is_song(const char *name);
 int media_supported(int kind, const char *name);
 
 /* The folders of a kind that can be opened, in the order they are shown (at most 4):
- *   MK_MUSIC   ms0:/MUSIC, ms0:/PLAYLIST, ef0:/MUSIC, ef0:/PLAYLIST
- *   MK_VIDEO   ms0:/VIDEO, ms0:/PLAYLIST, ef0:/VIDEO, ef0:/PLAYLIST
+ *   MK_MUSIC   ms0:/MUSIC, ms0:/PSP/PLAYLIST, ef0:/MUSIC, ef0:/PSP/PLAYLIST
+ *   MK_VIDEO   ms0:/VIDEO, ms0:/PSP/PLAYLIST, ef0:/VIDEO, ef0:/PSP/PLAYLIST
  *   MK_IMAGES  ms0:/PICTURE, ms0:/PSP/PHOTO, ef0:/PICTURE, ef0:/PSP/PHOTO
- * (ef0: is left out when ARK has put the internal storage at ms0:, as for music; PLAYLIST, the PSP's own place for playlists, only where the folder exists, after the folders of its storage). Returns how many. */
-int media_roots(int kind, char roots[4][16]);
+ * (ef0: is left out when ARK has put the internal storage at ms0:, as for music; PSP/PLAYLIST, the PSP's own place for playlists, only where the folder exists, after the folders of its storage). Returns how many. */
+int media_roots(int kind, char roots[4][MEDIA_ROOT_LEN]);
 
 /* lists a folder of that kind: the folders first, then (Music and Videos only) the playlists, then the files of the kind, by name (music_list_dir_filter) */
 int media_list_dir(int kind, const char *dir, MusicEntry **out);

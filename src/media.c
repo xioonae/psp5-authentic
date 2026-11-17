@@ -49,15 +49,15 @@ static int has_dir(const char *path)
     return 1;
 }
 
-int media_roots(int kind, char roots[4][16])
+int media_roots(int kind, char roots[4][MEDIA_ROOT_LEN])
 {
-    char base[4][16]; /* the folders of this kind: MUSIC or VIDEO (and, for the pictures, PICTURE and PSP/PHOTO) */
+    char base[4][MEDIA_ROOT_LEN]; /* the folders of this kind: MUSIC or VIDEO (and, for the pictures, PICTURE and PSP/PHOTO) */
     int nb = 0;
     if (kind == MK_MUSIC) {
         char two[2][16];
         nb = music_roots(two);
         for (int i = 0; i < nb; i++)
-            snprintf(base[i], 16, "%s", two[i]);
+            snprintf(base[i], MEDIA_ROOT_LEN, "%s", two[i]);
     } else {
         static const char *const VIDEO[] = { "ms0:/VIDEO", "ef0:/VIDEO" };
         static const char *const IMAGES[] = { "ms0:/PICTURE", "ms0:/PSP/PHOTO", "ef0:/PICTURE", "ef0:/PSP/PHOTO" };
@@ -67,26 +67,26 @@ int media_roots(int kind, char roots[4][16])
             if (!strncmp(list[i], "ef0:", 4) && sys_ms_is_ef())
                 continue; /* ARK has put the internal storage at ms0: it is the same folder */
             if (has_dir(list[i]))
-                snprintf(base[nb++], 16, "%s", list[i]);
+                snprintf(base[nb++], MEDIA_ROOT_LEN, "%s", list[i]);
         }
     }
     if (kind == MK_IMAGES) {
         for (int i = 0; i < nb; i++)
-            snprintf(roots[i], 16, "%s", base[i]);
+            snprintf(roots[i], MEDIA_ROOT_LEN, "%s", base[i]);
         return nb;
     }
-    /* Music and Videos: the PLAYLIST folder of a storage, if it has one (the PSP's own place for playlists), comes after the folders of that storage, so that the choice is
+    /* Music and Videos: the PSP/PLAYLIST folder of a storage, if it has one (the PSP's own place for playlists), comes after the folders of that storage, so that the choice is
      * "Memory Stick: MUSIC or PLAYLIST", then "System Storage: ...". Without such a folder nothing changes. */
-    static const char *const STORAGE[2] = { "ms0:", "ef0:" }, *const PLAYLIST[2] = { "ms0:/PLAYLIST", "ef0:/PLAYLIST" };
+    static const char *const STORAGE[2] = { "ms0:", "ef0:" }, *const PLAYLIST[2] = { "ms0:/PSP/PLAYLIST", "ef0:/PSP/PLAYLIST" };
     int n = 0;
     for (int s = 0; s < 2; s++) {
         for (int i = 0; i < nb; i++)
             if (!strncmp(base[i], STORAGE[s], 4))
-                snprintf(roots[n++], 16, "%s", base[i]);
+                snprintf(roots[n++], MEDIA_ROOT_LEN, "%s", base[i]);
         if (s == 1 && sys_ms_is_ef())
             continue; /* (the same folder as the one of ms0:) */
         if (has_dir(PLAYLIST[s]))
-            snprintf(roots[n++], 16, "%s", PLAYLIST[s]);
+            snprintf(roots[n++], MEDIA_ROOT_LEN, "%s", PLAYLIST[s]);
     }
     return n;
 }

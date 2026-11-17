@@ -29,7 +29,7 @@ typedef struct MusicUi {
     int level;                 /* 0 = the choice at the top, 1 = a folder */
     int pick;                  /* at level 0: -1 = the list of storages (only when the folders are on both), else the number of the storage whose folders are listed (only when it has several) */
     int kind;                  /* MK_MUSIC (songs and the player), MK_VIDEO or MK_IMAGES (the same list, the whole width, no player: ✕ on a file asks for the video player or the image viewer) */
-    char roots[4][16];         /* the folders of this kind that there are */
+    char roots[4][MEDIA_ROOT_LEN]; /* the folders of this kind that there are */
     int nroots;
     char dir[256];             /* the folder that is open (level 1) */
     MusicEntry *e;             /* its lines (the folders first, then the playlists), n of them */
@@ -75,7 +75,7 @@ void musicui_free(MusicUi *m);
 /* The Music screen is opened: reads the MUSIC folders (a folder that was open is open again, if it can still be read). */
 void musicui_open(MusicUi *m);
 /* The choice at the top (level 0) has two steps, and a step with one answer is left out: the storage ("Memory Stick", "System Storage": only when there are folders on both), then the folder of that
- * storage ("MUSIC", "PLAYLIST", "PICTURE", "PSP/PHOTO": only when it has several). This writes the line number i of the step that is shown. */
+ * storage ("MUSIC", "PSP/PLAYLIST", "PICTURE", "PSP/PHOTO": only when it has several). This writes the line number i of the step that is shown. */
 void musicui_choice_name(const MusicUi *m, int i, char *out, int size);
 /* opens the screen for a kind of file (MK_MUSIC, MK_VIDEO, MK_IMAGES); the folder that was open is kept only when the kind is the same as the last time */
 void musicui_open_kind(MusicUi *m, int kind);
