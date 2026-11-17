@@ -89,6 +89,7 @@ static int s_ndev;
 static ImageView *s_iv;
 static VideoPlayer *s_vp;
 static MusicEntry *s_mfiles;     /* the videos or pictures of the folder, the lines the viewer steps through (they stay while it is open) */
+static const char **s_vpaths;    /* the videos of an open playlist: their whole paths (the strings are s_pl_path's: the playlist stays as it is while the player is open) */
 static TextEdit *s_te;
 static int s_asleep;             /* the PSP sleeps (files_sleep): a video that plays is paused */
 
@@ -1246,6 +1247,8 @@ static void close_viewer(void)
     s_vp = NULL;
     free(s_mfiles);
     s_mfiles = NULL;
+    free(s_vpaths);
+    s_vpaths = NULL;
 }
 
 /* the videos (or the pictures) of this folder are the lines the viewer steps through with L and R; the chosen file is the first one shown */
@@ -1311,11 +1314,17 @@ static void play_song(const FileEntry *e)
     sound_play(SND_SELECT);
 }
 
-/* The playlist `file` is opened like a folder: its songs are the lines (their names), and their whole paths are kept for the player. 0 when the file cannot be read (nothing changes then). */
+/* what an open playlist lists here: its songs and its videos (the Music screen keeps the songs, the Videos screen the videos) */
+static int track_ok(const char *name)
+{
+    return media_is_song(name) || media_is_video(name);
+}
+
+/* The playlist `file` is opened like a folder: its songs and videos are the lines (their names), and their whole paths are kept for the player. 0 when the file cannot be read (nothing changes then). */
 static int enter_playlist(const char *file)
 {
     char **paths = NULL;
-    int n = playlist_load(file, media_is_song, path_exists, &paths);
+    int n = playlist_load(file, track_ok, path_exists, &paths);
     if (n < 0)
         return 0;
     FileEntry *items = n > 0 ? calloc((size_t)n, sizeof(*items)) : NULL;
@@ -1341,12 +1350,66 @@ static int enter_playlist(const char *file)
     return 1;
 }
 
-/* ✕ on a song of the open playlist: it plays and the player has the controls, as for a song of a folder (it plays to its end and the music stops, unless the player popup of the sound button is opened) */
+/* ✕ on a video of the open playlist: the video player, with the videos of the playlist (L and R go to the one before and after among them) */
+static void open_list_video(void)
+{
+    int n = 0, idx = -1;
+    free(s_mfiles);
+    free(s_vpaths);
+    s_mfiles = malloc((size_t)s_count * sizeof(MusicEntry));
+    s_vpaths = malloc((size_t)s_count * sizeof(*s_vpaths));
+    for (int i = 0; s_mfiles && s_vpaths && i < s_count; i++) {
+        if (!media_is_video(s_items[i].name) || strlen(s_items[i].name) >= sizeof(s_mfiles[0].name))
+            continue;
+        snprintf(s_mfiles[n].name, sizeof(s_mfiles[n].name), "%s", s_items[i].name);
+        s_mfiles[n].dir = 0;
+        s_vpaths[n] = s_pl_path[i];
+        if (i == s_sel)
+            idx = n;
+        n++;
+    }
+    if (idx >= 0)
+        s_vp = videoplay_open_list(s_mfiles, s_vpaths, n, idx);
+    if (!s_vp) {
+        free(s_mfiles);
+        s_mfiles = NULL;
+        free(s_vpaths);
+        s_vpaths = NULL;
+        logs_fail(LOG_VIDEO, "A video of a playlist could not be opened from the File Manager: no memory for the player.");
+        toast(L(S_VID_CANT));
+        sound_play(SND_ERROR);
+        return;
+    }
+    sound_play(SND_SELECT);
+}
+
+/* ✕ on a song or a video of the open playlist. A song plays and the player has the controls, as for a song of a folder (it plays to its end and the music stops, unless the player popup of the sound button
+ * is opened); the songs of the playlist are what follows it. A video opens the video player. A playlist with both: each kind goes by its own. */
 static void play_list_item(void)
 {
     if (!s_pl || !s_pl_path || s_sel < 0 || s_sel >= s_count)
         return;
-    music_play_list_once(s_path, s_pl_path, s_count, s_sel);
+    if (media_is_video(s_items[s_sel].name)) {
+        open_list_video();
+        return;
+    }
+    char **songs = malloc((size_t)s_count * sizeof(*songs));
+    int ns = 0, idx = -1;
+    for (int i = 0; songs && i < s_count; i++) {
+        if (!media_is_song(s_items[i].name))
+            continue;
+        if (i == s_sel)
+            idx = ns;
+        songs[ns++] = s_pl_path[i];
+    }
+    if (idx < 0) {
+        free(songs);
+        toast(L(S_TE_CANT));
+        sound_play(SND_ERROR);
+        return;
+    }
+    music_play_list_once(s_path, songs, ns, idx);
+    free(songs); /* (the player has its own copies) */
     char msg[160], shown[96];
     text_ellipsis(shown, sizeof(shown), s_items[s_sel].shown, 0.5f, 220);
     snprintf(msg, sizeof(msg), L(S_F_PLAYING), shown);

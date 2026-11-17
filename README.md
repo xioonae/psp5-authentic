@@ -107,7 +107,7 @@ Each one opens a list over the whole width of the screen; folders show as folder
   AAC is AAC-LC, made by the same software decoder as the sound of the videos; a sound with more than two channels (5.1, 7.1) is mixed down to stereo. Not HE-AAC or Apple Lossless.
 - **Shows:** title, artist and album art (from the file, or a `cover.jpg` / `folder.jpg` in the folder).
 - **Playlists:** a `.m3u` or `.m3u8` file shows in the list (after the folders, with an *M3U* badge) and opens like a folder: its songs are the list, ✕ plays one and the playlist goes on from there, ○ goes back to the folder. The songs can lie in any folder or on the other storage.
-  A path in the playlist is read relative to the folder of the playlist (`Rock/a.mp3`, `../a.mp3`) or whole (`ms0:/MUSIC/Rock/a.mp3`); a path made on a computer (`C:\Music\a.mp3`) is looked for by its file name next to the playlist. Up to 1000 songs; a song that is gone or that the player cannot play is skipped. Save the playlist as UTF-8 (`.m3u8`).
+  A path in the playlist is read relative to the folder of the playlist (`Rock/a.mp3`, `../a.mp3`) or whole (`ms0:/MUSIC/Rock/a.mp3`); a path made on a computer (`C:\Music\a.mp3`) is looked for by its file name next to the playlist. Up to 1000 songs; a song that is gone or that the player cannot play is skipped. Save the playlist as UTF-8 (`.m3u8`). A playlist that also has videos in it shows only its songs here (the videos are for the [Videos](#videos) screen).
 - **Player:** a progress bar you can jump in (10 seconds a step), volume, shuffle, repeat (off, one song, the whole folder) and the equalizer.
 - **Keeps playing** while you browse your games or use the File Manager, and the PSP's ♪ button shows the player as a popup.
 
@@ -118,6 +118,8 @@ Each one opens a list over the whole width of the screen; folders show as folder
 - **Buttons:** ✕ pauses, ← → jump 10 seconds, L / R play the video before or after, ○ leaves. The bar, the numbers and L / R show when you press a button and go away after a moment.
 - **Resume:** a video that was left in the middle asks whether to *Continue* from there or start *from the beginning*. If the PSP goes to sleep while a video is open, the player leaves when the PSP wakes (the place is remembered, so the question comes next time).
 - **Sound:** AAC-LC, up to 8 channels, mixed down to two.
+- **Playlists:** a `.m3u` or `.m3u8` file in the `VIDEO` folder shows in the list (after the folders, with an *M3U* badge) and opens like a folder: its videos are the list, ✕ plays one, L / R play the video before or after in the playlist, ○ goes back to the folder.
+  The paths are written as in a music playlist (see [Music](#music)). One playlist can have songs **and** videos in it: the Music screen shows its songs, the Videos screen its videos (each screen lists the playlists of its own folder, `MUSIC` or `VIDEO`, so put a copy in both if you want both).
 
 **Which videos play** (tried on a PSP-1000):
 
@@ -143,7 +145,7 @@ If a video does not play, or the PSP stops while one plays, `PSP5/logs/Video.log
 - **File Manager** (*Settings → Storage*). Browse the Memory Stick (and the internal storage on a PSP Go) and copy, move, rename, delete or make folders (the options are on START).
   When a name is taken it asks: *Overwrite*, *Skip*, *Merge* (folders), *Rename* or *Cancel*, with *Apply to All* for the rest.
   - **✕ opens the file:** a video in the video player and a picture in the image viewer (L and R go to the one before and after in the folder), a song starts playing (and the songs of the folder after it; the ♪ button of the PSP has the player),
-    a playlist (`.m3u`, `.m3u8`) asks **Open** or **Edit**: *Open* shows its songs like a folder (✕ plays one, ○ goes back; nothing can be copied or deleted in there), *Edit* opens it in the text editor,
+    a playlist (`.m3u`, `.m3u8`) asks **Open** or **Edit**: *Open* shows its songs and videos like a folder (✕ on a song plays the songs of the playlist from there, ✕ on a video plays its videos; ○ goes back; nothing can be copied or deleted in there), *Edit* opens it in the text editor,
     and a file that has no formatting (plain text: `.txt`, `.ini`, `.cfg`, `.log` ... anything that is text, up to 1 MB) opens in the **text editor**, which lets you change it when the file allows it and only read it when not.
   - **The text editor** works a line at a time, as ARK's does: ↑ ↓ choose a line (held, they go faster the longer they are held), L / R eight lines, ✕ opens the PSP's own keyboard with the line in it, □ adds a line below, and START has *Save*, *New line above*, *Copy line*, *Paste line*, *Delete line*, *Undo* and *Go to line*;
     ○ leaves and asks whether to save when something was changed. A file is written under a temporary name and put in place, so a full card leaves the old file as it was; the line ending (LF or CRLF), a UTF-8 byte order mark and the end of the last line are kept.

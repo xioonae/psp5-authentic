@@ -77,6 +77,8 @@ void musicui_open(MusicUi *m);
 void musicui_open_kind(MusicUi *m, int kind);
 /* after MUSICUI_OPEN: the folder, the files of the kind that it holds (the lines after the folders: *files points at the first, there are *count of them) and the number of the one chosen among them */
 const char *musicui_file(const MusicUi *m, const MusicEntry **files, int *count, int *index);
+/* the same lines, as whole paths, when what is open is a playlist (musicui_file's dir is then the playlist file); NULL in a folder */
+const char *const *musicui_file_paths(const MusicUi *m);
 /* One step. `pressed` and `held` are the buttons as the screens see them (controls.h), lx / ly the stick. */
 int musicui_update(MusicUi *m, u32 pressed, u32 held, int lx, int ly, float dt);
 /* The cover is let go (the screen is left: the picture is not needed, and it is asked for again when the screen opens). */

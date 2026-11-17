@@ -11,6 +11,9 @@ typedef struct VideoPlayer VideoPlayer;
 
 /* dir and files[count] are the lines of the Videos screen (they stay as they are while the player is open); the video `index` starts first. NULL: no memory. The music is stopped. */
 VideoPlayer *videoplay_open(const char *dir, const MusicEntry *files, int count, int index);
+/* The videos of a playlist (playlist.h): files[count] are their names (the remembered place is kept by name and length) and paths[count] their whole paths, from any folder; both stay as they are
+ * while the player is open. L / R go to the one before and after in the playlist. NULL: no paths, or no memory. */
+VideoPlayer *videoplay_open_list(const MusicEntry *files, const char *const *paths, int count, int index);
 /* once a frame, with the buttons; returns 1 when the player is to be closed (○) */
 int videoplay_update(VideoPlayer *v, u32 pressed, u32 held, int lx, int ly, float dt);
 /* draws the player on the whole screen (no gfx_begin / gfx_end) */

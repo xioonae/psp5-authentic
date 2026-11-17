@@ -103,7 +103,7 @@ static int file_there(const char *path)
 static int open_playlist(MusicUi *m, const char *file)
 {
     char **paths = NULL;
-    int n = playlist_load(file, media_is_song, file_there, &paths);
+    int n = playlist_load(file, m->kind == MK_VIDEO ? media_is_video : media_is_song, file_there, &paths);
     if (n < 0)
         return 0;
     MusicEntry *e = n > 0 ? calloc((size_t)n, sizeof(*e)) : NULL;
@@ -204,6 +204,11 @@ void musicui_open_kind(MusicUi *m, int kind)
         m->depth = 0;
     }
     musicui_open(m);
+}
+
+const char *const *musicui_file_paths(const MusicUi *m)
+{
+    return m->pl ? (const char *const *)m->pl_path : NULL; /* (in a playlist every line is a file: the paths are those of the lines musicui_file gives) */
 }
 
 const char *musicui_file(const MusicUi *m, const MusicEntry **files, int *count, int *index)

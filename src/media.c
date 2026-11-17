@@ -4,6 +4,7 @@
 #include <string.h>
 #include <strings.h>
 #include "media.h"
+#include "playlist.h"
 #include "system.h"
 
 static int has_ext(const char *name, const char *const *list)
@@ -64,7 +65,7 @@ int media_roots(int kind, char roots[4][16])
     return n;
 }
 
-static int ok_video(const char *name) { return media_is_video(name); }
+static int ok_video(const char *name) { return media_is_video(name) || playlist_is_name(name); } /* (a playlist opens like a folder: its videos are the lines) */
 static int ok_image(const char *name) { return media_is_image(name); }
 
 int media_list_dir(int kind, const char *dir, MusicEntry **out)

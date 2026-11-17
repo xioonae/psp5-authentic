@@ -982,8 +982,10 @@ static void open_viewer(Ui *ui)
         return;
     if (ui->mscreen == 2)
         ui->iv = imageview_open(dir, files, count, index);
-    else if (ui->mscreen == 1)
-        ui->vp = videoplay_open(dir, files, count, index);
+    else if (ui->mscreen == 1) {
+        const char *const *paths = musicui_file_paths(screen_mu(ui)); /* (a playlist: the videos come from any folder) */
+        ui->vp = paths ? videoplay_open_list(files, paths, count, index) : videoplay_open(dir, files, count, index);
+    }
     if (!ui->iv && !ui->vp) {
         ui_toast(ui, L(ui->mscreen == 2 ? S_IMG_CANT : S_VID_CANT)); /* (no memory for it) */
         sound_play(SND_ERROR);

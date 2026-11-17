@@ -33,6 +33,7 @@
 
 struct VideoPlayer {
     const MusicEntry *files;
+    const char *const *paths; /* the videos of a playlist: the whole path of each (NULL: the video is dir/name) */
     char dir[256];
     int count, index;
     Video *vid;
@@ -99,7 +100,10 @@ static void do_load(VideoPlayer *v)
     v->since_save = 0;
     v->overlay = OVERLAY_SHOW;
     char path[300];
-    snprintf(path, sizeof(path), "%s/%s", v->dir, current_name(v));
+    if (v->paths) /* a playlist: the whole path */
+        snprintf(path, sizeof(path), "%s", v->paths[v->index]);
+    else
+        snprintf(path, sizeof(path), "%s/%s", v->dir, current_name(v));
     v->vid = video_open(path);
     if (!v->vid) {
 #ifdef VIDEO_DEBUG
@@ -210,7 +214,7 @@ static void start_play(VideoPlayer *v, float at)
     }
 }
 
-VideoPlayer *videoplay_open(const char *dir, const MusicEntry *files, int count, int index)
+static VideoPlayer *open_player(const char *dir, const char *const *paths, const MusicEntry *files, int count, int index)
 {
     if (count <= 0 || index < 0 || index >= count)
         return NULL;
@@ -218,6 +222,7 @@ VideoPlayer *videoplay_open(const char *dir, const MusicEntry *files, int count,
     if (!v)
         return NULL;
     snprintf(v->dir, sizeof(v->dir), "%s", dir);
+    v->paths = paths;
     v->files = files;
     v->count = count;
     v->index = index;
@@ -225,6 +230,18 @@ VideoPlayer *videoplay_open(const char *dir, const MusicEntry *files, int count,
     sys_fast_later(1); /* the processor at its fastest while the video plays (a thread changes it: the opening takes longer than the change, and the screen must not wait for it) */
     start_load(v);
     return v;
+}
+
+VideoPlayer *videoplay_open(const char *dir, const MusicEntry *files, int count, int index)
+{
+    return open_player(dir, NULL, files, count, index);
+}
+
+VideoPlayer *videoplay_open_list(const MusicEntry *files, const char *const *paths, int count, int index)
+{
+    if (!paths || !files)
+        return NULL;
+    return open_player("", paths, files, count, index);
 }
 
 void videoplay_close(VideoPlayer *v)

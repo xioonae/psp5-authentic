@@ -23,7 +23,7 @@ int media_supported(int kind, const char *name);
  * (ef0: is left out when ARK has put the internal storage at ms0:, as for music). Returns how many. */
 int media_roots(int kind, char roots[4][16]);
 
-/* lists a folder of that kind: the folders first, then the files of the kind, by name (music_list_dir_filter) */
+/* lists a folder of that kind: the folders first, then (Music and Videos only) the playlists, then the files of the kind, by name (music_list_dir_filter) */
 int media_list_dir(int kind, const char *dir, MusicEntry **out);
 
 #endif
