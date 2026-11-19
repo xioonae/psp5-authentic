@@ -461,8 +461,6 @@ static int usb_mode(void)
             break;
         if (in.pressed & PSP_CTRL_CIRCLE) /* back */
             break;
-        if (in.pressed & PSP_CTRL_SQUARE) /* another way of starting USB, when the computer has not connected (a test aid for a PSP Go) */
-            sys_usb_next_way();
         t += 1 / 60.0f;
         osd_update(1 / 60.0f);
 
@@ -483,19 +481,11 @@ static int usb_mode(void)
             gfx_button(x + bw / 2, y, 6.5f, btn, LOOK_HINT_PLATE, LOOK_HINT_MARK);
             text_draw(x + bw + 5, y + 4.5f, 0.56f, 0, RGBA(238, 238, 242, 255), ALIGN_LEFT, L(S_USB_EXIT));
         }
-        { /* when the computer has not connected for a while: the numbers of the USB in two lines (nothing is written), to be read off and told in an issue; the square button tries another way to start USB */
-            char info[128];
-            if (sys_usb_info(info, sizeof(info))) {
-                char *nl = strchr(info, '\n');
-                int btn = controls_glyph(PSP_CTRL_SQUARE);
-                float bw = gfx_button_width(btn);
-                gfx_button(22 + bw / 2, 250, 6.5f, btn, LOOK_HINT_PLATE, LOOK_HINT_MARK);
-                if (nl)
-                    *nl = 0;
-                text_draw(22 + bw + 6, 246, 0.5f, 0, RGBA(120, 122, 132, 255), ALIGN_LEFT, info);
-                if (nl)
-                    text_draw(22 + bw + 6, 259, 0.5f, 0, RGBA(120, 122, 132, 255), ALIGN_LEFT, nl + 1);
-            }
+        if (sys_usb_go_hint()) { /* a PSP Go whose computer has not connected for 10 s: it will not (see sys_usb_go_hint), the XMB's own USB connection works */
+            char lines[3][96];
+            int n = text_wrap(L(S_USB_GO_HINT), 0.5f, 440, lines, 3);
+            for (int i = 0; i < n; i++)
+                text_draw(SCREEN_W / 2, 222 + 13 * i, 0.5f, 0, RGBA(236, 190, 120, 230), ALIGN_CENTER, lines[i]);
         }
         power_draw();
         osd_draw();

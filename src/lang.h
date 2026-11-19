@@ -58,6 +58,7 @@ typedef enum {
     S_TE_DEL_LINE, S_TE_UNDO, S_TE_GOTO, S_TE_LINE, S_TE_TOO_BIG, S_TE_CANT, S_TE_VIEW_ONLY, S_F_PLAYING,
     S_F_EDIT,
     S_MU_SLEEP,
+    S_USB_GO_HINT,
     S_COUNT
 } StrId;
 

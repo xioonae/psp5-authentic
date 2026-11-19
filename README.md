@@ -161,7 +161,7 @@ If a video does not play, or the PSP stops while one plays, `PSP5/logs/Video.log
   - *Network* – the PSP's own Wi-Fi screen and the FTP Server.
   - *System* – *Console Information* (nickname, model, system software, the whole version of ARK, MAC address, last IP address, free RAM, battery, and where psp5 authentic comes from), *Appearance* (*Show Game art* and the themes),
     *Language*, *Date and Time* (the date and time that psp5 authentic shows: *Daylight Saving* removes or adds one hour, *Date Format* and *Time Format* choose how they are written; the PSP's own clock is never changed), *ARK-5 Settings* or *ARK-4 Settings* (ARK's own options: USB charge, WPA2, hide pictures, regions ...), *Performance* (CPU speed, extra memory, caches) and *Plugins* (switch each plugin on or off, and *Manage Plugins* to install a new plugin and to install or uninstall one in more or fewer places).
-  - *Storage* – Console Storage (see below), the File Manager and USB Mode (the PSP as a drive on your computer; if the computer has not found it after 5 seconds, USB is switched off and on once by itself; after 10 seconds without a computer two lines of numbers show at the bottom left, to be told in an issue, and □ tries another way of starting USB).
+  - *Storage* – Console Storage (see below), the File Manager and USB Mode (the PSP as a drive on your computer; if the computer has not found it after 5 seconds, USB is switched off and on once by itself; **on a PSP Go with ARK-4 the computer does not see the PSP in USB Mode** (see *Supported devices*), and the screen says what to do instead).
   - *Screen and Sound* – the PSP's own brightness, backlight timer (psp5 authentic remembers it), volume, equalizer and AVLS.
   - *Controls* – the PSP's own confirm button, and which buttons confirm, go back, open the options and the power menu.
 
@@ -243,6 +243,8 @@ Works on the **PSP-1000, 2000, 3000, E-1000 and PSP Go** with **ARK-4 or ARK-5**
 (the standalone install, [FasterARK](https://github.com/PSP-Arkfive/FasterARK)). ARK-4 on the Vita should work too, but nobody has
 confirmed it yet. It is the same program on all of them: it adapts its settings to your model and ARK version (the PSP-1000 has
 no extra memory or USB charging, ARK-4 has fewer CPU speeds), and it shows the PSP Go's internal storage whenever the device has one.
+
+**Known limit: USB Mode on a PSP Go with ARK-4.** The computer never sees the PSP: the USB drivers of the internal storage cannot be started from a launcher on a PSP Go (ARK-4's own launcher has the same problem, the PSP does charge, and the XMB's own USB connection works). After 10 seconds without a computer the USB screen says so and points to *Settings → USB Connection* in the XMB. With ARK-5 on a PSP Go nobody has tried yet; on the other models USB Mode works as before.
 
 The **PSP E-1000** is a PSP-3000 without Wi-Fi, so everything that needs Wi-Fi (the *FTP Server*, *Wi-Fi connection*) has nothing to connect with
 on it. Copy your files with *Settings → Storage → USB Mode* instead.

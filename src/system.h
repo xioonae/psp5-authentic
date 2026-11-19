@@ -89,9 +89,7 @@ int sys_usb_start(void);
 void sys_usb_stop(void);
 /* 0 = av, 1 = aktiv men ingen kabel, 2 = ansluten till dator */
 int sys_usb_state(void);
-/* numbers for the USB screen when the computer has not connected for 10 s (see system.c): 1 = two lines of text written to `out` (separated by a new line), 0 = nothing to show */
-int sys_usb_info(char *out, int size);
-/* the square button on the USB screen when there are numbers: USB is started again in another way (a test aid for a PSP Go); 1 = done */
-int sys_usb_next_way(void);
+/* 1 = show the hint for a PSP Go on the USB screen: this is a PSP Go, USB Mode is on and the computer has not connected for more than 10 s (see system.c) */
+int sys_usb_go_hint(void);
 
 #endif

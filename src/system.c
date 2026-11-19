@@ -51,12 +51,6 @@ static int s_usb_on;
 static u32 s_cable_since;   /* µs on the system clock when the cable was first seen without the computer connecting, 0 = not now */
 static u32 s_usb_since;     /* µs on the system clock when USB Mode started */
 static int s_usb_retried;   /* 1 = USB was switched off and on once because the computer did not connect */
-static int s_usb_mods;      /* bit n: module n of the list in sys_usb_start was loaded and started */
-static int s_usb_res[4];    /* what the PSP answered the last time: start of the bus, of the storage, of the internal storage, and the activation */
-static int s_usb_tried;     /* bit n: s_usb_res[n] was asked in the last start (the others are shown as -) */
-static int s_usb_modres[6]; /* what loading and starting each module answered (0 = fine) */
-static int s_usb_way;       /* 0 = the usual start; the square button tries the others when the computer does not connect (a test aid for a PSP Go) */
-#define USB_WAYS 6
 static int s_usb_st;        /* sceUsbGetState() the last time it was asked */
 static char s_ark_dir[ARK_PATH_SIZE];
 static int s_ms_is_ef; /* ARK låter ms0: peka på PSP Go:s internminne */
@@ -597,51 +591,8 @@ void sys_recovery(void)
 
 /* Started like arkMenu does it, and, inspired by what the original psp5 (Mille Weber, github.com/08Weber/psp5) learned in its versions 2.1.1 and 2.1.2 (a PSP Go that did not show up on the computer while the XMB's own USB connection did): what the system
  * still has in its caches is put on the storage first, an activation that is still on is switched off first, and a cable that is seen for 5 s without the computer connecting makes USB switch off and on
- * once (sys_usb_state). Nothing is written to the card here or in sys_usb_state: while the computer has the card a write from the PSP can ruin the FAT. */
-/* The ways of starting the drivers. Way 0 is the usual one, as arkMenu does it. The others are a test aid for a PSP Go whose USB does not start (the internal storage's driver is "not found", the Memory Stick's answers
- * an error, USB is never switched on): the square button goes through them when the computer has not connected for 10 s, and the numbers on the screen say what each of them got.
- *   1 = the same again (after the drivers were stopped, and without the sync)   2 = only the internal storage   3 = only the Memory Stick   4 = the internal storage first
- *   5 = a second between the steps */
-static void usb_drivers_start(int way)
-{
-    s_usb_tried = 0;
-#define USB_STEP(n, call) do { s_usb_res[n] = (call); s_usb_tried |= 1 << (n); } while (0)
-    USB_STEP(0, sceUsbStart(PSP_USBBUS_DRIVERNAME, 0, 0));
-    switch (way) {
-    case 2:
-        USB_STEP(2, sceUsbStart(USBSTOR_EF_DRIVERNAME, 0, 0));
-        break;
-    case 3:
-        USB_STEP(1, sceUsbStart(PSP_USBSTOR_DRIVERNAME, 0, 0));
-        break;
-    case 4:
-        USB_STEP(2, sceUsbStart(USBSTOR_EF_DRIVERNAME, 0, 0));
-        USB_STEP(1, sceUsbStart(PSP_USBSTOR_DRIVERNAME, 0, 0));
-        break;
-    case 5:
-        sceKernelDelayThread(1000000);
-        USB_STEP(1, sceUsbStart(PSP_USBSTOR_DRIVERNAME, 0, 0));
-        USB_STEP(2, sceUsbStart(USBSTOR_EF_DRIVERNAME, 0, 0));
-        sceKernelDelayThread(1000000);
-        break;
-    default:
-        USB_STEP(1, sceUsbStart(PSP_USBSTOR_DRIVERNAME, 0, 0));
-        USB_STEP(2, sceUsbStart(USBSTOR_EF_DRIVERNAME, 0, 0));
-        break;
-    }
-    /* As arkMenu does: the result is ignored. Giving up on an error here closed the USB mode at once on a PSP Go (ARK-4). */
-    USB_STEP(3, sceUsbActivate(0x1c8));
-#undef USB_STEP
-}
-
-static void usb_drivers_stop(void)
-{
-    sceUsbDeactivate(0x1c8);
-    sceUsbStop(USBSTOR_EF_DRIVERNAME, 0, 0);
-    sceUsbStop(PSP_USBSTOR_DRIVERNAME, 0, 0);
-    sceUsbStop(PSP_USBBUS_DRIVERNAME, 0, 0);
-}
-
+ * once (sys_usb_state). Nothing is written to the card here or in sys_usb_state: while the computer has the card a write from the PSP can ruin the FAT.
+ * On a PSP Go with ARK-4 none of this has been enough: USB does not start from a launcher there (see sys_usb_go_hint and docs/DEVELOPER-NOTES.md). */
 int sys_usb_start(void)
 {
     static const char *mods[] = {
@@ -654,28 +605,13 @@ int sys_usb_start(void)
     s_cable_since = 0;
     s_usb_retried = 0;
     s_usb_st = 0;
-    s_usb_way = 0;
     s_usb_since = sceKernelGetSystemTimeLow();
-#ifdef PSP5_USB_BUS_FIRST /* a test build: the USB bus is started before the modules are loaded */
-    sceUsbStart(PSP_USBBUS_DRIVERNAME, 0, 0);
-#endif
     if (!loaded) {
         for (unsigned i = 0; i < sizeof(mods) / sizeof(mods[0]); i++) {
             SceUID mid = kuKernelLoadModule(mods[i], 0, NULL);
-            int r = mid;
-            if (mid >= 0) {
-                r = sceKernelStartModule(mid, 0, NULL, NULL, NULL);
-                if (r >= 0)
-                    s_usb_mods |= 1 << i;
-            }
-            s_usb_modres[i] = r >= 0 ? 0 : r;
-#ifdef PSP5_USB_SLOW_LOAD /* a test build: a wait after each module, for a driver that registers later */
-            sceKernelDelayThread(500000);
-#endif
+            if (mid >= 0)
+                sceKernelStartModule(mid, 0, NULL, NULL, NULL);
         }
-#ifdef PSP5_USB_SLOW_LOAD
-        sceKernelDelayThread(1000000);
-#endif
         loaded = 1;
     }
     /* what the system keeps in its caches goes on the storage before the computer takes it over */
@@ -685,7 +621,11 @@ int sys_usb_start(void)
         sceIoSync("ef0:", 0);
     if (sceUsbGetState() & PSP_USB_ACTIVATED) /* an earlier USB Mode, or something else, has it on: start again from the beginning */
         sceUsbDeactivate(0x1c8);
-    usb_drivers_start(0);
+    sceUsbStart(PSP_USBBUS_DRIVERNAME, 0, 0);
+    sceUsbStart(PSP_USBSTOR_DRIVERNAME, 0, 0);
+    sceUsbStart(USBSTOR_EF_DRIVERNAME, 0, 0);
+    /* As arkMenu does: the result is ignored. Giving up on an error here closed the USB mode at once on a PSP Go (ARK-4). */
+    sceUsbActivate(0x1c8);
     s_usb_on = 1;
     return s_usb_on;
 }
@@ -694,7 +634,10 @@ void sys_usb_stop(void)
 {
     if (!s_usb_on)
         return;
-    usb_drivers_stop();
+    sceUsbDeactivate(0x1c8);
+    sceUsbStop(USBSTOR_EF_DRIVERNAME, 0, 0);
+    sceUsbStop(PSP_USBSTOR_DRIVERNAME, 0, 0);
+    sceUsbStop(PSP_USBBUS_DRIVERNAME, 0, 0);
     s_usb_on = 0;
 }
 
@@ -709,12 +652,11 @@ int sys_usb_state(void)
         u32 now = sceKernelGetSystemTimeLow(); /* µs; it wraps after 71 minutes, the difference is right all the same */
         if (!s_cable_since)
             s_cable_since = now ? now : 1;
-        else if (s_usb_retried == 0 && now - s_cable_since > 5000000u) {
+        else if (!s_usb_retried && now - s_cable_since > 5000000u) {
             s_usb_retried = 1;
             sceUsbDeactivate(0x1c8);
             sceKernelDelayThread(50000);
-            s_usb_res[3] = sceUsbActivate(0x1c8);
-            s_usb_tried |= 8;
+            sceUsbActivate(0x1c8);
         }
     } else {
         s_cable_since = 0;
@@ -722,47 +664,9 @@ int sys_usb_state(void)
     return (st & PSP_USB_CONNECTION_ESTABLISHED) ? 2 : 1;
 }
 
-/* Is there something to show on the USB screen: USB is on, the computer has not connected and more than 10 s have gone since USB Mode started? */
-static int usb_info_ready(void)
+/* Is the hint for a PSP Go to be shown on the USB screen: this is a PSP Go, USB Mode is on, and the computer has not connected for more than 10 s (sys_usb_state keeps s_usb_st)? On a PSP Go with
+ * ARK-4 the computer never connects (the XMB's own USB connection does work), so the screen then says so, and says what to do. */
+int sys_usb_go_hint(void)
 {
-    return s_usb_on && !(s_usb_st & PSP_USB_CONNECTION_ESTABLISHED) && sceKernelGetSystemTimeLow() - s_usb_since > 10000000u;
-}
-
-/* What the USB screen shows when the computer has not connected for more than 10 s (nothing is written anywhere), in two lines:
- *   USB <state>  m<modules> e<n>:<code>  w<way> r<retry>
- *   <bus> <storage> <internal> <activate>
- * the state of the USB (sceUsbGetState: 020 = the cable is seen, 200 = activated, 002 = the computer is connected), which of the six modules were loaded and started (3F = all) and, if one was not,
- * the first that was not and what the PSP answered, the way of starting (w0 = the usual one) and whether the retry was made (r1); then what the PSP answered to the start of the bus, the storage and the
- * internal storage and to the activation (0 = fine, - = not asked in this way). It can be read off the screen and told in an issue. Returns 0 (nothing to show) while USB is off, the computer is
- * connected or it is too early. */
-int sys_usb_info(char *out, int size)
-{
-    if (!usb_info_ready())
-        return 0;
-    char err[24] = "", a[4][12];
-    for (int i = 0; i < 6; i++)
-        if (s_usb_modres[i]) {
-            snprintf(err, sizeof(err), " e%d:%X", i, (unsigned)s_usb_modres[i]);
-            break;
-        }
-    for (int n = 0; n < 4; n++) {
-        if (s_usb_tried & (1 << n))
-            snprintf(a[n], sizeof(a[n]), "%X", (unsigned)s_usb_res[n]);
-        else
-            snprintf(a[n], sizeof(a[n]), "-");
-    }
-    snprintf(out, (size_t)size, "USB %03X  m%02X%s  w%d r%d\n%s %s %s %s", (unsigned)s_usb_st, (unsigned)s_usb_mods, err, s_usb_way, s_usb_retried, a[0], a[1], a[2], a[3]);
-    return 1;
-}
-
-/* The square button on the USB screen, when there are numbers to show: stop USB, wait a moment and start it again in the next way (see usb_drivers_start). 1 = it was done. */
-int sys_usb_next_way(void)
-{
-    if (!usb_info_ready())
-        return 0;
-    usb_drivers_stop();
-    sceKernelDelayThread(300000);
-    s_usb_way = (s_usb_way + 1) % USB_WAYS;
-    usb_drivers_start(s_usb_way);
-    return 1;
+    return s_usb_on && s_model == 4 && !(s_usb_st & PSP_USB_CONNECTION_ESTABLISHED) && sceKernelGetSystemTimeLow() - s_usb_since > 10000000u;
 }

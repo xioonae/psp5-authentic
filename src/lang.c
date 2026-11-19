@@ -758,6 +758,18 @@ static const char *const T[S_COUNT][NL] = {
     [S_F_PLAYING] = { "Playing: %s", "Spelar: %s", "Wiedergabe: %s", "Lecture : %s",
                                   "Reproduciendo: %s", "In riproduzione: %s", "Afspelen: %s", "A reproduzir: %s", "Воспроизведение: %s", "再生中: %s", "Přehrává se: %s" },
     [S_F_EDIT] = { "Edit", "Redigera", "Bearbeiten", "Modifier", "Editar", "Modifica", "Bewerken", "Editar", "Изменить", "編集", "Upravit" },
+    /* the USB screen on a PSP Go when the computer has not connected for 10 s (Claude's translations: not checked by native speakers; the names are the XMB's: Settings > USB Connection) */
+    [S_USB_GO_HINT] = { "PSP Go: if the computer does not see the PSP, leave USB Mode and connect in the XMB (Settings > USB Connection).",
+                        "PSP Go: ser datorn inte PSP:n, lämna USB-läget och anslut i XMB (Inställningar > USB-anslutning).",
+                        "PSP Go: Erkennt der Computer die PSP nicht, verlasse den USB-Modus und verbinde im XMB (Einstellungen > USB-Verbindung).",
+                        "PSP Go : si l'ordinateur ne voit pas la PSP, quittez le mode USB et connectez-vous dans le XMB (Paramètres > Connexion USB).",
+                        "PSP Go: si el ordenador no ve la PSP, sal del modo USB y conéctala desde el XMB (Ajustes > Conexión USB).",
+                        "PSP Go: se il computer non vede la PSP, esci dalla modalità USB e collegala dall'XMB (Impostazioni > Connessione USB).",
+                        "PSP Go: ziet de computer de PSP niet, verlaat de USB-modus en maak verbinding in de XMB (Instellingen > USB-verbinding).",
+                        "PSP Go: se o computador não vê a PSP, saia do modo USB e ligue no XMB (Definições > Ligação USB).",
+                        "PSP Go: если компьютер не видит PSP, выйдите из режима USB и подключитесь через XMB (Настройки > USB-соединение).",
+                        "パソコンがPSPを認識しない場合は、USBモードを終了して、XMBの 「設定」>「USB接続」で接続してください。",
+                        "PSP Go: pokud počítač PSP nevidí, ukonči režim USB a připoj se v XMB (Nastavení > Připojení USB)." },
     [S_MU_SLEEP] = { "Sleep timer", "Insomningstimer", "Einschlaftimer", "Arrêt différé", "Temporizador", "Timer sonno", "Slaaptimer", "Timer de sono", "Таймер сна", "スリープタイマー", "Časovač spánku" },
 };
 
