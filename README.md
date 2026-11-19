@@ -108,7 +108,7 @@ Each one opens a list over the whole width of the screen; folders show as folder
 - **Shows:** title, artist and album art (from the file, or a `cover.jpg` / `folder.jpg` in the folder).
 - **Playlists:** a `.m3u` or `.m3u8` file shows in the list (after the folders, with an *M3U* badge) and opens like a folder: its songs are the list, ✕ plays one and the playlist goes on from there, ○ goes back to the folder. The songs can lie in any folder or on the other storage.
   A path in the playlist is read relative to the folder of the playlist (`Rock/a.mp3`, `../a.mp3`) or whole (`ms0:/MUSIC/Rock/a.mp3`); a path made on a computer (`C:\Music\a.mp3`) is looked for by its file name next to the playlist. Up to 1000 songs; a song that is gone or that the player cannot play is skipped. Save the playlist as UTF-8 (`.m3u8`). A playlist that also has videos in it shows only its songs here (the videos are for the [Videos](#videos) screen).
-- **Player:** a progress bar you can jump in (10 seconds a step), volume, shuffle, repeat (off, one song, the whole folder) and the equalizer.
+- **Player:** a progress bar you can jump in (10 seconds a step), volume, shuffle, repeat (off, one song, the whole folder), the equalizer and a **sleep timer** (the music stops after 15, 30, 45 minutes, 1 h, 1 h 30 min or 2 h).
 - **Keeps playing** while you browse your games or use the File Manager, and the PSP's ♪ button shows the player as a popup.
 
 #### Videos

@@ -436,30 +436,71 @@ static int step(MusicUi *m, u32 held, int lx, int ly, float dt)
     return 0;
 }
 
-/* The rows of the "..." popup: Shuffle, Repeat and the Equalizer (when the system can say it: the same values, the same words and the same calls as Settings > Screen and Sound). ✕ on a row opens a
- * popup with its values, like Settings does for a choice. */
-enum { ROW_SHUFFLE, ROW_REPEAT, ROW_EQ };
-static int more_rows(void) { return sys_equalizer() >= 0 ? 3 : 2; }
-static int row_values(int row) { return row == ROW_SHUFFLE ? 2 : row == ROW_REPEAT ? 3 : 5; }
-static int row_value(int row)
+/* The rows of the "..." popup: Shuffle, Repeat, the Equalizer (when the system can say it: the same values, the same words and the same calls as Settings > Screen and Sound) and the Sleep timer (the music stops after
+ * the time that was chosen). ✕ on a row opens a popup with its values, like Settings does for a choice. A row is told by its line in the list: the equalizer is left out of the lines when there is none. */
+enum { ROW_SHUFFLE, ROW_REPEAT, ROW_EQ, ROW_SLEEP };
+static const int SLEEP_MIN[7] = { 0, 15, 30, 45, 60, 90, 120 }; /* the times of the sleep timer, in minutes (0 = off) */
+static int s_sleep_pick; /* which of them was chosen: while the timer runs, this is the value that the popup shows as the chosen one */
+static int more_rows(void) { return sys_equalizer() >= 0 ? 4 : 3; }
+static int row_id(int line) { return line < 2 ? line : (line == 2 && sys_equalizer() >= 0) ? ROW_EQ : ROW_SLEEP; }
+static int row_values(int line)
 {
-    int v = row == ROW_SHUFFLE ? (music_shuffle() ? 1 : 0) : row == ROW_REPEAT ? music_repeat() : sys_equalizer();
-    return (int)clampf((float)v, 0, (float)(row_values(row) - 1));
+    int row = row_id(line);
+    return row == ROW_SHUFFLE ? 2 : row == ROW_REPEAT ? 3 : row == ROW_EQ ? 5 : 7;
 }
-static void row_set(int row, int v)
+static int row_value(int line)
 {
+    int row = row_id(line);
+    int v = row == ROW_SHUFFLE ? (music_shuffle() ? 1 : 0) : row == ROW_REPEAT ? music_repeat() : row == ROW_EQ ? sys_equalizer() : (music_sleep_left() > 0 ? s_sleep_pick : 0);
+    return (int)clampf((float)v, 0, (float)(row_values(line) - 1));
+}
+static void row_set(int line, int v)
+{
+    int row = row_id(line);
     if (row == ROW_SHUFFLE)
         music_set_shuffle(v);
     else if (row == ROW_REPEAT)
         music_set_repeat(v);
-    else
+    else if (row == ROW_EQ)
         sys_set_equalizer(v);
+    else {
+        v = (int)clampf((float)v, 0, 6);
+        s_sleep_pick = v;
+        music_set_sleep(SLEEP_MIN[v]);
+    }
 }
-static const char *row_name(int row) { return L(row == ROW_SHUFFLE ? S_MU_SHUFFLE : row == ROW_REPEAT ? S_MU_REPEAT : S_EQUALIZER); }
-static const char *row_text(int row, int v)
+static const char *row_name(int line)
+{
+    int row = row_id(line);
+    return L(row == ROW_SHUFFLE ? S_MU_SHUFFLE : row == ROW_REPEAT ? S_MU_REPEAT : row == ROW_EQ ? S_EQUALIZER : S_MU_SLEEP);
+}
+/* a time as the words of Settings write it: "15 min", "2 h", "1 h 30 min" */
+static const char *sleep_time_text(char *out, int size, int minutes)
+{
+    if (minutes >= 60 && minutes % 60)
+        snprintf(out, (size_t)size, "%d %s %d %s", minutes / 60, L(S_UNIT_H), minutes % 60, L(S_UNIT_MIN));
+    else if (minutes >= 60)
+        snprintf(out, (size_t)size, "%d %s", minutes / 60, L(S_UNIT_H));
+    else
+        snprintf(out, (size_t)size, "%d %s", minutes, L(S_UNIT_MIN));
+    return out;
+}
+static const char *row_text(int line, int v)
 {
     static const StrId on_off[2] = { S_OFF, S_ON }, rep[3] = { S_OFF, S_MU_REPEAT_ONE, S_ALL }, eq[5] = { S_OFF, S_EQ_HEAVY, S_EQ_POPS, S_EQ_JAZZ, S_EQ_UNIQUE };
+    static char sleep_text[40];
+    int row = row_id(line);
+    if (row == ROW_SLEEP)
+        return v <= 0 ? L(S_OFF) : sleep_time_text(sleep_text, sizeof(sleep_text), SLEEP_MIN[v > 6 ? 6 : v]);
     return L(row == ROW_SHUFFLE ? on_off[v & 1] : row == ROW_REPEAT ? rep[v % 3] : eq[v % 5]);
+}
+/* what the list of rows says at the right of a row: the value, and for the sleep timer that is running the time that is left (rounded up to whole minutes) */
+static const char *row_list_text(int line)
+{
+    static char left_text[40];
+    if (row_id(line) == ROW_SLEEP && music_sleep_left() > 0)
+        return sleep_time_text(left_text, sizeof(left_text), (music_sleep_left() + 59) / 60);
+    return row_text(line, row_value(line));
 }
 
 /* Is a panel of the player's popups on screen (or on its way)? The volume has none: it is the launcher's own volume bar, so the fade of the panels must not rise for it, or the "..." rows would be seen fading out when it ends */
@@ -983,7 +1024,7 @@ static void draw_popup(MusicUi *m)
         if (r == m->popup_sel)
             popup_choice(x + POPUP_EDGE, ry, w - 2 * POPUP_EDGE, POPUP_ITEM, a);
         text_draw(x + 16, ry + 18, 0.62f, 0, fade(POPUP_TEXT, a), ALIGN_LEFT, row_name(r));
-        text_draw(x + w - 16, ry + 18, 0.62f, 0, fade(r == m->popup_sel ? POPUP_TEXT : POPUP_TEXT_DIM, a), ALIGN_RIGHT, row_text(r, row_value(r)));
+        text_draw(x + w - 16, ry + 18, 0.62f, 0, fade(r == m->popup_sel ? POPUP_TEXT : POPUP_TEXT_DIM, a), ALIGN_RIGHT, row_list_text(r));
     }
 }
 

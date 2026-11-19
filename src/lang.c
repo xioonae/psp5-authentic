@@ -758,6 +758,7 @@ static const char *const T[S_COUNT][NL] = {
     [S_F_PLAYING] = { "Playing: %s", "Spelar: %s", "Wiedergabe: %s", "Lecture : %s",
                                   "Reproduciendo: %s", "In riproduzione: %s", "Afspelen: %s", "A reproduzir: %s", "Воспроизведение: %s", "再生中: %s", "Přehrává se: %s" },
     [S_F_EDIT] = { "Edit", "Redigera", "Bearbeiten", "Modifier", "Editar", "Modifica", "Bewerken", "Editar", "Изменить", "編集", "Upravit" },
+    [S_MU_SLEEP] = { "Sleep timer", "Insomningstimer", "Einschlaftimer", "Arrêt différé", "Temporizador", "Timer sonno", "Slaaptimer", "Timer de sono", "Таймер сна", "スリープタイマー", "Časovač spánku" },
 };
 
 static const char *const NAMES[LANG_COUNT] = { "", "English", "Svenska", "Deutsch", "Français", "Español",

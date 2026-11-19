@@ -72,6 +72,11 @@ int music_shuffle(void);
 void music_set_repeat(int mode); /* MUSIC_REPEAT_* */
 int music_repeat(void);
 
+/* The sleep timer: the music stops after `minutes` minutes (0 = no timer; a new time replaces the old one). It counts the real time, also while the music is paused and in every screen, and it is off
+ * again when it has stopped the music (or when there was no music left to stop). music_sleep_left() says how many seconds are left, rounded up (0 = no timer). */
+void music_set_sleep(int minutes);
+int music_sleep_left(void);
+
 int music_state(void);        /* MUSIC_STOPPED / _PLAYING / _PAUSED */
 float music_elapsed(void);    /* seconds */
 float music_duration(void);   /* seconds (estimated for some files), 0 = not known */

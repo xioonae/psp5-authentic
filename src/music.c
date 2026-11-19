@@ -48,11 +48,13 @@ static Track s_now;
 static volatile int s_now_valid;
 static volatile int s_cjk;
 static volatile int s_shuffle, s_repeat;
+static volatile int s_sleep_left;   /* the sleep timer: seconds left (rounded up), 0 = no timer (the thread counts it; music_set_sleep() sets it at once, so that the screen does not see a gap; the screen reads it) */
+static long long s_sleep_end;       /* ... and the time on the system clock (µs, 64 bits: a timer of two hours is longer than the 32 bits of sceKernelGetSystemTimeLow) at which the music stops; 0 = none (the thread only) */
 static char s_dir_pub[256];         /* the folder whose songs are playing */
 
 /* --- commands from the screen (one writer, one reader) --- */
 
-enum { CMD_LOAD, CMD_PAUSE, CMD_STOP, CMD_NEXT, CMD_PREV, CMD_SEEK, CMD_SHUFFLE };
+enum { CMD_LOAD, CMD_PAUSE, CMD_STOP, CMD_NEXT, CMD_PREV, CMD_SEEK, CMD_SHUFFLE, CMD_SLEEP };
 #define QUEUE 16
 static volatile int s_q_cmd[QUEUE], s_q_arg[QUEUE];
 static volatile int s_q_head, s_q_tail; /* head is written by the screen only, tail by the thread only */
@@ -1543,6 +1545,10 @@ static void handle_command(int cmd, int arg)
     case CMD_STOP:
         stop_playback();
         break;
+    case CMD_SLEEP: /* the sleep timer is set (arg minutes from now) or taken away (0) */
+        s_sleep_end = arg > 0 ? sceKernelGetSystemTimeWide() + (long long)arg * 60 * 1000000LL : 0;
+        s_sleep_left = arg > 0 ? arg * 60 : 0;
+        break;
     case CMD_NEXT:
         if (s_state != MUSIC_STOPPED)
             go_next();
@@ -1573,6 +1579,22 @@ static void handle_command(int cmd, int arg)
     }
 }
 
+/* the sleep timer: the time is up -> the music stops (also a paused song) and the timer is off; else the seconds left are kept for the screen */
+static void sleep_check(void)
+{
+    if (!s_sleep_end)
+        return;
+    long long now = sceKernelGetSystemTimeWide();
+    if (now >= s_sleep_end) {
+        s_sleep_end = 0;
+        s_sleep_left = 0;
+        if (s_state != MUSIC_STOPPED)
+            stop_playback();
+        return;
+    }
+    s_sleep_left = (int)((s_sleep_end - now + 999999) / 1000000);
+}
+
 static int player_thread(SceSize args, void *argp)
 {
     sceKernelChangeThreadPriority(0, 0x14);
@@ -1586,6 +1608,7 @@ static int player_thread(SceSize args, void *argp)
             s_q_tail = (t + 1) % QUEUE;
             failures = 0;
         }
+        sleep_check();
         if (s_state != MUSIC_PLAYING || !s_codec) {
             sceKernelDelayThread(10000);
             continue;
@@ -1610,16 +1633,17 @@ static int player_thread(SceSize args, void *argp)
     return 0;
 }
 
-static void push(int cmd, int arg)
+static int push(int cmd, int arg) /* 1 = the command is in the queue */
 {
     if (s_thread < 0)
-        return;
+        return 0;
     int h = s_q_head, n = (h + 1) % QUEUE;
     if (n == s_q_tail)
-        return; /* the queue is full: the command is dropped */
+        return 0; /* the queue is full: the command is dropped */
     s_q_cmd[h] = cmd;
     s_q_arg[h] = arg;
     s_q_head = n;
+    return 1;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1658,6 +1682,8 @@ void music_init(void)
     s_atrac_ready = r >= 0 || (u32)r == ALREADY_LOADED || (u32)r == ALREADY_LOADED2;
     s_quit = 0;
     s_q_head = s_q_tail = 0;
+    s_sleep_end = 0; /* (no sleep timer after the player was ended and started again) */
+    s_sleep_left = 0;
     s_state = MUSIC_STOPPED;
     s_now_valid = 0;
     s_elapsed = s_duration = 0;
@@ -1811,6 +1837,17 @@ void music_set_repeat(int mode)
 }
 
 int music_repeat(void) { return s_repeat; }
+
+void music_set_sleep(int minutes)
+{
+    minutes = minutes > 1440 ? 1440 : minutes > 0 ? minutes : 0;
+    /* The thread takes the command a moment later (after the block of audio it is busy with), and it counts from then on. The time left is set here at once, so that the screen that asks for it
+     * (the row of the "..." popup) shows the time that was chosen at once and not "Off" for a few frames. Only for a command that is in the queue: without a thread, or with a full queue, there is no timer. */
+    if (push(CMD_SLEEP, minutes))
+        s_sleep_left = minutes * 60;
+}
+
+int music_sleep_left(void) { return s_sleep_left; }
 
 int music_generation(void) { return s_gen; }
 int music_needs_cjk(void)  { return s_cjk; }
