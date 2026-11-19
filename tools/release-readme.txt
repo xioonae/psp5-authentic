@@ -200,6 +200,15 @@ way, use the zip for the ARK you have now.
     EBOOT.PBP (PSP/GAME/PSP5). Without them psp5 authentic plays its
     built-in sounds.
 
+  * PSP Go owners, please try "USB Mode" (Settings, Storage) in psp5
+    authentic once. One PSP Go (ARK-4) could not use it: the computer
+    did not see the PSP, although the XMB's own "USB Connection"
+    (step 3 above) worked. We want to know whether that is every
+    PSP Go or only that one. Please open an issue and tell us if the
+    computer sees the PSP or not, which ARK you use (4 or 5) and
+    which computer you have. On a PSP Go the USB screen also tells
+    you to use the XMB's "USB Connection" when nothing connects.
+
 Still not working? Please open an issue in the project's repository
 and tell us:
   1. what you saw,
