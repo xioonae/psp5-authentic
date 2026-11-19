@@ -845,13 +845,13 @@ static void draw_player(MusicUi *m, float px, float py, float a, int focus, int 
         if (chosen)
             gfx_circle(bx2, by2, BTN_R, fade(LIGHT, a));
         u32 ic = fade(chosen ? DARK : TEXT_MAIN, a);
-        if (k == MU_VOLUME) {
-            gfx_speaker_scaled(bx2 - 3.8f, by2, 0.85f, ic);
+        if (k == MU_VOLUME) { /* (the pause and the triangle of play are 8 px high like the skip buttons; the speaker 10 px, its shape is slim and the next size down, 8 px, looked too small) */
+            gfx_speaker_scaled(bx2 - 3.0f, by2, 0.667f, ic);
         } else if (k == MU_PREV) {
             gfx_rect(bx2 - 5, by2 - 4, 2, 8, ic);
             gfx_triangle(bx2 - 3, by2 - 4, 8, 8, -1, ic);
         } else if (k == MU_PLAY) {
-            play_glyph(bx2, by2, 5.4f, state == MUSIC_PLAYING, ic);
+            play_glyph(bx2, by2, 6.5f, state == MUSIC_PLAYING, ic);
         } else if (k == MU_NEXT) {
             gfx_triangle(bx2 - 5, by2 - 4, 8, 8, 1, ic);
             gfx_rect(bx2 + 3, by2 - 4, 2, 8, ic);
