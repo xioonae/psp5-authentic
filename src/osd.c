@@ -110,27 +110,10 @@ void osd_update(float dt)
     s_level += (lv - s_level) * (1 - expf(-20.0f * dt));
 }
 
-/* Högtalare (låda + kon) med ljudvågor efter nivån, eller ett kryss när ljudet är av */
+/* The volume symbol (gfx_volume_icon, the same as the player's volume button): the loudspeaker with two sound waves, the ones that the level does not reach are faint, or a cross when the sound is off */
 static void draw_speaker(float x, float y, float level, int muted, u32 c, u32 dim)
 {
-    gfx_speaker(x, y, c); /* box and cone in one piece, so a translucent colour does not double up where they meet */
-    u32 cc[4] = { c, c, c, c };
-    if (muted) {
-        float a[4] = { x + 12, y - 4, x + 19, y + 4 }, b[4] = { x + 19, y - 4, x + 12, y + 4 };
-        gfx_stroke(a, cc, 2, 1.6f);
-        gfx_stroke(b, cc, 2, 1.6f);
-        return;
-    }
-    for (int k = 0; k < 3; k++) { /* tre bågar, de som inte når upp är svaga */
-        float r = 5 + k * 3.5f, pts[10];
-        u32 col = level > (k + 0.5f) / 3.5f ? c : dim, cols[5] = { col, col, col, col, col };
-        for (int i = 0; i < 5; i++) {
-            float ang = (-40 + i * 20) * 3.14159265f / 180;
-            pts[i * 2] = x + 9 + cosf(ang) * r;
-            pts[i * 2 + 1] = y + sinf(ang) * r;
-        }
-        gfx_stroke(pts, cols, 5, 1.4f);
-    }
+    gfx_volume_icon(x, y, 15, look_volume_waves(level, muted), c, dim);
 }
 
 void osd_draw(void)

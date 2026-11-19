@@ -82,10 +82,9 @@ void gfx_cube(float cx, float cy, float r, u32 color);
 void gfx_triangle(float x, float y, float w, float h, int dir, u32 color);
 /* Musiknot i en ruta med sidan `size`, centrerad i (cx, cy) – en enda bild, så inget blandas dubbelt där delarna möts */
 void gfx_note(float cx, float cy, float size, u32 color);
-/* Högtalare (9 × 15 px): vänsterkanten vid x, mitten på höjden y */
-void gfx_speaker(float x, float y, u32 color);
-/* The same loudspeaker, `scale` times as big (the player's button is a little smaller than the volume popup's): its left edge at x, the middle at height y. */
-void gfx_speaker_scaled(float x, float y, float scale, u32 color);
+/* The volume symbol: the loudspeaker (`size` px high, its left edge at x, the middle at height y) with two sound waves on its right, about 1.2 `size` wide. `waves` of them are drawn in `color` (0, 1 or 2), the
+ * others in `dim` (nothing when it is fully transparent); -1 = the sound is off: a cross instead of the waves. The player's button and the volume bar are drawn with it. Sizes 15 and 10 are the ones in use. */
+void gfx_volume_icon(float x, float y, float size, int waves, u32 color, u32 dim);
 /* The picture of the Library card (six squares with a game controller in front), centred in the card whose pixels are the whole-pixel
  * box l, t, w, h, about two thirds of its height. Everything in it is on whole pixels and it is one image, so it looks the same
  * wherever the card is and the controller is exactly the same on its left and right. */

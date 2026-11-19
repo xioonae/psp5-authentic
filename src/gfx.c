@@ -904,37 +904,46 @@ void gfx_note(float cx, float cy, float size, u32 color)
     gfx_quad(xy, c);
 }
 
-/* The loudspeaker of the volume popup: its left edge is at x and the middle of it at height y; 9 pixels
- * wide and 15 high. One image, for the same reason as the note. */
-void gfx_speaker(float x, float y, u32 color)
+/* The loudspeaker image with the parts of `mask` (1 the loudspeaker, 2 the inner sound wave, 4 the outer one: see sd_speaker), r = `rad` (whole quarters of a pixel, as the cache wants): its left edge at x, the middle at
+ * height y. One image, for the same reason as the note, and so the symbol with both its waves is 2 vertices a frame. With no room for it in the cache only the loudspeaker is drawn, from a rectangle and a quad. */
+static void speaker_image(float x, float y, float rad, int mask, u32 color)
 {
+    rad = quarter(rad);
     IconBox b;
-    icon_box(ICON_SPEAKER, x + 4.5f, y, 0, 0, 4.5f, &b);
-    const Texture *tex = icon_get(ICON_SPEAKER, 0, 0, 4.5f, &b);
+    icon_box(ICON_SPEAKER, x + rad, y, (float)mask, 0, rad, &b);
+    const Texture *tex = icon_get(ICON_SPEAKER, (float)mask, 0, rad, &b);
     if (tex) {
         icon_blit(tex, &b, color);
         return;
     }
-    gfx_rect(x, y - 3, 4, 6, color);
-    float cone[8] = { x + 3.5f, y - 3, x + 9, y - 7.5f, x + 3.5f, y + 3, x + 9, y + 7.5f };
+    if (!(mask & 1))
+        return;
+    float k = rad / 4.5f;
+    gfx_rect(x, y - 3.7f * k, 3.2f * k, 7.4f * k, color);
+    float cone[8] = { x + 3.0f * k, y - 3.53f * k, x + 7.6f * k, y - 7.5f * k, x + 3.0f * k, y + 3.53f * k, x + 7.6f * k, y + 7.5f * k };
     u32 cc[4] = { color, color, color, color };
     gfx_quad(cone, cc);
 }
 
-void gfx_speaker_scaled(float x, float y, float scale, u32 color)
+/* The volume symbol, in the proportions of the one that the maintainer showed (a loudspeaker with two sound waves): the loudspeaker `size` px high, the waves arcs of +-40 degrees round a point 0.45 `size` from the
+ * left edge, 0.40 and 0.70 `size` in radius and 1.4 px thick (the thickness that the waves of the volume bar had before). All of it is ICON_SPEAKER: the parts that are lit are one image in `color`, the
+ * ones that are not (when `dim` is not transparent) another in `dim`. */
+void gfx_volume_icon(float x, float y, float size, int waves, u32 color, u32 dim)
 {
-    float rad = 4.5f * scale;
-    IconBox b;
-    icon_box(ICON_SPEAKER, x + rad, y, 0, 0, rad, &b);
-    const Texture *tex = icon_get(ICON_SPEAKER, 0, 0, rad, &b);
-    if (tex) {
-        icon_blit(tex, &b, color);
+    float rad = size * 0.3f; /* (4.5 for 15) */
+    if (waves < 0) { /* the sound is off: a cross where the waves were */
+        speaker_image(x, y, rad, 1, color);
+        float k = size / 15.0f;
+        u32 cc[4] = { color, color, color, color };
+        float a[4] = { x + 11 * k, y - 4 * k, x + 18 * k, y + 4 * k }, b[4] = { x + 18 * k, y - 4 * k, x + 11 * k, y + 4 * k };
+        gfx_stroke(a, cc, 2, fmaxf(1.1f, 1.6f * k));
+        gfx_stroke(b, cc, 2, fmaxf(1.1f, 1.6f * k));
         return;
     }
-    gfx_rect(x, y - 3 * scale, 4 * scale, 6 * scale, color);
-    float cone[8] = { x + 3.5f * scale, y - 3 * scale, x + 9 * scale, y - 7.5f * scale, x + 3.5f * scale, y + 3 * scale, x + 9 * scale, y + 7.5f * scale };
-    u32 cc[4] = { color, color, color, color };
-    gfx_quad(cone, cc);
+    int lit = 1 | (waves >= 1 ? 2 : 0) | (waves >= 2 ? 4 : 0), faint = 6 & ~lit;
+    speaker_image(x, y, rad, lit, color);
+    if (faint && (dim >> 24))
+        speaker_image(x, y, rad, faint, dim);
 }
 
 /* The images of the Library picture, one for each height it has been drawn at. They are not in the cache above, which lets go of

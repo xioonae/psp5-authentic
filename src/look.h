@@ -81,4 +81,10 @@ static inline void look_tick(float cx, float cy, int ticked, float a)
     }
 }
 
+/* How many of the two sound waves of the volume symbol (gfx_volume_icon) the volume bar lights for a level 0 to 1: none up to 0.12, one up to 0.5, both above; -1 (a cross) when the sound is off. */
+static inline int look_volume_waves(float level, int muted)
+{
+    return muted ? -1 : level > 0.5f ? 2 : level > 0.12f ? 1 : 0;
+}
+
 #endif

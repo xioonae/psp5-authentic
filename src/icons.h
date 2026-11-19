@@ -23,7 +23,7 @@ enum {
     ICON_TRI_R,    /* triangle w * h pointing right: the back edge on the left, the tip in the middle of the right */
     ICON_TRI_L,    /* the same pointing left */
     ICON_NOTE,     /* the music note (two notes with a beam) in a square of side 2 r, all in one piece */
-    ICON_SPEAKER,  /* the loudspeaker: box and cone in one piece, 2 r wide and 4 r high (r = 4.5 for the usual size) */
+    ICON_SPEAKER,  /* the loudspeaker: box and cone in one piece, 15 / 4.5 r high and 7.6 / 4.5 r wide (r = 4.5 for the usual size); w = which parts are in the image: 1 the loudspeaker, 2 the inner sound wave, 4 the outer one (0 = 1) */
     ICON_RFRAME,   /* rounded rectangle w * h, a ring of the fixed thickness ICON_FRAME_T just inside the edge */
     ICON_RFRAME_S, /* the same with the thinner ICON_FRAME_T_S - the ring around the selected card of the library grid */
     ICON_LIBRARY,  /* the picture of the Library card: 3 x 2 squares with a game controller in front, w * h whole pixels (see icon_library_width) */

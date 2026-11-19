@@ -72,6 +72,8 @@ void icon_box(int kind, float cx, float cy, float w, float h, float r, IconBox *
 {
     int sized = kind == ICON_RRECT || kind == ICON_TRI_R || kind == ICON_TRI_L; /* these have their own w * h */
     float ex = sized ? w : r * 2, ey = sized ? h : kind == ICON_SPEAKER ? r * 4 : r * 2;
+    if (kind == ICON_SPEAKER && ((int)(w + 0.5f) & 6))
+        ex = r * 6; /* the waves reach 12.75 units right of the middle (see sd_speaker) */
     b->tw = (int)ceilf(ex) + 4; /* two pixels of margin on every side */
     b->th = (int)ceilf(ey) + 4;
     float fx = cx - b->tw / 2.0f, fy = cy - b->th / 2.0f;
@@ -297,19 +299,40 @@ static float sd_note(const Shape *p, float px, float py)
     return fminf(d, sd_poly(p->beam, 4, px, py));
 }
 
-/* The loudspeaker: a box (4 x 6 in design units) and a cone that widens from 6 to 15 units high. The
- * centre is the middle of the 9 unit wide shape. */
+/* The loudspeaker, in the proportions of the volume symbol (the sound waves are drawn by gfx_volume_icon): a box (3.2 x 7.4 in design units) and a cone, 4.4 units long, that widens from 7.4 to 15
+ * units high. Its left edge is 4.5 units left of the centre (the shape is 7.6 units wide; the box of the image is 9). The cone starts a little inside the box, on the same slant, so that
+ * nothing is blended twice where they meet. */
 static void speaker_shape(float u, Shape *p)
 {
-    const float c[8] = { -1.0f * u, -3.0f * u, 4.5f * u, -7.5f * u, 4.5f * u, 7.5f * u, -1.0f * u, 3.0f * u };
+    const float c[8] = { -1.5f * u, -3.53f * u, 3.1f * u, -7.5f * u, 3.1f * u, 7.5f * u, -1.5f * u, 3.53f * u };
     memcpy(p->cone, c, sizeof(c));
     p->u = u;
 }
 
+/* A sound wave: an arc of +-40 degrees round (cx, 0), `rad` in radius and `t` thick, with round ends. */
+static float sd_wave(float px, float py, float cx, float rad, float t)
+{
+    const float half = 40.0f * 3.14159265f / 180;
+    float dx = px - cx;
+    if (fabsf(atan2f(py, dx)) <= half)
+        return fabsf(len2(dx, py) - rad) - t / 2;
+    return len2(px - (cx + rad * cosf(half)), py - (py < 0 ? -1.0f : 1.0f) * rad * sinf(half)) - t / 2;
+}
+
+/* What `w` of the speaker says is which parts are in the image: bit 1 the loudspeaker, bit 2 the inner wave, bit 4 the outer one (0 = the loudspeaker alone, as before). The waves are on circles round a
+ * point 2.25 units right of the middle (0.45 of the height of the loudspeaker from its left edge), 6 and 10.5 units in radius, 1.4 px thick. */
 static float sd_speaker(const Shape *p, float px, float py)
 {
     float u = p->u;
-    return fminf(sd_rbox(px + 2.5f * u, py, 2.0f * u, 3.0f * u, 0), sd_poly(p->cone, 4, px, py));
+    int m = p->w < 0.5f ? 1 : (int)(p->w + 0.5f);
+    float d = 1e9f;
+    if (m & 1)
+        d = fminf(sd_rbox(px + 2.9f * u, py, 1.6f * u, 3.7f * u, 0), sd_poly(p->cone, 4, px, py));
+    if (m & 2)
+        d = fminf(d, sd_wave(px, py, 2.25f * u, 6.0f * u, 1.4f));
+    if (m & 4)
+        d = fminf(d, sd_wave(px, py, 2.25f * u, 10.5f * u, 1.4f));
+    return d;
 }
 
 /* The Library picture: the squares, minus the controller and its rim, plus the controller (minus the arch between its grips).
